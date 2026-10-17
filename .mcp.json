@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "eng-toolkit": {
+      "command": "uv",
+      "args": ["run", "eng-toolkit"]
+    }
+  }
+}

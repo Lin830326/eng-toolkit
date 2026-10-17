@@ -1,0 +1,52 @@
+[project]
+name = "eng-toolkit"
+version = "0.0.1"
+description = "AI-callable open-source engineering toolkit: MCP gateway over permissively licensed engineering engines, returning unit-carrying, reproducible results."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [{ name = "eng-toolkit contributors" }]
+keywords = ["mcp", "engineering", "hydraulics", "units", "pint"]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: Apache Software License",
+  "Topic :: Scientific/Engineering",
+]
+# License policy: core dependencies must be Apache / MIT / BSD (or equivalent permissive).
+#   fastmcp  - Apache-2.0
+#   pint     - BSD-3-Clause
+#   pydantic - MIT
+#   fluids   - MIT
+dependencies = [
+  "fastmcp>=2.10",
+  "pint>=0.24",
+  "pydantic>=2.7",
+  "fluids>=1.0",
+]
+
+[project.scripts]
+eng-toolkit = "eng_toolkit.gateway.server:main"
+
+[project.urls]
+Homepage = "https://github.com/Lin830326/eng-toolkit"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["eng_toolkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.uv]
+# Keep the lockfile in the repo so a clean Windows machine resolves the exact same versions.
