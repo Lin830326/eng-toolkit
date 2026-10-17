@@ -13,11 +13,13 @@ Run with ``eng-toolkit`` (console script) or ``python -m eng_toolkit`` -> stdio 
 
 from __future__ import annotations
 
+import os
 import platform
 import sys
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from eng_toolkit import __version__
 from eng_toolkit.contract import Provenance, ToolResult, inputs_hash
@@ -37,6 +39,28 @@ from eng_toolkit.workspace import Workspace
 
 ENGINE = "eng_toolkit.gateway"
 MIN_PYTHON = (3, 12)
+
+# The toolkit must never call an LLM. doctor reports if any of these are even installed.
+LLM_SDK_DISTS: tuple[str, ...] = (
+    "anthropic",
+    "openai",
+    "google-genai",
+    "google-generativeai",
+    "litellm",
+    "langchain",
+    "langchain-core",
+    "ollama",
+    "cohere",
+    "mistralai",
+)
+LLM_API_KEY_ENV: tuple[str, ...] = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "MISTRAL_API_KEY",
+    "COHERE_API_KEY",
+)
 
 gateway = FastMCP(
     "eng-toolkit",
@@ -115,7 +139,12 @@ async def toolkit_list_tools() -> ToolResult:
         "environment flagging GPL/AGPL/unknown distributions."
     ),
 )
-def toolkit_doctor(scan_env: bool = True) -> ToolResult:
+def toolkit_doctor(
+    scan_env: Annotated[
+        bool,
+        Field(description="Also scan every installed package for GPL/AGPL/unknown licenses (slower). Default true."),
+    ] = True,
+) -> ToolResult:
     warnings: list[str] = []
     hard_failures: list[str] = []
 
@@ -169,6 +198,16 @@ def toolkit_doctor(scan_env: bool = True) -> ToolResult:
         units_ok = False
         hard_failures.append(f"pint sanity check failed: {exc}")
 
+    # LLM-free guarantee: the toolkit is a pure tool server, usable from any MCP client
+    # (Claude, Codex, Cursor, LM Studio, Ollama...) without API keys.
+    llm_sdks_found = [d for d in LLM_SDK_DISTS if installed_license(d)[0] is not None]
+    if llm_sdks_found:
+        warnings.append(
+            "LLM SDKs present in the environment: " + ", ".join(llm_sdks_found)
+            + " -- the toolkit must not call them"
+        )
+    api_keys_set = [k for k in LLM_API_KEY_ENV if os.environ.get(k)]
+
     # Environment license scan
     scan: dict[str, Any] | None = None
     if scan_env:
@@ -203,6 +242,13 @@ def toolkit_doctor(scan_env: bool = True) -> ToolResult:
         "dependencies": deps,
         "workspace": {"root": str(ws.root), "writable": ws_ok},
         "units": {"pint_ok": units_ok},
+        "llm_free": {
+            "calls_llm": False,
+            "requires_api_key": False,
+            "llm_sdks_installed": llm_sdks_found,
+            "llm_api_keys_in_env": api_keys_set,
+        },
+        "transports": ["stdio", "http"],
         "license_policy": POLICY,
         "license_scan": scan,
         "domains": [d.name for d in DOMAINS],
@@ -216,28 +262,60 @@ def toolkit_doctor(scan_env: bool = True) -> ToolResult:
     )
 
 
+DEFAULT_HTTP_HOST = "127.0.0.1"
+DEFAULT_HTTP_PORT = 8765
+DEFAULT_HTTP_PATH = "/mcp"
+
+
 def main(argv: list[str] | None = None) -> None:
     """Console entry point.
 
-    ``eng-toolkit``            serve the gateway over stdio (what an MCP client launches)
-    ``eng-toolkit --doctor``   print the toolkit_doctor report as JSON and exit 0/1
+    ``eng-toolkit serve --transport stdio``                 (default) for clients that launch a subprocess
+    ``eng-toolkit serve --transport http [--host --port]``  streamable HTTP at http://host:port/mcp
+    ``eng-toolkit doctor [--no-scan]``                      print the toolkit_doctor report, exit 0/1
+
+    Plain ``eng-toolkit`` with no arguments serves stdio, so ``.mcp.json`` stays a one-liner.
+    The toolkit never calls an LLM and needs no API key: it is a pure tool server.
     """
     import argparse
     import json
 
     parser = argparse.ArgumentParser(prog="eng-toolkit", description="eng-toolkit MCP gateway")
-    parser.add_argument("--doctor", action="store_true", help="run toolkit_doctor and exit")
-    parser.add_argument("--no-scan", action="store_true", help="with --doctor: skip the environment license scan")
+    sub = parser.add_subparsers(dest="command")
+
+    serve = sub.add_parser("serve", help="run the MCP gateway")
+    serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")
+    serve.add_argument("--host", default=DEFAULT_HTTP_HOST, help=f"http only (default {DEFAULT_HTTP_HOST})")
+    serve.add_argument("--port", type=int, default=DEFAULT_HTTP_PORT, help=f"http only (default {DEFAULT_HTTP_PORT})")
+    serve.add_argument("--path", default=DEFAULT_HTTP_PATH, help=f"http only (default {DEFAULT_HTTP_PATH})")
+
+    doctor = sub.add_parser("doctor", help="run toolkit_doctor and exit 0 (healthy) / 1")
+    doctor.add_argument("--no-scan", action="store_true", help="skip the environment license scan")
+
+    # Backward-compatible flags from the first commit.
+    parser.add_argument("--doctor", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--no-scan", action="store_true", help=argparse.SUPPRESS)
+
     args = parser.parse_args(argv)
 
-    if args.doctor:
+    if args.command == "doctor" or args.doctor:
         # FastMCP >= 4 returns the plain function from @tool; older versions return a FunctionTool with .fn
         doctor_fn = getattr(toolkit_doctor, "fn", toolkit_doctor)
         report = doctor_fn(scan_env=not args.no_scan)
         print(json.dumps(report.model_dump(mode="json"), indent=2, ensure_ascii=False))
         raise SystemExit(0 if report.ok else 1)
 
-    gateway.run(transport="stdio", show_banner=False)
+    transport = getattr(args, "transport", "stdio")
+    if transport == "http":
+        gateway.run(
+            transport="http",
+            host=args.host,
+            port=args.port,
+            path=args.path,
+            show_banner=False,
+        )
+    else:
+        gateway.run(transport="stdio", show_banner=False)
 
 
 if __name__ == "__main__":  # pragma: no cover

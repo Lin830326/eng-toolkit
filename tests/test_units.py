@@ -10,6 +10,17 @@ def test_string_with_unit_parses():
     assert math.isclose(q.to("m").magnitude, 0.1)
 
 
+def test_json_string_form_parses():
+    q = parse_quantity('{"value": 210, "unit": "bar"}', name="p", dimension="pressure")
+    assert math.isclose(q.to("Pa").magnitude, 21.0e6)
+
+
+def test_invalid_json_string_is_parse_error():
+    with pytest.raises(UnitsError) as ei:
+        parse_quantity('{"value": 210, unit: bar}', name="p", dimension="pressure")
+    assert ei.value.family == "units.parse_error"
+
+
 def test_mapping_form_parses():
     q = parse_quantity({"value": 210, "unit": "bar"}, name="p", dimension="pressure")
     assert math.isclose(q.to("Pa").magnitude, 21.0e6)

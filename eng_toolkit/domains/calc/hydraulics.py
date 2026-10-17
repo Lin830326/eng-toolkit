@@ -30,12 +30,14 @@ from eng_toolkit.units import parse_quantity, require_positive, to_quantity_out,
 ENGINE = "eng_toolkit.calc.hydraulics"
 TOOL_NAMES: tuple[str, ...] = ("cylinder_force", "pipe_pressure_drop")
 
+# Tool parameters are plain JSON strings (no unions, no nested objects) so that small
+# local models behind LM Studio / Ollama / Cursor can fill them reliably.
 QuantityIn = Annotated[
-    str | dict[str, Any],
+    str,
     Field(
         description=(
-            "Quantity WITH unit: a string like '100 mm' / '210 bar', "
-            "or {'value': 100, 'unit': 'mm'}. Bare numbers are rejected."
+            "Number followed by a unit, as one string, e.g. '100 mm', '210 bar', '40 cP'. "
+            "A bare number without a unit is rejected."
         )
     ),
 ]
@@ -65,17 +67,20 @@ _RE_TURBULENT = 4000.0
     ),
 )
 def cylinder_force(
-    bore: QuantityIn,
-    pressure: QuantityIn,
-    rod: QuantityIn | None = None,
+    bore: Annotated[QuantityIn, Field(description="Cylinder bore (piston) diameter with unit, e.g. '100 mm'")],
+    pressure: Annotated[QuantityIn, Field(description="Working pressure with unit, e.g. '210 bar' or '3000 psi'")],
+    rod: Annotated[
+        str, Field(description="Rod diameter with unit, e.g. '50 mm'. Empty string = no rod (pull = push).")
+    ] = "",
     output_unit: Annotated[str, Field(description="Force unit for the outputs, e.g. 'kN', 'N', 'lbf'")] = "kN",
 ) -> ToolResult:
     inputs = {"bore": bore, "rod": rod, "pressure": pressure, "output_unit": output_unit}
+    has_rod = bool(rod) and str(rod).strip() != ""
 
     def compute(_: JobHandle) -> Computed:
         d = require_positive(parse_quantity(bore, name="bore", dimension="length"), name="bore")
         p = require_positive(parse_quantity(pressure, name="pressure", dimension="pressure"), name="pressure")
-        if rod is None:
+        if not has_rod:
             r = ureg.Quantity(0.0, "mm")
         else:
             r = parse_quantity(rod, name="rod", dimension="length")
@@ -108,7 +113,7 @@ def cylinder_force(
             ),
         }
         warnings = []
-        if rod is None:
+        if not has_rod:
             warnings.append("rod not given: pull force assumes rod diameter 0 (equal to push force)")
         return Computed(
             values=values,

@@ -34,11 +34,11 @@ if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
 
 # 3. doctor
 Write-Host "`n== toolkit_doctor ==" -ForegroundColor Cyan
-uv run eng-toolkit --doctor --no-scan | Select-Object -First 40
+uv run eng-toolkit doctor --no-scan | Select-Object -First 40
 $doctorExit = $LASTEXITCODE
-uv run eng-toolkit --doctor | Out-Null
+uv run eng-toolkit doctor | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "doctor reported failures (see full report: uv run eng-toolkit --doctor)" -ForegroundColor Red
+    Write-Host "doctor reported failures (see full report: uv run eng-toolkit doctor)" -ForegroundColor Red
 } else {
     Write-Host "doctor: OK" -ForegroundColor Green
 }

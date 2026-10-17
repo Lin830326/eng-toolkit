@@ -93,7 +93,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
                 {
                     "diameter": "10 mm",
                     "length": "1 m",
-                    "flow_rate": {"value": math.pi / 4 * 1e-4, "unit": "m^3/s"},
+                    "flow_rate": f"{math.pi / 4 * 1e-4} m^3/s",
                     "density": "870 kg/m^3",
                     "viscosity": "0.04 Pa*s",
                     "output_unit": "Pa",
@@ -102,6 +102,80 @@ async def test_calc_pipe_pressure_drop_over_mcp():
         )
     assert r.ok, r.error
     assert math.isclose(r.value.quantity, 12800.0, rel_tol=1e-9)
+
+
+BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
+MAX_PHASE0_TOOLS = 6
+
+
+@pytest.mark.asyncio
+async def test_tool_schemas_are_small_model_friendly():
+    """Few coarse tools; every input is a basic JSON type with a description (no unions/objects)."""
+    async with Client(gateway) as client:
+        tools = await client.list_tools()
+    assert len(tools) <= MAX_PHASE0_TOOLS, [t.name for t in tools]
+    for tool in tools:
+        assert tool.description and len(tool.description) > 20, tool.name
+        schema = tool.input_schema if hasattr(tool, "input_schema") else tool.inputSchema
+        for pname, prop in schema.get("properties", {}).items():
+            assert "anyOf" not in prop and "oneOf" not in prop, (tool.name, pname, prop)
+            assert prop.get("type") in BASIC_JSON_TYPES, (tool.name, pname, prop)
+            assert prop.get("description"), f"{tool.name}.{pname} has no description"
+
+
+@pytest.mark.asyncio
+async def test_json_string_quantity_is_accepted_through_string_schema():
+    async with Client(gateway) as client:
+        r = _as_result(
+            await client.call_tool(
+                "calc_cylinder_force",
+                {"bore": '{"value": 100, "unit": "mm"}', "rod": "50 mm", "pressure": "210 bar", "output_unit": "N"},
+            )
+        )
+    assert r.ok, r.error
+    assert math.isclose(r.value.quantity, 21.0e6 * math.pi / 4 * 0.1**2, rel_tol=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_doctor_reports_llm_free_operation():
+    async with Client(gateway) as client:
+        r = _as_result(await client.call_tool("toolkit_doctor", {"scan_env": False}))
+    assert r.data["llm_free"]["calls_llm"] is False
+    assert r.data["llm_free"]["requires_api_key"] is False
+    assert r.data["llm_free"]["llm_sdks_installed"] == []
+    assert r.data["transports"] == ["stdio", "http"]
+
+
+def test_source_tree_never_imports_an_llm_sdk():
+    import re
+    from pathlib import Path
+
+    import eng_toolkit
+
+    root = Path(eng_toolkit.__file__).parent
+    pattern = re.compile(r"^\s*(import|from)\s+(anthropic|openai|litellm|langchain|google\.genai|ollama|cohere|mistralai)\b", re.M)
+    hits = [str(p) for p in root.rglob("*.py") if pattern.search(p.read_text(encoding="utf-8"))]
+    assert hits == []
+
+
+def test_cli_parses_serve_and_doctor(monkeypatch):
+    """argparse wiring only: serve dispatches to gateway.run with the chosen transport."""
+    from eng_toolkit.gateway import server as srv
+
+    calls = []
+    monkeypatch.setattr(srv.gateway, "run", lambda **kw: calls.append(kw))
+
+    srv.main([])
+    srv.main(["serve"])
+    srv.main(["serve", "--transport", "http", "--port", "9000", "--host", "0.0.0.0"])
+    assert calls[0]["transport"] == "stdio"
+    assert calls[1]["transport"] == "stdio"
+    assert calls[2]["transport"] == "http" and calls[2]["port"] == 9000 and calls[2]["host"] == "0.0.0.0"
+    assert calls[2]["path"] == "/mcp"
+
+    with pytest.raises(SystemExit) as ei:
+        srv.main(["doctor", "--no-scan"])
+    assert ei.value.code == 0
 
 
 @pytest.mark.asyncio

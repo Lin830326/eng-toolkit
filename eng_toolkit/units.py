@@ -129,6 +129,19 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
                 f"'{name}': unknown unit {unit!r} ({exc})",
                 {"param": name, "received": dict(raw)},
             ) from exc
+    elif isinstance(raw, str) and raw.strip().startswith("{"):
+        # A JSON-encoded {"value": .., "unit": ".."} arriving through a string-only schema.
+        import json
+
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise UnitsError(
+                "units.parse_error",
+                f"'{name}': {raw!r} looks like JSON but is not valid ({exc.msg})",
+                {"param": name, "received": raw},
+            ) from exc
+        return parse_quantity(decoded, name=name, dimension=dimension)
     elif isinstance(raw, str):
         text = raw.strip()
         if not any(ch.isdigit() for ch in text):

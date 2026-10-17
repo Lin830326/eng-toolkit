@@ -49,21 +49,37 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 
 ```bash
 uv sync --all-groups
-uv run eng-toolkit --doctor      # 健康檢查；exit 0 = 全部通過
+uv run eng-toolkit doctor        # 健康檢查；exit 0 = 全部通過
 uv run pytest                    # 測試
 ```
 
 ---
 
-## 接上 Claude Code
+## 啟動伺服器
 
-**方式 A：使用者層級註冊（所有專案都能用）**
+```bash
+uv run eng-toolkit serve --transport stdio                      # 預設；由 MCP 客戶端以子行程啟動
+uv run eng-toolkit serve --transport http --host 127.0.0.1 --port 8765   # streamable HTTP：http://127.0.0.1:8765/mcp
+uv run eng-toolkit doctor                                       # 健康檢查，exit 0 = 通過
+```
+
+`eng-toolkit` 不帶參數等同 `serve --transport stdio`。
+
+**任何 MCP 客戶端都能用**：工具箱內部**不呼叫任何 LLM、不需要任何 API 金鑰**（`toolkit_doctor` 的 `llm_free` 欄位會回報環境裡有沒有 LLM SDK 或金鑰）。Claude Code、OpenAI Codex、Cursor、LM Studio、Ollama 相容前端等皆可接上。
+
+## 接上 MCP 客戶端
+
+所有客戶端的設定格式基本相同：stdio 給 `command` + `args`；HTTP 給 `url`。
+
+**Claude Code（使用者層級，所有專案可用）**
 
 ```bash
 claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-toolkit" eng-toolkit
 ```
 
-**方式 B：專案層級 `.mcp.json`**（本 repo 已附；在 repo 內開 Claude Code 即可）
+或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可）。接上後 `/mcp` 應看到 `eng-toolkit` 與四個工具。
+
+**Cursor**（`~/.cursor/mcp.json` 或專案 `.cursor/mcp.json`）
 
 ```json
 {
@@ -76,7 +92,38 @@ claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-to
 }
 ```
 
-接上後在 Claude Code 中：`/mcp` 應看到 `eng-toolkit` 連線，工具 `toolkit_doctor`、`toolkit_list_tools`、`calc_cylinder_force`、`calc_pipe_pressure_drop`。
+**LM Studio**（Program → Install → Edit `mcp.json`）
+
+```json
+{
+  "mcpServers": {
+    "eng-toolkit": {
+      "command": "uv",
+      "args": ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
+    }
+  }
+}
+```
+
+**HTTP 模式**（先執行 `uv run eng-toolkit serve --transport http`；適合 Ollama 相容前端或遠端客戶端）
+
+```json
+{
+  "mcpServers": {
+    "eng-toolkit": { "url": "http://127.0.0.1:8765/mcp" }
+  }
+}
+```
+
+**OpenAI Codex CLI**（`~/.codex/config.toml`）
+
+```toml
+[mcp_servers.eng-toolkit]
+command = "uv"
+args = ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
+```
+
+> 為了讓地端中小模型也能穩定呼叫，Phase 0 工具維持少量粗粒度（≤ 6 個），所有輸入參數都是**基本 JSON 型別**（字串／布林），每個參數附描述；數量一律是「數字 + 單位」的單一字串，如 `"100 mm"`。
 
 ---
 
@@ -89,7 +136,7 @@ claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-to
 列出已安裝領域、背後引擎（版本、授權分級）與全部工具名稱。
 
 ### `calc_cylinder_force`
-單桿油壓缸理想推力／拉力。輸入：`bore`、`rod`（可省略）、`pressure`、`output_unit`（預設 `kN`）。
+單桿油壓缸理想推力／拉力。輸入：`bore`、`rod`（空字串 = 無桿）、`pressure`、`output_unit`（預設 `kN`）。
 
 ```json
 {"bore": "100 mm", "rod": "50 mm", "pressure": "210 bar"}
@@ -111,7 +158,7 @@ claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-to
 
 ## 輸入規則：每個物理量都要帶單位
 
-接受 `"100 mm"`、`"210 bar"`、`"40 cP"`，或 `{"value": 100, "unit": "mm"}`。
+接受 `"100 mm"`、`"210 bar"`、`"40 cP"`（MCP schema 為單一字串）；也接受 JSON 字串 `'{"value": 100, "unit": "mm"}'`。
 
 | 輸入 | 結果 | `error.family` |
 |---|---|---|
@@ -179,7 +226,7 @@ claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-to
 ```bash
 uv sync --all-groups
 uv run pytest -v
-uv run eng-toolkit --doctor
+uv run eng-toolkit doctor
 ```
 
 新增領域：在 `eng_toolkit/domains/<name>/` 建一個 FastMCP 子 server 與 `DOMAIN = DomainInfo(...)`，在 `eng_toolkit/domains/__init__.py::all_domains` 註冊，把用到的引擎加進 `licenses.KNOWN`。每個工具用 `runner.run_tool` 包裝，輸入過 `units.parse_quantity`，就自動符合契約、落檔與來源紀錄。
