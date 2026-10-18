@@ -432,9 +432,3 @@ def test_isofits_fit_classification_agrees_with_ours():
         ours = iso286.fit_limits(size, f"{hole}/{shaft}")
         assert ours.min_clearance_um == pytest.approx(mmc)
         assert ours.max_clearance_um == pytest.approx(lmc)
-def test_isofits_fit_classification_agrees_with_ours():
-    for size, hole, shaft in [(25.0, "H7", "g6"), (25.0, "H7", "p6"), (25.0, "H7", "k6"), (60.0, "H8", "f7")]:
-        mmc, lmc = isofits.isofit(size, hole, shaft)  # um, mmc = min clearance
-        ours = iso286.fit_limits(size, f"{hole}/{shaft}")
-        assert ours.min_clearance_um == pytest.approx(mmc)
-        assert ours.max_clearance_um == pytest.approx(lmc)
