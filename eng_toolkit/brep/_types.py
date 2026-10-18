@@ -23,3 +23,15 @@ class Mesh:
     vertices: np.ndarray  # (n, 3) float64, millimetres
     triangles: np.ndarray  # (m, 3) int32, counter-clockwise seen from outside
     deflection_mm: float  # chord error bound the tessellation was asked for
+
+
+@dataclass(frozen=True)
+class MeshTopology:
+    """What :func:`eng_toolkit.brep.mesh_topology` found; see there for the exact definitions."""
+
+    edge_manifold_closed: bool  # every edge is shared by two triangles, one in each direction
+    vertex_manifold: bool  # the triangles around every vertex form one fan
+
+    @property
+    def watertight(self) -> bool:
+        return self.edge_manifold_closed and self.vertex_manifold
