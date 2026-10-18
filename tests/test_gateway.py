@@ -15,6 +15,7 @@ EXPECTED_TOOLS = {
     "calc_pipe_pressure_drop",
     "metrology_fit_limits",
     "metrology_stackup_1d",
+    "metrology_fit_search",
 }
 
 
@@ -69,7 +70,7 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
     assert engines["fluids"]["tier"] == "permissive"
     assert engines["pint"]["tier"] == "permissive"
     metrology = next(d for d in r.data["domains"] if d["name"] == "metrology")
-    assert set(metrology["tools"]) == {"metrology_fit_limits", "metrology_stackup_1d"}
+    assert set(metrology["tools"]) == {"metrology_fit_limits", "metrology_stackup_1d", "metrology_fit_search"}
     assert {e["dist"]: e["tier"] for e in metrology["engines"]} == {"pint": "permissive", "numpy": "permissive"}
 
 
@@ -110,7 +111,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_PHASE0_TOOLS = 6  # 2 gateway + 2 calc + 2 metrology
+MAX_TOOLS = 7  # 2 gateway + 2 calc + 3 metrology
 
 
 @pytest.mark.asyncio
@@ -118,7 +119,7 @@ async def test_tool_schemas_are_small_model_friendly():
     """Few coarse tools; every input is a basic JSON type with a description (no unions/objects)."""
     async with Client(gateway) as client:
         tools = await client.list_tools()
-    assert len(tools) <= MAX_PHASE0_TOOLS, [t.name for t in tools]
+    assert len(tools) <= MAX_TOOLS, [t.name for t in tools]
     for tool in tools:
         assert tool.description and len(tool.description) > 20, tool.name
         schema = tool.input_schema if hasattr(tool, "input_schema") else tool.inputSchema

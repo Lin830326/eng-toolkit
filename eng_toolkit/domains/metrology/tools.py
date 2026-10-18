@@ -17,12 +17,20 @@ from pydantic import Field
 from eng_toolkit import __version__
 from eng_toolkit.contract import QuantityOut, ToolResult
 from eng_toolkit.domains.metrology import iso286, stackup
+from eng_toolkit.domains.metrology.fit_search import (
+    BASES,
+    FIT_SET_NAMES,
+    MAX_RESULTS,
+    Candidate,
+    search_fits,
+)
 from eng_toolkit.runner import Computed, JobHandle, run_tool
 from eng_toolkit.units import UnitsError, parse_quantity, to_quantity_out, ureg
 
 ENGINE_ISO286 = "eng_toolkit.metrology.iso286"
 ENGINE_STACKUP = "eng_toolkit.metrology.stackup"
-TOOL_NAMES: tuple[str, ...] = ("fit_limits", "stackup_1d")
+ENGINE_FIT_SEARCH = "eng_toolkit.metrology.fit_search"
+TOOL_NAMES: tuple[str, ...] = ("fit_limits", "stackup_1d", "fit_search")
 
 QuantityIn = Annotated[
     str,
@@ -362,4 +370,143 @@ def stackup_1d(
     )
 
 
-__all__ = ["TOOL_NAMES", "fit_limits", "server", "stackup_1d"]
+# --------------------------------------------------------------------------- fit search
+
+
+def _candidate_data(c: Candidate) -> dict[str, Any]:
+    limits = c.limits
+    return {
+        "fit": c.fit,
+        "hole": limits.hole.designation,
+        "shaft": limits.shaft.designation,
+        "preferred": c.preferred,
+        "fit_type": limits.fit_type,
+        "min_clearance_mm": round(limits.min_clearance_um / 1000, 6),
+        "max_clearance_mm": round(limits.max_clearance_um / 1000, 6),
+        "hole_tolerance_um": limits.hole.tolerance_um,
+        "shaft_tolerance_um": limits.shaft.tolerance_um,
+    }
+
+
+def _choice(value: str, allowed: tuple[str, ...], param: str) -> None:
+    if value not in allowed:
+        raise _invalid(f"{param} must be one of {list(allowed)}, got {value!r}", param=param)
+
+
+@server.tool(
+    name="fit_search",
+    description=(
+        "Reverse lookup of ISO 286 fits: which standard fits keep the clearance between min_clearance "
+        "and max_clearance at a nominal size from 3 to 500 mm. Clearance = hole size - shaft size, so "
+        "give interference as a negative length, e.g. min '-0.05 mm', max '-0.001 mm'. A fit qualifies "
+        "when its minimum clearance is at least min_clearance and its maximum clearance is at most "
+        "max_clearance. Searches the 10 preferred fits (default) or a wider 'common' set, on hole basis "
+        "(H holes) or shaft basis (h shafts). Candidates come best first, ranked by larger tolerances "
+        "(a cost proxy), then by closeness to the window centre. If nothing fits, the closest misses "
+        "are returned with how far outside the window they lie."
+    ),
+)
+def fit_search(
+    nominal: Annotated[QuantityIn, Field(description="Nominal size of hole and shaft with unit, e.g. '25 mm'. Range 3 to 500 mm.")],
+    min_clearance: Annotated[
+        str,
+        Field(
+            description=(
+                "Smallest clearance the assembly tolerates, with unit, e.g. '0 mm', '0.007 mm'. "
+                "Negative means interference: '-0.03 mm' allows up to 0.03 mm of interference."
+            )
+        ),
+    ],
+    max_clearance: Annotated[
+        str,
+        Field(
+            description=(
+                "Largest clearance the assembly tolerates, with unit, e.g. '0.05 mm'. "
+                "Must not be below min_clearance; negative values are interference."
+            )
+        ),
+    ],
+    basis: Annotated[
+        str, Field(description="'hole' (default): H holes with shafts c..u, e.g. H7/g6. 'shaft': h shafts with holes C..U, e.g. G7/h6")
+    ] = "hole",
+    fit_set: Annotated[
+        str,
+        Field(
+            description=(
+                "'preferred' (default): the 10 preferred fits of the basis. "
+                "'common': every hole grade 6 to 11 paired with shaft letters c..u at the same or one finer grade"
+            )
+        ),
+    ] = "preferred",
+    max_results: Annotated[int, Field(description="Maximum number of candidates returned, 1 to 50")] = 10,
+) -> ToolResult:
+    inputs = {
+        "nominal": nominal,
+        "min_clearance": min_clearance,
+        "max_clearance": max_clearance,
+        "basis": basis,
+        "fit_set": fit_set,
+        "max_results": max_results,
+    }
+
+    def compute(_: JobHandle) -> Computed:
+        size_mm = round(_length_in(nominal, name="nominal", unit="millimeter"), 9)
+        # Rounded to the 1e-6 um grid so a window edge typed as '0.007 mm' equals the table's 7 um exactly.
+        window_min = round(_length_in(min_clearance, name="min_clearance", unit="micrometer"), 6)
+        window_max = round(_length_in(max_clearance, name="max_clearance", unit="micrometer"), 6)
+        if window_min > window_max:
+            raise _invalid(
+                f"min_clearance ({min_clearance}) is above max_clearance ({max_clearance})", param="min_clearance"
+            )
+        _choice(basis, BASES, "basis")
+        _choice(fit_set, FIT_SET_NAMES, "fit_set")
+        if not (1 <= max_results <= MAX_RESULTS):
+            raise _invalid(f"max_results must be between 1 and {MAX_RESULTS}, got {max_results}", param="max_results")
+
+        found = search_fits(size_mm, window_min, window_max, basis=basis, fit_set=fit_set)
+        shown = found.candidates[:max_results]
+
+        values = {"candidate_count": QuantityOut(quantity=len(shown), unit="dimensionless")}
+        warnings: list[str] = []
+        data: dict[str, Any] = {
+            "basis": basis,
+            "fit_set": fit_set,
+            "window_mm": [round(window_min / 1000, 6), round(window_max / 1000, 6)],
+            "size_range_mm": list(found.size_range_mm),
+            "searched": found.searched,
+            "skipped_undefined": found.skipped_undefined,
+            "candidates": [_candidate_data(c) for c in shown],
+        }
+        if shown:
+            best = shown[0].limits
+            values["best_min_clearance"] = _mm(best.min_clearance_um / 1000)
+            values["best_max_clearance"] = _mm(best.max_clearance_um / 1000)
+            if len(found.candidates) > len(shown):
+                warnings.append(
+                    f"{len(found.candidates)} fits qualify; only the best {len(shown)} are listed. "
+                    "Raise max_results (up to 50) to see more"
+                )
+        else:
+            data["nearest"] = [{**_candidate_data(c), "violation_um": c.violation_um} for c in found.nearest]
+            warnings.append(
+                f"No {fit_set} {basis}-basis fit keeps the clearance inside the window. data.nearest lists the "
+                "closest misses with violation_um, the total micrometres by which each lies outside the window; "
+                "widen the window, or try fit_set='common' or the other basis"
+            )
+        return Computed(values=values, primary="candidate_count", warnings=warnings, data=data)
+
+    return run_tool(
+        tool_name="metrology_fit_search",
+        engine=ENGINE_FIT_SEARCH,
+        version=__version__,
+        inputs=inputs,
+        compute=compute,
+        standing_warnings=(
+            "Candidates are ranked by tolerance size, a manufacturing-cost proxy, not by suitability: "
+            "the ranking is not a judgement that a fit suits the application. Check function, temperature, "
+            "surface finish and assembly before choosing. The standard itself is authoritative.",
+        ),
+    )
+
+
+__all__ = ["TOOL_NAMES", "fit_limits", "fit_search", "server", "stackup_1d"]
