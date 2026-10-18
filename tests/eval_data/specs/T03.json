@@ -1,0 +1,1 @@
+{"features":[{"op":"box","name":"plate","size":["100 mm","60 mm","8 mm"]},{"op":"hole","name":"corner_holes","at":[["10 mm","10 mm","8 mm"],["90 mm","10 mm","8 mm"],["10 mm","50 mm","8 mm"],["90 mm","50 mm","8 mm"]],"axis":"-z","diameter":"6 mm","depth":"thru"}]}

@@ -1,0 +1,1 @@
+{"features":[{"op":"cylinder","name":"tube_body","diameter":"40 mm","height":"100 mm","at":["0 mm","0 mm","0 mm"],"axis":"+z"},{"op":"hole","name":"bore","at":[["0 mm","0 mm","100 mm"]],"axis":"-z","diameter":"30 mm","depth":"thru"}]}

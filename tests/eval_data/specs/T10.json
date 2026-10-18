@@ -1,0 +1,1 @@
+{"features":[{"op":"box","name":"block","size":["40 mm","40 mm","30 mm"]},{"op":"hole","name":"blind_hole","at":[["20 mm","20 mm","30 mm"]],"axis":"-z","diameter":"10 mm","depth":"15 mm"}]}

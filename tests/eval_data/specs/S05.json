@@ -1,0 +1,1 @@
+{"features":[{"op":"box","name":"bar","size":["100 mm","20 mm","8 mm"]},{"op":"hole","name":"row_holes","at":[["10 mm","10 mm","8 mm"],["25 mm","10 mm","8 mm"],["40 mm","10 mm","8 mm"],["55 mm","10 mm","8 mm"],["70 mm","10 mm","8 mm"]],"axis":"-z","diameter":"6 mm","depth":"thru"}]}

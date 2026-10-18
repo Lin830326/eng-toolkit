@@ -1,0 +1,1 @@
+{"features":[{"op":"cylinder","name":"lower_section","diameter":"20 mm","height":"30 mm","at":["0 mm","0 mm","0 mm"],"axis":"+z"},{"op":"cylinder","name":"upper_section","diameter":"12 mm","height":"40 mm","at":["0 mm","0 mm","30 mm"],"axis":"+z"}]}

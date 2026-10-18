@@ -1,0 +1,1 @@
+{"features":[{"op":"box","name":"outer","size":["60 mm","40 mm","30 mm"],"at":["0 mm","0 mm","0 mm"],"mode":"add"},{"op":"box","name":"cavity","size":["54 mm","34 mm","28 mm"],"at":["3 mm","3 mm","3 mm"],"mode":"cut"}]}

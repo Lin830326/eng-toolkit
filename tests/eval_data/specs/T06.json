@@ -1,0 +1,1 @@
+{"features":[{"op":"box","name":"block","size":["50 mm","50 mm","20 mm"]},{"op":"fillet","name":"vertical_edges","edges":"|z","radius":"3 mm"}]}

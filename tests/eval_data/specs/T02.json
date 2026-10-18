@@ -1,0 +1,1 @@
+{"features":[{"op":"box","name":"block","size":["60 mm","30 mm","15 mm"]},{"op":"hole","name":"centre_hole","at":[["30 mm","15 mm","15 mm"]],"axis":"-z","diameter":"8 mm","depth":"thru"}]}

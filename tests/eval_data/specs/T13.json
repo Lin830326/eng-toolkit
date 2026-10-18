@@ -1,0 +1,1 @@
+{"features":[{"op":"revolve","name":"washer","plane":"xz","profile":{"rect":{"size":["6 mm","3 mm"],"at":["8 mm","0 mm"]}},"axis":"v","angle":"360 deg","mode":"add"}]}
