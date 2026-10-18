@@ -527,3 +527,51 @@ def test_the_result_lists_the_model_as_an_input_file(models):
     assert ref.path == str(Path(models["box"]).resolve())
     assert ref.bytes == Path(models["box"]).stat().st_size
     assert ref.sha256 == r.data["face_ids_valid_for"]
+
+
+# --------------------------------------------------------------------------- documented conventions
+# The README and data.conventions / data.coverage state three behaviours; these tests keep the text honest.
+
+
+@pytest.fixture(scope="module")
+def convention_models(ocp, tmp_path_factory):
+    import cad_fixtures as cad
+
+    root = tmp_path_factory.mktemp("conventions")
+    probe = cad.probe_part()
+    return {
+        "probe": cad.write_step(probe, root / "probe.step"),
+        "probe_iges_faces": cad.write_iges_faces(probe, root / "probe_faces.iges"),
+    }
+
+
+def test_a_point_to_face_distance_uses_the_trimmed_face_not_its_infinite_plane(convention_models):
+    inventory = run(convention_models["probe"])
+    top = next(f["id"] for f in inventory.data["faces"] if f["kind"] == "plane" and round(f["normal"][2]) == 1)
+    r = run(convention_models["probe"], queries=f"distance P(25 mm, 25 mm, 50 mm) F{top}")
+    assert r.ok, r.error
+    # straight down from (25, 25) is the diameter-10 hole, so the nearest point of the trimmed top face is on the
+    # hole rim (radius 5, z = 20): hypot(30, 5), not the 30 of the infinite plane
+    assert r.values["q1"].quantity == pytest.approx(math.hypot(30, 5), abs=1e-9)
+    assert abs(r.values["q1"].quantity - 30.0) > 0.4
+
+
+def test_the_runtime_conventions_define_distance_with_numbers_the_tests_prove(convention_models):
+    text = run(convention_models["probe"]).data["conventions"]["distance"]
+    assert "trimmed" in text and "wall" in text
+    assert f"{math.hypot(30, 5):.3f}" in text  # 30.414, shown above
+    assert "20 mm" in text  # the hole at 25 mm from a parallel face, radius 5: covered by the hole-distance test
+
+
+def test_a_surface_only_iges_has_no_volume_no_holes_and_says_so(convention_models):
+    r = run(convention_models["probe_iges_faces"], density="2700 kg/m^3")
+    assert r.ok, r.error
+    assert r.data["solids"] == 0
+    assert "volume" not in r.values and "mass" not in r.values
+    assert r.values["surface_area"].quantity == pytest.approx(PROBE_AREA, rel=1e-9)  # still exact
+    assert r.data["holes_total"] == 0
+    assert r.data["faces_by_kind"].get("other", 0) >= 1  # the cylinders, stored as surfaces of revolution
+    assert any("no closed solid" in w for w in r.warnings)
+    assert any("IGES" in c and "no hole is detected" in c for c in r.data["coverage"])
+    # the same part as STEP keeps its hole
+    assert run(convention_models["probe"]).data["holes_total"] == 1

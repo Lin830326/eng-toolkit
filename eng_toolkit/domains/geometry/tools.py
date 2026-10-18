@@ -39,6 +39,10 @@ COVERAGE: tuple[str, ...] = (
     "threads are not detected: a threaded hole is reported as its plain cylinder",
     "a hole is a concave cylinder whose faces cover the full circumference; slots, pockets and non-round holes are not holes",
     "a drill-point cone is not part of depth_mm, which is the cylindrical depth",
+    "an IGES file written as plain surfaces (not a solid) can store a cylinder as a surface of revolution: it is "
+    "listed with kind 'other', so no hole is detected in it, and with no closed solid there is no volume either; "
+    "this was seen with Open CASCADE's own IGES writer in face mode, other exporters vary. Use STEP, or export "
+    "the IGES as a solid, when volume or holes matter",
     "tolerances, fits and other design intent are not in the geometry",
 )
 CONVENTIONS: dict[str, str] = {
@@ -50,6 +54,13 @@ CONVENTIONS: dict[str, str] = {
     "thru": (
         "true when exact rays along the axis direction, started just beyond each end of the bore and a little off "
         "its axis, meet nothing: both ends open to the outside. False for a blind hole with a bottom"
+    ),
+    "distance": (
+        "shortest distance between the actual surfaces of the two entities. A face is the trimmed face, bounded by "
+        "its edges, not its infinite plane: a point 30 mm above the middle of a diameter-10 hole in a plate's top "
+        "face is 30.414 mm from that face, not 30. A hole is its wall cylinder, so the distance is to the nearest "
+        "point of the wall, not to the axis: a diameter-10 hole whose axis is 25 mm from a parallel face is 20 mm "
+        "from it. A point is a point"
     ),
     "angle": (
         "two planes: between their outward normals, 0 to 180 degrees. When either is a cylinder face or a hole, "

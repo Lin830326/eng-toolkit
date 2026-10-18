@@ -217,7 +217,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 ### `geometry_measure`
 3D CAD 模型的精確量測：回答「這個零件多大、多重、有哪些面和孔、這兩個特徵相距多遠」。需要選用的 `cad` extra（`uv sync --extra cad`，見上方安裝）。數字是檔案 B-rep 的精確性質（OpenCASCADE），不是離散化網格的近似。輸入：`model_path`（`.step` `.stp` `.iges` `.igs` `.brep`；`.stl` 回 `input.unsupported_format`，網格檔留待之後的版本）、`queries`（可省略；以 `;` 分隔、最多 20 個）、`density`（可省略，帶單位，如 `"2700 kg/m^3"`，會多回傳 `mass`；裸數字回 `units.bare_number`，非密度的單位回 `units.dimension_mismatch`）、`inventory_limit`（0 到 500，預設 50：`data` 內列出的面與孔的數量；`inventory.json` 產物永遠列出全部）、`output_unit`（預設 `mm`）。
 
-查詢語法：`distance A B`（兩個實體的最短距離）、`angle A B`（角度，單位 degree）、`diameter A`、`radius A`、`area A`、`thickness P(x, y, z) <軸>`（從該點沿軸射出一條精確射線，取前兩個交點的距離，即壁厚）。`A`／`B` 是 `F<n>`（面）、`H<n>`（孔）或 `P(10 mm, 0 mm, 5 mm)`（點，座標必須帶單位，裸數字回 `units.bare_number`）；軸是 `+x -x +y -y +z -z` 其中之一。孔的距離與面積以孔壁的圓柱面計；`diameter`／`radius` 只適用圓柱面與孔，其他回 `geometry.unsupported_query`。`angle` 兩個平面時取外法向量夾角（0 到 180 度）；只要其中一個是圓柱面或孔，就取軸線的夾角（軸線沒有方向，0 到 90 度）。引用不存在的 `F999` 回 `geometry.unknown_entity`，`details` 帶 `ref`、`faces`、`holes`（模型實際有幾個面和孔）與 `query_index`；語法錯誤回 `input.invalid`，`details.query_index`（從 0 起算）與 `details.query` 指出是哪一個。壁厚的射線穿不到兩個交點（例如正好穿過孔）時不是錯誤：該 `q` 不出現在 `values`，`data.queries[i].found` 為 `false`，並加一則警告。
+查詢語法：`distance A B`（兩個實體實際表面之間的最短距離：面是被邊界修剪後的那一片，不是它延伸出去的無限大平面，所以點在孔正上方 30 mm、孔半徑 5 mm 時，到頂面是 30.414 mm 而不是 30）、`angle A B`（角度，單位 degree）、`diameter A`、`radius A`、`area A`、`thickness P(x, y, z) <軸>`（從該點沿軸射出一條精確射線，取前兩個交點的距離，即壁厚）。`A`／`B` 是 `F<n>`（面）、`H<n>`（孔）或 `P(10 mm, 0 mm, 5 mm)`（點，座標必須帶單位，裸數字回 `units.bare_number`）；軸是 `+x -x +y -y +z -z` 其中之一。孔的距離與面積以孔壁的圓柱面計（直徑 10 mm、軸線離平行面 25 mm 的孔，到該面是 20 mm，不是 25）；`diameter`／`radius` 只適用圓柱面與孔，其他回 `geometry.unsupported_query`。`angle` 兩個平面時取外法向量夾角（0 到 180 度）；只要其中一個是圓柱面或孔，就取軸線的夾角（軸線沒有方向，0 到 90 度）。引用不存在的 `F999` 回 `geometry.unknown_entity`，`details` 帶 `ref`、`faces`、`holes`（模型實際有幾個面和孔）與 `query_index`；語法錯誤回 `input.invalid`，`details.query_index`（從 0 起算）與 `details.query` 指出是哪一個。壁厚的射線穿不到兩個交點（例如正好穿過孔）時不是錯誤：該 `q` 不出現在 `values`，`data.queries[i].found` 為 `false`，並加一則警告。
 
 ```json
 {"model_path": "C:/cad/bracket.step", "density": "2700 kg/m^3",
@@ -227,7 +227,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 
 孔的辨識規則：孔是**凹**的圓柱面，且（可能由兩個半面拼成）涵蓋整圈；圓角是局部圓柱而且是凸的，不算孔。貫穿與否（`thru`）用精確射線判斷：從圓柱段兩端各往外一點點、略偏離軸線的幾條沿軸向射線，若都沒碰到任何東西，那一端就通到零件外面；兩端都通是貫穿孔，只有一端通是有底的盲孔（偏離軸線，錐形鑽頭底才不會擋住射線）。貫穿孔沒有自己的入口，所以從其主軸的正向端鑽入（`axis` 的主要分量為負）。包住凸台的環形槽外壁不算孔。**不偵測**沉孔、錐孔與螺紋：沉孔會被列成貫穿孔旁邊另一個盲孔，`data.coverage` 會明講這些限制。
 
-面編號（`F<n>`）是 OpenCASCADE 走訪面的順序，孔編號依軸向、直徑、入口排序：兩者只對**同一個檔案的位元組與同一版 OpenCASCADE** 有效，`face_ids_valid_for` 給出該檔的 sha256，重新匯出的檔案要重新取得清單。先不帶 `queries` 呼叫一次讀 `data.faces`／`data.holes`，再下查詢。單位：STEP 與 IGES 由 OpenCASCADE 依檔內單位轉成 mm，BREP 沒有單位，數字一律當 mm。IGES 只有在輸出端寫成實體（B-rep solid）時才有體積；只有曲面的 IGES 沒有封閉實體，`volume` 不出現，`surface_area` 成為主值並警告。檔案沒有封閉實體（殼面、散面）時同樣如此，且 `density` 會被忽略並警告；多個實體時體積與面積是各實體的總和，重疊的實體會重複計算。這些結果沒有經過工程核可，量測的前提（單位、檔案是否忠於設計）由使用者負責。
+面編號（`F<n>`）是 OpenCASCADE 走訪面的順序，孔編號依軸向、直徑、入口排序：兩者只對**同一個檔案的位元組與同一版 OpenCASCADE** 有效，`face_ids_valid_for` 給出該檔的 sha256，重新匯出的檔案要重新取得清單。先不帶 `queries` 呼叫一次讀 `data.faces`／`data.holes`，再下查詢。單位：STEP 與 IGES 由 OpenCASCADE 依檔內單位轉成 mm，BREP 沒有單位，數字一律當 mm。IGES 只有在輸出端寫成實體（B-rep solid）時才有體積；只有曲面的 IGES 沒有封閉實體，`volume` 不出現，`surface_area` 成為主值並警告。曲面 IGES 還可能把圓柱存成旋轉曲面，列為 `kind: other` 而不是圓柱，所以**偵測不到孔**（Open CASCADE 自己的 IGES 曲面輸出就是如此，其他 CAD 的輸出各不相同）；需要體積或孔資訊時請用 STEP，或把 IGES 輸出成實體。檔案沒有封閉實體（殼面、散面）時同樣如此，且 `density` 會被忽略並警告；多個實體時體積與面積是各實體的總和，重疊的實體會重複計算。這些結果沒有經過工程核可，量測的前提（單位、檔案是否忠於設計）由使用者負責。
 
 ---
 

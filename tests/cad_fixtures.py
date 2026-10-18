@@ -123,3 +123,12 @@ def write_iges(shape, path: Path) -> Path:
 def write_brep(shape, path: Path) -> Path:
     assert BRepTools.Write_s(shape, str(path))
     return path
+
+
+def write_iges_faces(shape, path: Path) -> Path:
+    """IGES as loose trimmed surfaces: no solid, and cylinders come out as surfaces of revolution."""
+    writer = IGESControl_Writer("MM", 0)
+    writer.AddShape(shape)
+    writer.ComputeModel()
+    assert writer.Write(str(path))
+    return path
