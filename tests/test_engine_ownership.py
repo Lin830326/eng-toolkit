@@ -1,4 +1,4 @@
-"""One owner per engine: OCP lives in eng_toolkit/brep, Open3D in metrology/scan.py, and brep's internals stay inside brep."""
+"""One owner per engine: OCP lives in eng_toolkit/brep, Open3D in metrology/scan.py, ezdxf in the drawing domain's dxf.py, and brep's internals stay inside brep."""
 
 import ast
 from pathlib import Path
@@ -8,6 +8,7 @@ import pytest
 PACKAGE = Path(__file__).resolve().parents[1] / "eng_toolkit"
 OCP_OWNER = "brep/"
 OPEN3D_OWNER = "domains/metrology/scan.py"
+EZDXF_OWNER = "domains/drawing/dxf.py"
 BREP = "eng_toolkit.brep"
 
 
@@ -43,6 +44,8 @@ def violations(source: str, relpath: str) -> list[str]:
                 found.append(f"{relpath}:{node.lineno} imports {name}; only eng_toolkit/brep may use OCP")
             if _is_module(name, "open3d") and relpath != OPEN3D_OWNER:
                 found.append(f"{relpath}:{node.lineno} imports {name}; only {OPEN3D_OWNER} may use Open3D")
+            if _is_module(name, "ezdxf") and relpath != EZDXF_OWNER:
+                found.append(f"{relpath}:{node.lineno} imports {name}; only {EZDXF_OWNER} may use ezdxf")
             if _is_module(name, BREP) and not inside_brep:
                 private = [part for part in name[len(BREP) :].split(".") if part.startswith("_")]
                 if private:
@@ -75,6 +78,7 @@ def test_the_owners_actually_use_their_engines():
     sources = dict(_modules())
     assert "OCP" in sources["brep/_files.py"]
     assert "open3d" in sources[OPEN3D_OWNER]
+    assert "ezdxf" in sources[EZDXF_OWNER]
 
 
 @pytest.mark.parametrize(

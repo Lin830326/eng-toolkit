@@ -19,6 +19,7 @@ EXPECTED_TOOLS = {
     "metrology_check_scan",
     "geometry_measure",
     "geometry_make_part",
+    "drawing_make_views",
 }
 
 
@@ -55,8 +56,9 @@ async def test_toolkit_doctor_returns_contract_and_is_healthy():
     for dist in ("fastmcp", "pint", "pydantic", "fluids", "numpy"):
         assert deps[dist]["status"] == "ok", deps[dist]
         assert deps[dist]["detected_tier"] == "permissive"
-    for dist in ("open3d", "cadquery-ocp-novtk"):
+    for dist in ("open3d", "cadquery-ocp-novtk", "ezdxf"):
         assert deps[dist]["status"] in ("ok", "not-installed (optional)"), deps[dist]
+    assert deps["pymupdf"]["status"] == "not-installed (optional)", deps["pymupdf"]  # the AGPL guard row: it must never be installed
     assert deps["cadquery-ocp-novtk"]["declared_tier"] == "lgpl-dynamic"
     assert "OCCT" in deps["cadquery-ocp-novtk"]["bundled_license"]
     assert deps["open3d"]["optional"] is True and deps["numpy"]["optional"] is False
@@ -103,6 +105,16 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
     ocp = next(e for e in geometry["engines"] if e["dist"] == "cadquery-ocp-novtk")
     assert ocp["optional"] is True
     assert "OCCT" in ocp["bundled_license"]
+    drawing = next(d for d in r.data["domains"] if d["name"] == "drawing")
+    assert set(drawing["tools"]) == {"drawing_make_views"}
+    assert {e["dist"]: e["tier"] for e in drawing["engines"]} == {
+        "pint": "permissive",
+        "numpy": "permissive",
+        "cadquery-ocp-novtk": "lgpl-dynamic",
+        "ezdxf": "permissive",
+    }
+    ezdxf = next(e for e in drawing["engines"] if e["dist"] == "ezdxf")
+    assert ezdxf["optional"] is True and ezdxf["declared_license"] == "MIT"
 
 
 def _doctor(monkeypatch, detected: dict[str, tuple[str | None, str | None]]) -> ToolResult:
@@ -119,15 +131,15 @@ def _dep(r: ToolResult, dist: str) -> dict:
 
 
 def test_doctor_reports_a_missing_optional_engine_without_failing(monkeypatch):
-    r = _doctor(monkeypatch, {"open3d": (None, None), "cadquery-ocp-novtk": (None, None)})
-    for dist in ("open3d", "cadquery-ocp-novtk"):
+    r = _doctor(monkeypatch, {"open3d": (None, None), "cadquery-ocp-novtk": (None, None), "ezdxf": (None, None)})
+    for dist in ("open3d", "cadquery-ocp-novtk", "ezdxf"):
         row = _dep(r, dist)
         assert row["status"] == "not-installed (optional)"
         assert row["version"] is None
         assert row["optional"] is True
     assert r.ok
     assert r.data["failures"] == []
-    assert not any("open3d" in w or "cadquery" in w for w in r.warnings)
+    assert not any("open3d" in w or "cadquery" in w or "ezdxf" in w for w in r.warnings)
 
 
 def test_doctor_still_fails_on_a_missing_required_engine(monkeypatch):
@@ -184,6 +196,23 @@ def test_doctor_does_not_fail_on_an_optional_gpl_engine_that_is_not_installed(mo
     assert r.ok
 
 
+def test_doctor_fails_when_pymupdf_is_installed(monkeypatch):
+    """ezdxf[draw] would pull in PyMuPDF (AGPL): the guard row makes that a policy failure, whatever its metadata says."""
+    for metadata in ("AGPL-3.0-only", "MIT"):
+        r = _doctor(monkeypatch, {"pymupdf": ("1.24.0", metadata)})
+        row = _dep(r, "pymupdf")
+        assert row["status"] == "policy-violation" and row["declared_tier"] == "forbidden"
+        assert not r.ok
+        assert any("pymupdf" in f and "forbidden" in f for f in r.data["failures"]), r.data["failures"]
+
+
+def test_doctor_names_ezdxf_with_its_license(monkeypatch):
+    r = _doctor(monkeypatch, {"ezdxf": ("1.4.5", "MIT")})
+    row = _dep(r, "ezdxf")
+    assert (row["status"], row["declared_tier"], row["detected_tier"], row["optional"]) == ("ok", "permissive", "permissive", True)
+    assert r.ok
+
+
 @pytest.mark.asyncio
 async def test_calc_cylinder_force_over_mcp():
     async with Client(gateway) as client:
@@ -221,7 +250,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_TOOLS = 10  # 2 gateway + 2 calc + 4 metrology + 2 geometry
+MAX_TOOLS = 11  # 2 gateway + 2 calc + 4 metrology + 2 geometry + 1 drawing
 
 
 @pytest.mark.asyncio
