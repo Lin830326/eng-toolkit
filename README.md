@@ -293,6 +293,7 @@ uv run eng-toolkit doctor
 
 * [docs/metrology-design.md](docs/metrology-design.md)：`metrology` 領域的設計決策（資料表自建、NumPy 而非 monaco、工具切分粒度）。
 * [docs/iso286-data.md](docs/iso286-data.md)：ISO 286 資料表來源、授權、涵蓋範圍與已知缺口。
+* [docs/geometry-drawing/design.md](docs/geometry-drawing/design.md)：`geometry` 與 `drawing` 領域的合成設計（尚未實作）：兩份候選設計與跨評審結論、切片交付計畫、待專案負責人決定的問題。
 
 ## 路線圖（摘要）
 
