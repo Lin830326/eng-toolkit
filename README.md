@@ -4,7 +4,7 @@
 
 > ⚠️ 所有輸出皆標示 `review_status: "unreviewed"`。本工具箱的結果是**未經工程核可**的估算，必須由合格工程師複核後才能用於設計或採購。
 
-目前為 **Phase 0 骨架**：一個閘道 + 一個 `calc` 領域（油壓計算）。CAD／2D 圖檔／量測／EDA／模擬等領域尚未開始。
+目前有兩個領域：`calc`（油壓計算）與 `metrology`（ISO 286 配合查詢、一維公差堆疊）。CAD／2D 圖檔／EDA／模擬等領域尚未開始。
 
 ---
 
@@ -20,7 +20,10 @@ Claude Code / 任何 MCP 客戶端
 │   ├── mount(namespace="calc") ──► calc 子 server │
 │   │        calc_cylinder_force                 │
 │   │        calc_pipe_pressure_drop  (fluids)   │
-│   └── (未來) cad_*, dxf_*, meas_*, eda_* ...    │
+│   ├── mount(namespace="metrology") ► metrology 子 server│
+│   │        metrology_fit_limits  (ISO 286 自建表)  │
+│   │        metrology_stackup_1d  (NumPy)           │
+│   └── (未來) cad_*, dxf_*, eda_* ...               │
 ├────────────────────────────────────────────────┤
 │  contract.py   統一回傳契約 (pydantic)          │
 │  units.py      單位守門 (pint)：拒收裸數字       │
@@ -123,7 +126,7 @@ command = "uv"
 args = ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
 ```
 
-> 為了讓地端中小模型也能穩定呼叫，Phase 0 工具維持少量粗粒度（≤ 6 個），所有輸入參數都是**基本 JSON 型別**（字串／布林），每個參數附描述；數量一律是「數字 + 單位」的單一字串，如 `"100 mm"`。
+> 為了讓地端中小模型也能穩定呼叫，工具維持少量粗粒度（目前 6 個），所有輸入參數都是**基本 JSON 型別**（字串／布林），每個參數附描述；數量一律是「數字 + 單位」的單一字串，如 `"100 mm"`。
 
 ---
 
@@ -153,6 +156,23 @@ args = ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
 ```
 → `pressure_drop ≈ 0.128 bar ± 5%`、`velocity`、`reynolds`、`friction_factor_darcy`、`head_loss`。
 不含管件、彎頭、進出口與高程損失。
+
+### `metrology_fit_limits`
+ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，如 `"25 mm"`）、`fit`（孔大寫／軸小寫，如 `"H7/g6"`）。IT01–IT18、孔 A–ZC／軸 a–zc，資料表自建於 `eng_toolkit/domains/metrology/data/iso286.json`（來源、授權、涵蓋範圍與已知缺口見 [docs/iso286-data.md](docs/iso286-data.md)）。
+
+```json
+{"nominal": "25 mm", "fit": "H7/g6"}
+```
+→ 孔 `25.000–25.021 mm`、軸 `24.980–24.993 mm`、`min_clearance = 0.007 mm`、`max_clearance = 0.041 mm`、`data.fit_type = "clearance"`；另有上下偏差（µm）、公差、極限尺寸。間隙為「孔尺寸 − 軸尺寸」，負值即干涉（`data.max_interference_mm` 等已換算）。尺寸超出 3–500 mm、未知或格式錯誤的配合代號（`input.unknown_fit_code`）、標準未定義的組合（`input.undefined_class`）都會回明確錯誤。表中只用公式驗證而無第二來源的格子，會在 `warnings` 註明。
+
+### `metrology_stackup_1d`
+一維公差堆疊。`chain` 為 JSON 陣列字串，每個環含 `nominal`、對稱公差 `tol` 或 `plus`/`minus`（皆為量值，`0 mm` 也要帶單位）、`direction`（`"+"` 加入／`"-"` 減去）。`method`：`worst_case`（預設）或 `rss`（各環公差視為獨立常態的 ±3σ）。選配 `monte_carlo=true`（固定 `seed`，預設 12345；`samples` 1000–2000000；`distribution` 為 `normal` 或 `uniform`），配合 `lower_limit`／`upper_limit` 回傳超出規格的機率（附二項標準誤）。
+
+```json
+{"chain": "[{\"name\":\"A\",\"nominal\":\"50 mm\",\"tol\":\"0.10 mm\",\"direction\":\"+\"},{\"name\":\"B\",\"nominal\":\"20 mm\",\"plus\":\"0 mm\",\"minus\":\"0.12 mm\",\"direction\":\"-\"},{\"name\":\"C\",\"nominal\":\"29.5 mm\",\"tol\":\"0.05 mm\",\"direction\":\"-\"}]",
+ "method": "rss"}
+```
+→ `result_nominal = 0.50 mm`、`result_mean = 0.56 mm`、`result_min/max = 0.433/0.687 mm`，`data.contributions` 給每環佔比。只算一維線性鏈，不含形位公差、熱變形與裝配效應。
 
 ---
 
@@ -213,7 +233,7 @@ args = ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
 | `gpl-isolated` | GPL | 絕不 import；獨立行程，以 CLI 與檔案交接 |
 | `forbidden` | AGPL、非商業、source-available | 不進產品 |
 
-目前核心依賴全為 permissive：fastmcp (Apache-2.0)、mcp (MIT)、pydantic (MIT)、pint (BSD-3-Clause)、fluids (MIT)。`tests/test_licenses.py` 會在 CI 中斷言環境裡沒有任何 GPL／AGPL 套件。
+目前核心依賴全為 permissive：fastmcp (Apache-2.0)、mcp (MIT)、pydantic (MIT)、pint (BSD-3-Clause)、fluids (MIT)、numpy (BSD-3-Clause)。`tests/test_licenses.py` 會在 CI 中斷言環境裡沒有任何 GPL／AGPL 套件。
 
 ## Clean-room 聲明
 
@@ -231,6 +251,11 @@ uv run eng-toolkit doctor
 
 新增領域：在 `eng_toolkit/domains/<name>/` 建一個 FastMCP 子 server 與 `DOMAIN = DomainInfo(...)`，在 `eng_toolkit/domains/__init__.py::all_domains` 註冊，把用到的引擎加進 `licenses.KNOWN`。每個工具用 `runner.run_tool` 包裝，輸入過 `units.parse_quantity`，就自動符合契約、落檔與來源紀錄。
 
+## 設計紀錄
+
+* [docs/metrology-design.md](docs/metrology-design.md)：`metrology` 領域的設計決策（資料表自建、NumPy 而非 monaco、工具切分粒度）。
+* [docs/iso286-data.md](docs/iso286-data.md)：ISO 286 資料表來源、授權、涵蓋範圍與已知缺口。
+
 ## 路線圖（摘要）
 
-Phase 0（本 repo）閘道 + 契約 + 單位守門 + `calc` 油壓 → Phase 1 CAD/B-Rep 與 2D 圖檔 → 公差量測 → PCB/IC EDA → 模擬。各領域引擎與授權評估見設計文件。
+Phase 0 閘道 + 契約 + 單位守門 + `calc` 油壓 → Phase 1 `metrology` 公差（本 repo 已含 ISO 286 與一維堆疊）、CAD/B-Rep 與 2D 圖檔 → PCB/IC EDA → 模擬。各領域引擎與授權評估見設計文件。

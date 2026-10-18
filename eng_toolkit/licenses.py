@@ -47,8 +47,11 @@ KNOWN: dict[str, Engine] = {
         Engine("fastmcp", "Apache-2.0", TIER_PERMISSIVE, "MCP server/client framework", ("gateway",)),
         Engine("mcp", "MIT", TIER_PERMISSIVE, "MCP protocol SDK (fastmcp dependency)", ("gateway",)),
         Engine("pydantic", "MIT", TIER_PERMISSIVE, "return-contract models", ("gateway",)),
-        Engine("pint", "BSD-3-Clause", TIER_PERMISSIVE, "units and dimensional analysis", ("gateway", "calc")),
+        Engine(
+            "pint", "BSD-3-Clause", TIER_PERMISSIVE, "units and dimensional analysis", ("gateway", "calc", "metrology")
+        ),
         Engine("fluids", "MIT", TIER_PERMISSIVE, "fluid mechanics (friction factor, Reynolds)", ("calc",)),
+        Engine("numpy", "BSD-3-Clause", TIER_PERMISSIVE, "seeded Monte Carlo sampling for tolerance stack-up", ("metrology",)),
     )
 }
 

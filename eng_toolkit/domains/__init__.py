@@ -30,8 +30,9 @@ class DomainInfo:
 def all_domains() -> list[DomainInfo]:
     # Imported lazily so that importing ``eng_toolkit.domains`` stays cheap and acyclic.
     from eng_toolkit.domains.calc import DOMAIN as calc
+    from eng_toolkit.domains.metrology import DOMAIN as metrology
 
-    return [calc]
+    return [calc, metrology]
 
 
 __all__ = ["DomainInfo", "all_domains"]

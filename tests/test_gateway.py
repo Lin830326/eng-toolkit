@@ -13,6 +13,8 @@ EXPECTED_TOOLS = {
     "toolkit_doctor",
     "calc_cylinder_force",
     "calc_pipe_pressure_drop",
+    "metrology_fit_limits",
+    "metrology_stackup_1d",
 }
 
 
@@ -46,7 +48,7 @@ async def test_toolkit_doctor_returns_contract_and_is_healthy():
     assert r.ok, r.data["failures"]
     assert r.data["python"]["ok"] is True
     deps = {d["dist"]: d for d in r.data["dependencies"]}
-    for dist in ("fastmcp", "pint", "pydantic", "fluids"):
+    for dist in ("fastmcp", "pint", "pydantic", "fluids", "numpy"):
         assert deps[dist]["status"] == "ok", deps[dist]
         assert deps[dist]["detected_tier"] == "permissive"
     assert r.data["workspace"]["writable"] is True
@@ -66,6 +68,9 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
     assert engines["fluids"]["installed"] and engines["fluids"]["version"]
     assert engines["fluids"]["tier"] == "permissive"
     assert engines["pint"]["tier"] == "permissive"
+    metrology = next(d for d in r.data["domains"] if d["name"] == "metrology")
+    assert set(metrology["tools"]) == {"metrology_fit_limits", "metrology_stackup_1d"}
+    assert {e["dist"]: e["tier"] for e in metrology["engines"]} == {"pint": "permissive", "numpy": "permissive"}
 
 
 @pytest.mark.asyncio
@@ -105,7 +110,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_PHASE0_TOOLS = 6
+MAX_PHASE0_TOOLS = 6  # 2 gateway + 2 calc + 2 metrology
 
 
 @pytest.mark.asyncio
