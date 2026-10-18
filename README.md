@@ -4,7 +4,7 @@
 
 > ⚠️ 所有輸出皆標示 `review_status: "unreviewed"`。本工具箱的結果是**未經工程核可**的估算，必須由合格工程師複核後才能用於設計或採購。
 
-目前有兩個領域：`calc`（油壓計算）與 `metrology`（ISO 286 配合查詢與反查、一維公差堆疊、掃描點雲對 STEP 模型的偏差檢查）。CAD／2D 圖檔／EDA／模擬等領域尚未開始。
+目前有三個領域：`calc`（油壓計算）、`metrology`（ISO 286 配合查詢與反查、一維公差堆疊、掃描點雲對 STEP 模型的偏差檢查）與 `geometry`（STEP／IGES／BREP 模型的精確量測：體積、面積、質量、面與孔清單、距離角度厚度查詢）。2D 圖檔／EDA／模擬等領域尚未開始。
 
 ---
 
@@ -25,7 +25,9 @@ Claude Code / 任何 MCP 客戶端
 │   │        metrology_fit_search  (間隙窗口反查配合)  │
 │   │        metrology_stackup_1d  (NumPy)           │
 │   │        metrology_check_scan  (Open3D + OCP, 選用)│
-│   └── (未來) cad_*, dxf_*, eda_* ...               │
+│   ├── mount(namespace="geometry") ► geometry 子 server  │
+│   │        geometry_measure  (OCP, 選用 cad extra)  │
+│   └── (未來) drawing_*, eda_* ...                  │
 ├────────────────────────────────────────────────┤
 │  contract.py   統一回傳契約 (pydantic)          │
 │  units.py      單位守門 (pint)：拒收裸數字       │
@@ -60,7 +62,7 @@ uv run pytest                    # 測試
 
 `metrology_check_scan` 用的 Open3D 與 `cadquery-ocp-novtk` 合計約 340 MB、匯入也慢，所以放在選用的 `scan` extra，不在核心依賴也不在 `dev` 群組：預設的 `uv sync` 與 `uv run eng-toolkit` 不會安裝它們，要用這個工具（或跑它的測試）請加 `--extra scan`，開發環境用上面的 `uv sync --all-groups --extra scan`。沒裝時工具仍會列出，呼叫會回 `engine.unavailable` 並附安裝指令，`toolkit_doctor` 也只標示 `not-installed (optional)`，不算失敗；`metrology_check_scan` 的測試會因缺少引擎而跳過並提示 `uv sync --extra scan`。
 
-OpenCASCADE 另有獨立的 `cad` extra（`uv sync --extra cad`，只裝 `cadquery-ocp-novtk`）：它是所有 3D 幾何程式碼（`eng_toolkit/brep/`）唯一的引擎，`scan` extra 等於 `cad` 加 Open3D。各引擎屬於哪個 extra 記在 `licenses.KNOWN`（`Engine.extra`），`engine.unavailable` 的安裝指令由它產生，`tests/test_extras_registry.py` 會檢查它與 `pyproject.toml` 一致。
+OpenCASCADE 另有獨立的 `cad` extra（`uv sync --extra cad`，只裝 `cadquery-ocp-novtk`）：它是所有 3D 幾何程式碼（`eng_toolkit/brep/`）唯一的引擎，`geometry_measure` 只需要它；`scan` extra 等於 `cad` 加 Open3D。沒裝時 `geometry_measure` 同樣會列出，呼叫回 `engine.unavailable` 並附 `uv sync --extra cad`，它的測試會因缺少引擎而跳過。各引擎屬於哪個 extra 記在 `licenses.KNOWN`（`Engine.extra`），`engine.unavailable` 的安裝指令由它產生，`tests/test_extras_registry.py` 會檢查它與 `pyproject.toml` 一致。
 
 ---
 
@@ -92,7 +94,7 @@ claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-to
 claude mcp add --scope user eng-toolkit -- uv run --extra scan --directory "C:\path\to\eng-toolkit" eng-toolkit
 ```
 
-（其他客戶端的 `args` 同理，在 `run` 後加 `"--extra", "scan"`。）或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可；它不帶 scan extra，要用掃描檢查請改成上面的指令）。接上後 `/mcp` 應看到 `eng-toolkit` 與八個工具。
+（其他客戶端的 `args` 同理，在 `run` 後加 `"--extra", "scan"`。）或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可；它不帶 scan extra，要用掃描檢查請改成上面的指令）。接上後 `/mcp` 應看到 `eng-toolkit` 與九個工具（要用 `geometry_measure` 則註冊指令至少帶 `--extra cad`）。
 
 **Cursor**（`~/.cursor/mcp.json` 或專案 `.cursor/mcp.json`）
 
@@ -212,6 +214,21 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 
 偏差是掃描點到模型表面的**有號距離，在材料外為正**。模型不是剛好一個封閉實體時內外無定義或有歧義：開放殼面，或 STEP 內有多個實體（重疊的實體會讓射線奇偶判斷出錯），都改用到最近表面的無號距離，`data.signed = false` 並警告，有號的最大／最小值不回傳。STEP 有根實體沒轉成幾何時（`step_roots.transferred` 小於 `in_file`）也會警告模型不完整。量測對象是離散化後的網格，誤差上限即 `mesh_deflection`，小於它的偏差沒有意義。到網格的距離以 float64 計算：Open3D 在平移到網格中心後的 float32 座標只負責找出最近三角形，再對它與共用頂點的所有鄰接三角形重算精確距離（測試中誤差低於 1e-9 mm；退化網格仍可能選錯三角形）。ICP 只在初始對齊夠近時收斂；`fitness` 是配準後與模型表面距離不超過 `icp_max_distance` 的點的比例（與 `inlier_rmse` 同一批點），低於 0.5 會警告；估計變換最多用 200000 個點（固定種子子集），再套用到全部點；相同輸入重跑，ICP 結果可能在 1e-5 mm 量級有差異（多執行緒浮點加總）。**ICP 後的偏差描述的是形狀，不是位置**：最佳擬合會吸收真實缺陷（例如頂面 28% 範圍凸起 0.2 mm，不配準時 22.2% 超差，配準後只剩 2.7%），所以一律警告；已配準的點若只在單一平面或圓柱上，平移或旋轉有未約束的方向（單一平面無法固定面內平移與繞法向的旋轉），會在警告與 `registration.unconstrained` 具名列出。全域配準（未對齊的掃描）不在範圍內。ASCII／二進位 PLY 會對照標頭驗證資料是否完整（被截斷的檔案回 `input.invalid`）；座標超過 1e7 mm 或非有限值一律視為壞檔。掃描品質與適用標準由使用者負責。
 
+### `geometry_measure`
+3D CAD 模型的精確量測：回答「這個零件多大、多重、有哪些面和孔、這兩個特徵相距多遠」。需要選用的 `cad` extra（`uv sync --extra cad`，見上方安裝）。數字是檔案 B-rep 的精確性質（OpenCASCADE），不是離散化網格的近似。輸入：`model_path`（`.step` `.stp` `.iges` `.igs` `.brep`；`.stl` 回 `input.unsupported_format`，網格檔留待之後的版本）、`queries`（可省略；以 `;` 分隔、最多 20 個）、`density`（可省略，帶單位，如 `"2700 kg/m^3"`，會多回傳 `mass`；裸數字回 `units.bare_number`，非密度的單位回 `units.dimension_mismatch`）、`inventory_limit`（0 到 500，預設 50：`data` 內列出的面與孔的數量；`inventory.json` 產物永遠列出全部）、`output_unit`（預設 `mm`）。
+
+查詢語法：`distance A B`（兩個實體的最短距離）、`angle A B`（角度，單位 degree）、`diameter A`、`radius A`、`area A`、`thickness P(x, y, z) <軸>`（從該點沿軸射出一條精確射線，取前兩個交點的距離，即壁厚）。`A`／`B` 是 `F<n>`（面）、`H<n>`（孔）或 `P(10 mm, 0 mm, 5 mm)`（點，座標必須帶單位，裸數字回 `units.bare_number`）；軸是 `+x -x +y -y +z -z` 其中之一。孔的距離與面積以孔壁的圓柱面計；`diameter`／`radius` 只適用圓柱面與孔，其他回 `geometry.unsupported_query`。`angle` 兩個平面時取外法向量夾角（0 到 180 度）；只要其中一個是圓柱面或孔，就取軸線的夾角（軸線沒有方向，0 到 90 度）。引用不存在的 `F999` 回 `geometry.unknown_entity`，`details` 帶 `ref`、`faces`、`holes`（模型實際有幾個面和孔）與 `query_index`；語法錯誤回 `input.invalid`，`details.query_index`（從 0 起算）與 `details.query` 指出是哪一個。壁厚的射線穿不到兩個交點（例如正好穿過孔）時不是錯誤：該 `q` 不出現在 `values`，`data.queries[i].found` 為 `false`，並加一則警告。
+
+```json
+{"model_path": "C:/cad/bracket.step", "density": "2700 kg/m^3",
+ "queries": "distance F1 H1; angle F1 F2; diameter H1; thickness P(10 mm, 10 mm, 30 mm) -z"}
+```
+→ 主值 `volume`（單位為 `output_unit` 的立方，如 `millimeter ** 3`），另有 `surface_area`、`size_x`／`size_y`／`size_z`（外框尺寸）、`mass`（有給 `density` 時）與依查詢順序的 `q1`、`q2`、…（長度用 `output_unit`，角度用 `degree`，面積用 `output_unit` 的平方）。`data` 含 `solids`、`faces_by_kind`、`holes`（孔：`id` 為 `H1`…、`face_ids`、`diameter_mm`、`axis` 鑽入方向（指向材料內）、`entry_mm`、`depth_mm` 圓柱段深度（不含鑽頭錐底）、`thru` 是否貫穿、`counterbore`／`countersink` 恆為 `null`）、`faces`（`id`、`kind`、`area_mm2`、`sense` 平面／凸／凹／混合、法向量或軸線、外框；`faces`／`holes` 受 `inventory_limit` 限制）、`centroid_mm`、`bbox_min_mm`／`bbox_max_mm`（精確外框）、`step_roots`（檔內根實體數與實際轉出的數量；IGES 與 BREP 也用這個名稱）、`queries`（每個查詢的解析結果與它解析到的實體）、`face_ids_valid_for`（輸入檔的 sha256）、`conventions` 與 `coverage`。
+
+孔的辨識規則：孔是**凹**的圓柱面，且（可能由兩個半面拼成）涵蓋整圈；圓角是局部圓柱而且是凸的，不算孔。貫穿與否（`thru`）用精確射線判斷：從圓柱段兩端各往外一點點、略偏離軸線的幾條沿軸向射線，若都沒碰到任何東西，那一端就通到零件外面；兩端都通是貫穿孔，只有一端通是有底的盲孔（偏離軸線，錐形鑽頭底才不會擋住射線）。貫穿孔沒有自己的入口，所以從其主軸的正向端鑽入（`axis` 的主要分量為負）。包住凸台的環形槽外壁不算孔。**不偵測**沉孔、錐孔與螺紋：沉孔會被列成貫穿孔旁邊另一個盲孔，`data.coverage` 會明講這些限制。
+
+面編號（`F<n>`）是 OpenCASCADE 走訪面的順序，孔編號依軸向、直徑、入口排序：兩者只對**同一個檔案的位元組與同一版 OpenCASCADE** 有效，`face_ids_valid_for` 給出該檔的 sha256，重新匯出的檔案要重新取得清單。先不帶 `queries` 呼叫一次讀 `data.faces`／`data.holes`，再下查詢。單位：STEP 與 IGES 由 OpenCASCADE 依檔內單位轉成 mm，BREP 沒有單位，數字一律當 mm。IGES 只有在輸出端寫成實體（B-rep solid）時才有體積；只有曲面的 IGES 沒有封閉實體，`volume` 不出現，`surface_area` 成為主值並警告。檔案沒有封閉實體（殼面、散面）時同樣如此，且 `density` 會被忽略並警告；多個實體時體積與面積是各實體的總和，重疊的實體會重複計算。這些結果沒有經過工程核可，量測的前提（單位、檔案是否忠於設計）由使用者負責。
+
 ---
 
 ## 輸入規則：每個物理量都要帶單位
@@ -241,7 +258,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
   "data":   {"formula": "...", "job_id": "...", "job_dir": "..."},
   "artifacts": [{"path": "ws/<job-id>/inputs.json", "format": "json", "sha256": "..."}],
   "provenance": {"engine": "eng_toolkit.calc.hydraulics", "version": "0.0.1",
-                 "inputs_hash": "sha256:..."},
+                 "inputs_hash": "sha256:...", "input_files": [], "engine_versions": {}},
   "warnings": ["Ideal theoretical force: ..."],
   "error": null,
   "review_status": "unreviewed"
@@ -251,6 +268,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 * `value` 是主要結果；`values` 含所有命名結果，多輸出工具因此不必跳出契約。
 * `uncertainty` 與 `quantity` 同單位；`null` 表示未估算（封閉公式）。壓降工具給的是名目區間（層流 ±5%、紊流 ±10%、過渡 ±20%），不是校準值。
 * `provenance.inputs_hash` 是輸入的 canonical JSON 之 SHA-256：相同輸入 → 相同雜湊，可重現。
+* `provenance.input_files` 列出這次呼叫讀過的檔案（`path` 絕對路徑、`bytes`、`sha256`，依讀取順序）；`provenance.engine_versions` 是用到的引擎在環境中的版本（如 `cadquery-ocp-novtk`）。不讀檔的工具兩者皆為空。失敗的呼叫也帶有失敗前已讀過的檔案。`metrology_check_scan` 原本放在 `data.input_files` 的資料搬到這裡。
 * `review_status` 是 pydantic `Literal["unreviewed"]`，無法被設成別的值。
 
 ## 工作區
@@ -273,7 +291,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 
 目前核心依賴全為 permissive：fastmcp (Apache-2.0)、mcp (MIT)、pydantic (MIT)、pint (BSD-3-Clause)、fluids (MIT)、numpy (BSD-3-Clause)。`tests/test_licenses.py` 會在 CI 中斷言環境裡沒有任何 GPL／AGPL 套件。
 
-選用的 `scan` extra：open3d (MIT, permissive) 與 cadquery-ocp-novtk。後者的 wrapper 是 Apache-2.0，但 wheel 內含 OpenCASCADE（LGPL-2.1 加 OCCT exception），所以在 `licenses.KNOWN` 誠實宣告為 `lgpl-dynamic`（動態連結、不修改、不內嵌進本 repo），並以 `bundled_license` 記下來源；`toolkit_doctor` 不會因 metadata 顯示 Apache 而誤報授權不符；這個「bundled 說明」只適用於 permissive wrapper 宣告為 `lgpl-dynamic`，任何已安裝、宣告為 `gpl-isolated` 或 `forbidden` 的引擎，doctor 一律判定失敗（`policy-violation`）。OCP wheel 另外還內含其他雙重授權的函式庫（回報有 FreeImage、LibRaw、FreeType、zstd，各有非 GPL 的授權選項）；再散布前應逐一確認。
+選用的 `cad` extra（`geometry_measure`、`metrology_check_scan` 共用）是 cadquery-ocp-novtk，`scan` extra 再加 open3d (MIT, permissive)。cadquery-ocp-novtk 的 wrapper 是 Apache-2.0，但 wheel 內含 OpenCASCADE（LGPL-2.1 加 OCCT exception），所以在 `licenses.KNOWN` 誠實宣告為 `lgpl-dynamic`（動態連結、不修改、不內嵌進本 repo），並以 `bundled_license` 記下來源；`toolkit_doctor` 不會因 metadata 顯示 Apache 而誤報授權不符；這個「bundled 說明」只適用於 permissive wrapper 宣告為 `lgpl-dynamic`，任何已安裝、宣告為 `gpl-isolated` 或 `forbidden` 的引擎，doctor 一律判定失敗（`policy-violation`）。OCP wheel 另外還內含其他雙重授權的函式庫（回報有 FreeImage、LibRaw、FreeType、zstd，各有非 GPL 的授權選項）；再散布前應逐一確認。
 
 ## Clean-room 聲明
 
@@ -295,7 +313,7 @@ uv run eng-toolkit doctor
 
 * [docs/metrology-design.md](docs/metrology-design.md)：`metrology` 領域的設計決策（資料表自建、NumPy 而非 monaco、工具切分粒度）。
 * [docs/iso286-data.md](docs/iso286-data.md)：ISO 286 資料表來源、授權、涵蓋範圍與已知缺口。
-* [docs/geometry-drawing/design.md](docs/geometry-drawing/design.md)：`geometry` 與 `drawing` 領域的合成設計（尚未實作）：兩份候選設計與跨評審結論、切片交付計畫、待專案負責人決定的問題。
+* [docs/geometry-drawing/design.md](docs/geometry-drawing/design.md)：`geometry` 與 `drawing` 領域的合成設計（目前只實作了 `geometry_measure`）：兩份候選設計與跨評審結論、切片交付計畫、待專案負責人決定的問題。
 
 ## 路線圖（摘要）
 
