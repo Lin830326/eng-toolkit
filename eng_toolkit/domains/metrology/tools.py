@@ -133,7 +133,7 @@ def fit_limits(
 
 # --------------------------------------------------------------------------- 1-D stack-up
 
-_LINK_KEYS = frozenset({"name", "nominal", "tol", "plus", "minus", "direction"})
+_LINK_KEYS = frozenset({"name", "nominal", "tol", "plus", "minus", "direction", "fit"})
 _METHODS = ("worst_case", "rss")
 
 
@@ -145,7 +145,44 @@ def _length_in(raw: Any, *, name: str, unit: str) -> float:
     return float(parse_quantity(raw, name=name, dimension="length").to(unit).magnitude)
 
 
-def _parse_link(item: Any, index: int, unit: str) -> stackup.Link:
+def _manual_band(item: dict[str, Any], unit: str) -> tuple[float, float, float]:
+    nominal = _length_in(item.get("nominal"), name="nominal", unit=unit)
+    if "tol" in item and ("plus" in item or "minus" in item):
+        raise _invalid("give either 'tol' (symmetric +/-) or 'plus' and 'minus', not both")
+    if "tol" in item:
+        plus = minus = _length_in(item["tol"], name="tol", unit=unit)
+    elif "plus" in item and "minus" in item:
+        plus = _length_in(item["plus"], name="plus", unit=unit)
+        minus = _length_in(item["minus"], name="minus", unit=unit)
+    elif "plus" in item or "minus" in item:
+        raise _invalid("'plus' and 'minus' must be given together (use '0 mm' for a one-sided tolerance)")
+    else:
+        raise _invalid("a tolerance is required: 'tol' (symmetric +/-) or 'plus' and 'minus'")
+    if plus < 0 or minus < 0:
+        raise _invalid(
+            "tolerances are magnitudes and must be >= 0: 'plus' is how far the link may grow, "
+            "'minus' how far it may shrink (20 -0.12 is plus '0 mm', minus '0.12 mm')"
+        )
+    return nominal, plus, minus
+
+
+def _fit_band(item: dict[str, Any], unit: str) -> tuple[float, float, float]:
+    """A fit link is the clearance of the pair: nominal 0, from -min_clearance to +max_clearance."""
+    given = sorted({"tol", "plus", "minus"} & set(item))
+    if given:
+        raise _invalid(f"a fit link takes its band from the fit; remove {given}")
+    code = item["fit"]
+    if not isinstance(code, str):
+        raise _invalid(f"'fit' must be a string such as 'H7/g6', got {type(code).__name__}", received=code)
+    if "nominal" not in item:
+        raise _invalid("a fit link needs 'nominal', the diameter of the hole/shaft pair (3 to 500 mm)")
+    size_mm = round(_length_in(item["nominal"], name="nominal", unit="millimeter"), 9)
+    res = iso286.fit_limits(size_mm, code)
+    to_unit = ureg.Quantity(1.0, "millimeter").to(unit).magnitude / 1000
+    return 0.0, res.max_clearance_um * to_unit, 0.0 - res.min_clearance_um * to_unit
+
+
+def _parse_link(item: Any, index: int, unit: str) -> tuple[stackup.Link, str | None]:
     if not isinstance(item, dict):
         raise _invalid(f"link {index + 1} must be a JSON object, got {type(item).__name__}", link_index=index)
     name = str(item.get("name") or f"link{index + 1}")
@@ -153,23 +190,8 @@ def _parse_link(item: Any, index: int, unit: str) -> stackup.Link:
         extra = sorted(set(item) - _LINK_KEYS)
         if extra:
             raise _invalid(f"unknown link field(s) {extra}; allowed: {sorted(_LINK_KEYS)}", unknown=extra)
-        nominal = _length_in(item.get("nominal"), name="nominal", unit=unit)
-        if "tol" in item and ("plus" in item or "minus" in item):
-            raise _invalid("give either 'tol' (symmetric +/-) or 'plus' and 'minus', not both")
-        if "tol" in item:
-            plus = minus = _length_in(item["tol"], name="tol", unit=unit)
-        elif "plus" in item and "minus" in item:
-            plus = _length_in(item["plus"], name="plus", unit=unit)
-            minus = _length_in(item["minus"], name="minus", unit=unit)
-        elif "plus" in item or "minus" in item:
-            raise _invalid("'plus' and 'minus' must be given together (use '0 mm' for a one-sided tolerance)")
-        else:
-            raise _invalid("a tolerance is required: 'tol' (symmetric +/-) or 'plus' and 'minus'")
-        if plus < 0 or minus < 0:
-            raise _invalid(
-                "tolerances are magnitudes and must be >= 0: 'plus' is how far the link may grow, "
-                "'minus' how far it may shrink (20 -0.12 is plus '0 mm', minus '0.12 mm')"
-            )
+        fit = item.get("fit")
+        nominal, plus, minus = _fit_band(item, unit) if "fit" in item else _manual_band(item, unit)
         direction = item.get("direction")
         if direction not in ("+", "-"):
             raise _invalid("'direction' must be '+' (adds to the result) or '-' (subtracts)", received=direction)
@@ -179,10 +201,11 @@ def _parse_link(item: Any, index: int, unit: str) -> stackup.Link:
             f"link {index + 1} ({name}): {exc.message}",
             {**exc.details, "link_index": index, "link_name": name},
         ) from exc
-    return stackup.Link(name=name, nominal=nominal, plus=plus, minus=minus, sign=1 if direction == "+" else -1)
+    link = stackup.Link(name=name, nominal=nominal, plus=plus, minus=minus, sign=1 if direction == "+" else -1)
+    return link, fit
 
 
-def _parse_chain(chain: str, unit: str) -> list[stackup.Link]:
+def _parse_chain(chain: str, unit: str) -> list[tuple[stackup.Link, str | None]]:
     try:
         items = json.loads(chain)
     except (TypeError, json.JSONDecodeError) as exc:
@@ -204,7 +227,9 @@ def _parse_chain(chain: str, unit: str) -> list[stackup.Link]:
         "One-dimensional tolerance stack-up of a dimension chain. 'chain' is a JSON array of links "
         '{"name","nominal","tol" or ("plus","minus"),"direction":"+"|"-"}; direction "+" adds to the '
         'closing dimension, "-" subtracts. method "worst_case" (default) or "rss". Returns the nominal, '
-        "mean and limits of the closing dimension and each link's share. Optional seeded Monte Carlo "
+        "mean and limits of the closing dimension and each link's share. A link may instead be an ISO 286 "
+        'fit {"name","fit":"H7/g6","nominal":<diameter>,"direction"}: its nominal is the diameter (3 to 500 mm) '
+        "and the link itself is the clearance. Optional seeded Monte Carlo "
         "returns the probability of falling outside lower_limit/upper_limit."
     ),
 )
@@ -215,7 +240,9 @@ def stackup_1d(
             description=(
                 'JSON array of links, e.g. [{"name":"housing","nominal":"50 mm","tol":"0.1 mm","direction":"+"},'
                 '{"name":"bearing","nominal":"20 mm","plus":"0 mm","minus":"0.12 mm","direction":"-"}]. '
-                "Every length needs a unit, also '0 mm'. 'tol' is symmetric +/-; 'plus'/'minus' are magnitudes."
+                "Every length needs a unit, also '0 mm'. 'tol' is symmetric +/-; 'plus'/'minus' are magnitudes. "
+                'A fit link {"fit":"H7/g6","nominal":"25 mm","direction":"-"} replaces the tolerance: '
+                "'nominal' is then the diameter and the link itself is the clearance (hole - shaft)."
             )
         ),
     ],
@@ -265,7 +292,8 @@ def stackup_1d(
         upper = _length_in(upper_limit, name="upper_limit", unit=unit) if str(upper_limit).strip() else None
         if lower is not None and upper is not None and lower > upper:
             raise _invalid(f"lower_limit ({lower_limit}) is above upper_limit ({upper_limit})", param="lower_limit")
-        links = _parse_chain(chain, unit)
+        parsed = _parse_chain(chain, unit)
+        links = [link for link, _ in parsed]
 
         stack = stackup.rss(links) if method == "rss" else stackup.worst_case(links)
 
@@ -299,8 +327,10 @@ def stackup_1d(
                     "plus": link.plus,
                     "minus": link.minus,
                     "share": share,
+                    "kind": "dimension" if fit is None else "fit",
+                    **({} if fit is None else {"fit": fit}),
                 }
-                for link, share in zip(links, stack.shares)
+                for (link, fit), share in zip(parsed, stack.shares)
             ],
             "share_basis": (
                 "fraction of the sum of squared half-ranges (RSS variance)"

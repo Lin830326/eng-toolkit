@@ -24,6 +24,7 @@ import math
 import pytest
 
 from eng_toolkit.contract import ToolResult
+from eng_toolkit.domains.metrology import stackup
 from eng_toolkit.domains.metrology.tools import stackup_1d
 
 CHAIN = [
@@ -257,3 +258,168 @@ def test_zero_tolerance_chain_has_zero_width_and_zero_shares():
         assert r.ok, r.error
         assert _v(r, "result_min") == _v(r, "result_max") == pytest.approx(6.0)
         assert all(c["share"] == 0 for c in r.data["contributions"])
+
+
+# --------------------------------------------------------------------------- fit links
+#
+# A fit link is the clearance of an ISO 286 pair: nominal 0, plus = max clearance,
+# minus = -(min clearance).  H7/g6 at 25 mm: clearance 0.007 .. 0.041 mm
+#     mid  = 0 + (0.041 + 0.007) / 2 = 0.024      half = (0.041 - 0.007) / 2 = 0.017
+# H7/p6 at 25 mm (interference): clearance -0.035 .. -0.001 mm
+#     mid  = (-0.001 - 0.035) / 2 = -0.018         half = (-0.001 + 0.035) / 2 = 0.017
+# H7/h6 at 25 mm: clearance 0 .. 0.034 mm
+#
+# Chain 1: A = housing 50 mm +/-0.10 (+), F = H7/g6 at 25 mm (-)
+#     nominal = 50 - 0 = 50 ; mean = 50 - 0.024 = 49.976
+#     worst case: max = 50.10 - 0.007 = 50.093 ; min = 49.90 - 0.041 = 49.859
+#     RSS: t = sqrt(0.10^2 + 0.017^2) = sqrt(0.010289) = 0.101439 ; limits 49.976 -/+ t
+# Chain 2: A (+), F = H7/p6 at 25 mm (+)
+#     worst case: max = 50.10 - 0.001 = 50.099 ; min = 49.90 - 0.035 = 49.865 ; mean = 50 - 0.018 = 49.982
+# Chain 3: A (+), F = H7/h6 at 25 mm (+)
+#     worst case: max = 50.10 + 0.034 = 50.134 ; min = 49.90 + 0 = 49.90 (widens the max side only)
+
+A_LINK = {"name": "housing", "nominal": "50 mm", "tol": "0.10 mm", "direction": "+"}
+
+
+def _fit_link(fit="H7/g6", nominal="25 mm", direction="-", **extra):
+    return {"name": "F", "fit": fit, "nominal": nominal, "direction": direction, **extra}
+
+
+def _fit_chain(**fit_kwargs) -> str:
+    return json.dumps([A_LINK, _fit_link(**fit_kwargs)])
+
+
+def test_fit_link_worst_case_matches_hand_calc():
+    r = _call(chain=_fit_chain())
+    assert r.ok, r.error
+    assert _v(r, "result_nominal") == pytest.approx(50.0, abs=1e-12)
+    assert _v(r, "result_mean") == pytest.approx(49.976, abs=1e-9)
+    assert _v(r, "result_max") == pytest.approx(50.093, abs=1e-9)
+    assert _v(r, "result_min") == pytest.approx(49.859, abs=1e-9)
+    assert r.warnings == _call().warnings  # a fit link adds no warning of its own
+
+
+def test_fit_link_rss_matches_hand_calc():
+    r = _call(chain=_fit_chain(), method="rss")
+    assert r.ok, r.error
+    t = math.sqrt(0.010289)
+    assert _v(r, "result_mean") == pytest.approx(49.976, abs=1e-9)
+    assert _v(r, "result_min") == pytest.approx(49.976 - t, abs=1e-9)
+    assert _v(r, "result_max") == pytest.approx(49.976 + t, abs=1e-9)
+    assert r.values["result_mean"].uncertainty == pytest.approx(t / 3, abs=1e-12)
+    shares = {c["name"]: c["share"] for c in r.data["contributions"]}
+    assert shares["housing"] == pytest.approx(0.01 / 0.010289)
+    assert shares["F"] == pytest.approx(0.000289 / 0.010289)
+
+
+def test_interference_fit_has_a_negative_plus_and_still_stacks():
+    r = _call(chain=_fit_chain(fit="H7/p6", direction="+"))
+    assert r.ok, r.error
+    assert _v(r, "result_nominal") == pytest.approx(50.0, abs=1e-12)
+    assert _v(r, "result_mean") == pytest.approx(49.982, abs=1e-9)
+    assert _v(r, "result_max") == pytest.approx(50.099, abs=1e-9)
+    assert _v(r, "result_min") == pytest.approx(49.865, abs=1e-9)
+    link = r.data["contributions"][1]
+    assert link["plus"] == pytest.approx(-0.001, abs=1e-12)
+    assert link["minus"] == pytest.approx(0.035, abs=1e-12)
+
+
+def test_fit_link_with_zero_minimum_clearance_widens_one_side_only():
+    r = _call(chain=_fit_chain(fit="H7/h6", direction="+"))
+    assert r.ok, r.error
+    assert _v(r, "result_max") == pytest.approx(50.134, abs=1e-9)
+    assert _v(r, "result_min") == pytest.approx(49.90, abs=1e-9)
+
+
+def test_fit_link_nominal_in_inches_gives_the_same_limits():
+    # 1 inch = 25.4 mm, inside the 18 .. 30 mm size range of the 25 mm case
+    r = _call(chain=_fit_chain(nominal="1 inch"))
+    assert r.ok, r.error
+    assert _v(r, "result_max") == pytest.approx(50.093, abs=1e-9)
+    assert _v(r, "result_min") == pytest.approx(49.859, abs=1e-9)
+
+
+def test_fit_link_respects_the_output_unit():
+    r = _call(chain=_fit_chain(), output_unit="um")
+    assert r.ok, r.error
+    assert r.values["result_max"].unit == "micrometer"
+    assert _v(r, "result_max") == pytest.approx(50_093.0, abs=1e-6)
+    assert _v(r, "result_min") == pytest.approx(49_859.0, abs=1e-6)
+    link = r.data["contributions"][1]
+    assert link["plus"] == pytest.approx(41.0, abs=1e-6) and link["minus"] == pytest.approx(-7.0, abs=1e-6)
+
+
+def test_fit_link_monte_carlo_is_centred_on_the_fit_mid_point():
+    n = 200_000
+    sigma = math.sqrt(0.010289) / 3
+    r = _call(chain=_fit_chain(), monte_carlo=True, samples=n, seed=5)
+    assert r.ok, r.error
+    assert _v(r, "mc_mean") == pytest.approx(49.976, abs=5 * sigma / math.sqrt(n))
+    assert _v(r, "mc_std") == pytest.approx(sigma, rel=0.02)
+
+
+def test_contributions_say_where_each_band_came_from():
+    r = _call(chain=_fit_chain())
+    manual, fit = r.data["contributions"]
+    assert manual["kind"] == "dimension" and "fit" not in manual
+    assert fit["kind"] == "fit" and fit["fit"] == "H7/g6"
+    assert fit["nominal"] == 0.0
+    assert fit["plus"] == pytest.approx(0.041, abs=1e-12) and fit["minus"] == pytest.approx(-0.007, abs=1e-12)
+    assert fit["direction"] == "-"
+    assert _call().data["contributions"][0]["kind"] == "dimension"
+
+
+def test_fit_link_name_defaults_like_any_link():
+    chain = json.dumps([A_LINK, {"fit": "H7/g6", "nominal": "25 mm", "direction": "-"}])
+    r = _call(chain=chain)
+    assert r.ok, r.error
+    assert r.data["contributions"][1]["name"] == "link2"
+
+
+@pytest.mark.parametrize(
+    "link, family",
+    [
+        (_fit_link(tol="0.1 mm"), "input.invalid"),
+        (_fit_link(plus="0.1 mm", minus="0.1 mm"), "input.invalid"),
+        (_fit_link(plus="0.1 mm"), "input.invalid"),
+        (_fit_link(fit="H7/q6"), "input.unknown_fit_code"),
+        (_fit_link(fit="H7"), "input.unknown_fit_code"),
+        (_fit_link(fit="H7/t6", nominal="10 mm"), "input.undefined_class"),
+        (_fit_link(nominal="2 mm"), "input.out_of_range"),
+        (_fit_link(nominal="501 mm"), "input.out_of_range"),
+        (_fit_link(nominal="25"), "units.bare_number"),
+        (_fit_link(nominal="25 bar"), "units.dimension_mismatch"),
+        ({"name": "F", "fit": "H7/g6", "direction": "-"}, "input.invalid"),
+        (_fit_link(fit=7), "input.invalid"),
+        (_fit_link(fit=None), "input.invalid"),
+        (_fit_link(direction="up"), "input.invalid"),
+        (_fit_link(colour="red"), "input.invalid"),
+    ],
+)
+def test_bad_fit_links_keep_their_error_family(link, family):
+    r = _call(chain=json.dumps([A_LINK, link]))
+    assert not r.ok
+    assert r.error.family == family, r.error
+    assert r.error.details["link_index"] == 1 and r.error.details["link_name"] == "F"
+    assert r.error.message.startswith("link 2 (F): ")
+    assert r.warnings == []
+
+
+def test_manual_links_still_cannot_have_a_negative_side():
+    chain = json.dumps([{"nominal": "50 mm", "plus": "-0.01 mm", "minus": "0.1 mm", "direction": "+"}])
+    r = _call(chain=chain)
+    assert not r.ok and r.error.family == "input.invalid"
+
+
+def test_link_rejects_an_empty_band():
+    with pytest.raises(ValueError, match="empty"):
+        stackup.Link(name="bad", nominal=0.0, plus=-0.01, minus=0.005, sign=1)
+    stackup.Link(name="point", nominal=0.0, plus=-0.005, minus=0.005, sign=1)
+
+
+def test_band_formulas_hold_for_a_band_that_excludes_its_nominal():
+    link = stackup.Link(name="F", nominal=0.0, plus=0.041, minus=-0.007, sign=-1)
+    assert link.mid == pytest.approx(0.024)
+    assert link.half == pytest.approx(0.017)
+    wc = stackup.worst_case([link])
+    assert wc.minimum == pytest.approx(-0.041) and wc.maximum == pytest.approx(-0.007)

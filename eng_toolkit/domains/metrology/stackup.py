@@ -39,6 +39,14 @@ class Link:
     minus: float
     sign: int  # +1 adds to the result, -1 subtracts
 
+    def __post_init__(self) -> None:
+        # plus or minus alone may be negative (a fit link whose band excludes its nominal), but the
+        # band nominal - minus .. nominal + plus must still have a lower limit not above the upper one.
+        if self.plus + self.minus < 0:
+            raise ValueError(
+                f"link {self.name!r} has an empty tolerance band: plus + minus = {self.plus + self.minus} < 0"
+            )
+
     @property
     def mid(self) -> float:
         return self.nominal + (self.plus - self.minus) / 2
