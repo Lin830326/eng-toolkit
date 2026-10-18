@@ -578,6 +578,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+cad = [
+    { name = "cadquery-ocp-novtk" },
+]
 scan = [
     { name = "cadquery-ocp-novtk" },
     { name = "open3d" },
@@ -592,7 +595,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cadquery-ocp-novtk", marker = "extra == 'scan'", specifier = ">=8.0.1.1.0" },
+    { name = "cadquery-ocp-novtk", marker = "extra == 'cad'", specifier = ">=8.0.1.1.0" },
+    { name = "eng-toolkit", extras = ["cad"], marker = "extra == 'scan'" },
     { name = "fastmcp", specifier = ">=2.10" },
     { name = "fluids", specifier = ">=1.0" },
     { name = "numpy", specifier = ">=1.26" },
@@ -600,7 +604,7 @@ requires-dist = [
     { name = "pint", specifier = ">=0.24" },
     { name = "pydantic", specifier = ">=2.7" },
 ]
-provides-extras = ["scan"]
+provides-extras = ["cad", "scan"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -31,12 +31,16 @@ eng-toolkit = "eng_toolkit.gateway.server:main"
 [project.urls]
 Homepage = "https://github.com/Lin830326/eng-toolkit"
 
-# Optional engines for metrology_check_scan (uv sync --extra scan):
-#   open3d             - MIT
-#   cadquery-ocp-novtk - Apache-2.0 wrapper; the wheel bundles OpenCASCADE (LGPL-2.1 + OCCT exception), used unmodified
+# Optional engines.  licenses.KNOWN names the extra of each (tests/test_extras_registry.py keeps the two in step):
+#   cad  (uv sync --extra cad)  - cadquery-ocp-novtk: Apache-2.0 wrapper; the wheel bundles OpenCASCADE
+#                                 (LGPL-2.1 + OCCT exception), used unmodified; the one 3D kernel (eng_toolkit.brep)
+#   scan (uv sync --extra scan) - the cad extra plus open3d (MIT), for metrology_check_scan
 [project.optional-dependencies]
-scan = [
+cad = [
     "cadquery-ocp-novtk>=8.0.1.1.0",
+]
+scan = [
+    "eng-toolkit[cad]",
     "open3d>=0.20.0",
 ]
 

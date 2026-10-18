@@ -41,6 +41,7 @@ class Engine:
     domains: tuple[str, ...] = field(default_factory=tuple)
     optional: bool = False  # installed through an extra; absence is informational, not a failure
     bundled_license: str = ""  # license of code shipped inside the wheel when it differs from the metadata
+    extra: str = ""  # the pyproject extra that installs it; "" = core dependency
 
 
 def tier_explained_by_bundle(engine: Engine, detected: str) -> bool:
@@ -75,6 +76,7 @@ KNOWN: dict[str, Engine] = {
             "point-cloud registration (ICP), distance queries and clustering for scan checks",
             ("metrology",),
             optional=True,
+            extra="scan",
         ),
         Engine(
             "cadquery-ocp-novtk",
@@ -84,9 +86,16 @@ KNOWN: dict[str, Engine] = {
             ("metrology",),
             optional=True,
             bundled_license="LGPL-2.1 with OCCT exception (OpenCASCADE shared libraries in the wheel)",
+            extra="cad",
         ),
     )
 }
+
+
+def install_hint(dist: str) -> str:
+    """The command that installs a registered engine: ``uv sync --extra cad`` for an optional one, ``uv sync`` for a core one."""
+    engine = KNOWN[dist]
+    return f"uv sync --extra {engine.extra}" if engine.extra else "uv sync"
 
 # Patterns over license text / classifiers -> tier.  Order matters (AGPL before GPL).
 _TIER_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -161,6 +170,7 @@ __all__ = [
     "TIER_UNKNOWN",
     "Engine",
     "classify_license",
+    "install_hint",
     "installed_license",
     "scan_environment",
     "tier_explained_by_bundle",
