@@ -9,7 +9,7 @@ Every tool, in every domain, returns a :class:`ToolResult`.  The shape is::
       "data":    {},                       # non-quantity payload (doctor reports, listings)
       "artifacts": [{"path": "...", "format": "json", "sha256": "..."}],
       "provenance": {"engine": "eng_toolkit.calc.hydraulics", "version": "0.0.1",
-                     "inputs_hash": "sha256:..."},
+                     "inputs_hash": "sha256:...", "input_files": [], "engine_versions": {}},
       "warnings": [],
       "error": null,
       "review_status": "unreviewed"
@@ -55,6 +55,16 @@ class Artifact(BaseModel):
     sha256: str
 
 
+class FileRef(BaseModel):
+    """A file a call read, identified by its content."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(description="Absolute path as read")
+    bytes: int
+    sha256: str
+
+
 class Provenance(BaseModel):
     """What produced the result and from which inputs."""
 
@@ -65,6 +75,12 @@ class Provenance(BaseModel):
     )
     version: str
     inputs_hash: str = Field(description="'sha256:<hex>' of the canonical JSON of the inputs")
+    input_files: list[FileRef] = Field(
+        default_factory=list, description="Every file the call read, in read order, hashed"
+    )
+    engine_versions: dict[str, str] = Field(
+        default_factory=dict, description="Installed version of each engine distribution the tool uses"
+    )
 
 
 class ToolError(BaseModel):
@@ -138,6 +154,7 @@ def failure(
 __all__ = [
     "REVIEW_STATUS_UNREVIEWED",
     "Artifact",
+    "FileRef",
     "Provenance",
     "QuantityOut",
     "ToolError",

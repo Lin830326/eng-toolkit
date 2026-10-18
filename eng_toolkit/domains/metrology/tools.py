@@ -7,11 +7,9 @@ result into the contract.  The tables and rules live in :mod:`.iso286`, the stat
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import math
-from pathlib import Path
 from typing import Annotated, Any
 
 import numpy as np
@@ -556,14 +554,6 @@ SIGN_CONVENTION_UNSIGNED = (
 )
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _positive_mm(raw: str, name: str) -> float:
     qty = require_positive(parse_quantity(raw, name=name, dimension="length"), name=name)
     return float(qty.to("millimeter").magnitude)
@@ -689,8 +679,8 @@ def check_scan(
         unit = str(parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units)
         per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
 
-        scan_file = scan.check_input_file(scan_path, param="scan_path", extensions=scan.SCAN_EXTENSIONS)
-        model_file = scan.check_input_file(model_path, param="model_path", extensions=scan.MODEL_EXTENSIONS)
+        scan_file = job.input_file(scan_path, param="scan_path", extensions=scan.SCAN_EXTENSIONS)
+        model_file = job.input_file(model_path, param="model_path", extensions=scan.MODEL_EXTENSIONS)
         run = scan.check(
             scan_file,
             model_file,
@@ -816,18 +806,6 @@ def check_scan(
                 "region_column": "region id as in data.regions; -1 = in no region",
             },
             "frame": "points and regions are in the model frame (after registration, if any)",
-            "input_files": {
-                "scan": {
-                    "path": str(scan_file.resolve()),
-                    "bytes": scan_file.stat().st_size,
-                    "sha256": _sha256(scan_file),
-                },
-                "model": {
-                    "path": str(model_file.resolve()),
-                    "bytes": model_file.stat().st_size,
-                    "sha256": _sha256(model_file),
-                },
-            },
         }
         return Computed(values=values, primary="rms_deviation", warnings=warnings, data=data, artifacts=[artifact])
 
@@ -837,6 +815,7 @@ def check_scan(
         version=__version__,
         inputs=inputs,
         compute=compute,
+        engines=("open3d", "cadquery-ocp-novtk"),
         standing_warnings=(
             "Deviations are measured against a tessellated mesh whose error is bounded by mesh_deflection; "
             "deviations below it are not meaningful. Distances to that mesh are float64, taken against the "

@@ -89,19 +89,6 @@ def require_engines() -> None:
 # --------------------------------------------------------------------------- inputs
 
 
-def check_input_file(raw: str, *, param: str, extensions: tuple[str, ...]) -> Path:
-    path = Path(raw).expanduser()
-    if not path.is_file():
-        raise ToolFailure("input.file_not_found", f"{param}: no such file {str(path)!r}", {"param": param, "path": str(path)})
-    if path.suffix.lower() not in extensions:
-        raise ToolFailure(
-            "input.unsupported_format",
-            f"{param}: {path.suffix or '(no extension)'!r} is not supported; use one of {list(extensions)}",
-            {"param": param, "path": str(path), "supported": list(extensions)},
-        )
-    return path
-
-
 _PLY_SCALAR_BYTES = {
     "char": 1, "int8": 1, "uchar": 1, "uint8": 1,
     "short": 2, "int16": 2, "ushort": 2, "uint16": 2,
@@ -657,7 +644,6 @@ __all__ = [
     "Regions",
     "ScanCheck",
     "check",
-    "check_input_file",
     "closest_points_on_triangles",
     "cluster_regions",
     "deviation_stats",

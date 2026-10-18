@@ -388,8 +388,9 @@ def test_input_file_paths_are_reported_absolute(tmp_path, box, monkeypatch):
     monkeypatch.chdir(tmp_path)
     r = run("relative.ply", box)
     assert r.ok, r.error
-    assert r.data["input_files"]["scan"]["path"] == str((tmp_path / "relative.ply").resolve())
-    assert Path(r.data["input_files"]["model"]["path"]).is_absolute()
+    scan_ref, model_ref = r.provenance.input_files
+    assert scan_ref.path == str((tmp_path / "relative.ply").resolve())
+    assert Path(model_ref.path).is_absolute()
 
 
 # --------------------------------------------------------------------------- registration
@@ -962,10 +963,10 @@ def test_input_file_hashes_are_reported_so_the_run_can_be_reproduced(tmp_path, b
     scan_path = scan_file(tmp_path, two_sided_cloud())
     r = run(scan_path, box)
     assert r.ok, r.error
-    files = r.data["input_files"]
-    assert files["scan"]["sha256"] == hashlib.sha256(scan_path.read_bytes()).hexdigest()
-    assert files["model"]["sha256"] == hashlib.sha256(Path(box).read_bytes()).hexdigest()
-    assert files["model"]["bytes"] == Path(box).stat().st_size
+    scan_ref, model_ref = r.provenance.input_files
+    assert scan_ref.sha256 == hashlib.sha256(scan_path.read_bytes()).hexdigest()
+    assert model_ref.sha256 == hashlib.sha256(Path(box).read_bytes()).hexdigest()
+    assert model_ref.bytes == Path(box).stat().st_size
 
 
 def test_step_written_in_metres_is_read_back_in_millimetres(tmp_path):
