@@ -251,6 +251,12 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 
 `mode` 是 `"add"`（預設，聯集）、`"cut"` 或 `"intersect"`；`axis` 是 `"+x" "-x" "+y" "-y" "+z" "-z"` 之一。平面 `plane` 的草圖座標 (u, v) 為 (x, y)、(x, z)、(y, z)，法向 +z、+y、+x。輪廓 `profile` 是恰有一個鍵的物件：`{"rect": {"size": [u, v], "at": [u, v], "centered": false}}`（`at` 是最小角，`centered` 為 true 時是中心）、`{"circle": {"diameter", "at"}}`、`{"polygon": {"points": [[u, v], ...]}}`（至少 3 點，不可自交）、`{"slot": {"length", "width", "at", "angle"}}`（`length` 含兩端圓頭，須大於 `width`）。`revolve` 的輪廓必須在旋轉軸的同一側。孔從 `at` 的入口點沿 `axis` 鑽 `depth`（`"thru"` 為穿過整個零件；盲孔深過零件就是穿透）；整個 feature 沒切掉任何材料時回警告（多半是入口點或方向弄反了）。
 
+**限制與邊界行為**（都有測試與獨立驗證）：
+* 一份規格所有 `hole` 的孔位合計最多 **1000** 個；超過立刻回 `input.invalid`，`details.limit` 是 1000。1000 個孔在開發機上約 25 秒，其中約 9 秒是把 STEP 讀回驗證，250 個約 3 秒，時間隨孔數成長得比線性快。
+* 最終結果必須是**剛好一個有效實體**，否則回 `geometry.invalid_result`（訊息會說「join loose bodies or remove them」）。執行途中可以暫時有多個分開的實體：例如先對兩個分開的方塊倒圓角或鑽孔，再用第三個方塊把它們接起來是合法的，邊選擇器（如 `>x`、`convex`）會作用在目前所有實體上。
+* 圓角或倒角的大小容不下時（例如 10 mm 方塊全部邊倒 5 mm 或更大，或比板厚還大的圓角）回 `geometry.build_failed`，`details` 指出是第幾個 feature；剛好小於一半（如 4.9 mm）則照常做出有效實體。半徑或距離為 0 或負數回 `input.invalid`。
+* 切到什麼都不剩、或與不相交的實體取交集，回 `geometry.build_failed` 並指出該 feature。
+
 **邊選擇器**是以 `&` 相交的詞：`all`；`|x` `|y` `|z`（平行該軸的直線邊）；`>x` `<x` `>y` `<y` `>z` `<z`（位於零件外框該方向極值面上的邊）；`convex`（外角）與 `concave`（內角），由相鄰兩面的二面角判斷，平滑相接（例如圓柱的接縫線，兩側是同一個面）兩者都不是，所以 `|z & convex` 只會選到外緣的四條豎邊，不會選到孔的接縫線；`line`（直線邊）與 `circle`（圓邊）。沒有任何邊符合時回 `geometry.empty_selection`，`details.matches_per_term` 列出每個詞各單獨符合幾條，方便修正選擇器。
 
 ```json

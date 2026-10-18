@@ -611,3 +611,96 @@ def test_many_holes_build_and_the_result_stays_small(ocp):
     assert r.data["holes_total"] == 250 and len(r.data["holes"]) == 50
     assert len(json.loads(artifact(r, "part.features.json").read_text(encoding="utf-8"))["holes"]) == 250
     assert len(json.dumps(r.data)) < 40000
+
+
+# --------------------------------------------------------------------------- loose bodies joined later, edge-size limits, hole limit
+# Two loose 20 x 20 x 10 boxes (x = 0 and x = 50) and a 30 x 20 x 10 bridge between them (x = 20 to 50).  The final part is one
+# solid of 14000 mm^3 minus what the features before the bridge removed, which is why the edge operations below run while there
+# are still two solids.  A 10 mm cube with every edge and corner rounded by r is the Minkowski sum of a cube of side s = 10 - 2r
+# and a ball: V = s^3 + 6 s^2 r + 3 pi s r^2 + 4/3 pi r^3.
+LOOSE_A = box(("20 mm", "20 mm", "10 mm"))
+LOOSE_B = box(("20 mm", "20 mm", "10 mm"), at=("50 mm", "0 mm", "0 mm"))
+BRIDGE = box(("30 mm", "20 mm", "10 mm"), at=("20 mm", "0 mm", "0 mm"))
+
+
+def _volume_by_independent_read(result: ToolResult) -> float:
+    return measured(artifact(result, "part.step")).values["volume"].quantity
+
+
+@pytest.mark.parametrize(
+    ("edge_op", "loss"),
+    [(fillet("|z & convex", "2 mm"), 8 * (4 - math.pi) * 10), (chamfer("|z & convex", "2 mm"), 8 * 2 * 10)],
+    ids=["fillet", "chamfer"],
+)
+def test_edges_of_loose_bodies_are_rounded_before_a_later_feature_joins_them(ocp, edge_op, loss):
+    r = run(spec([LOOSE_A, LOOSE_B, edge_op, BRIDGE]))
+    assert r.ok, r.error
+    want = 14000 - loss
+    assert r.data["solids"] == 1
+    assert r.value.quantity == pytest.approx(want, abs=1e-6)
+    assert _volume_by_independent_read(r) == pytest.approx(want, abs=1e-6)
+    assert r.data["features"][2]["edges_used"] == 8  # 4 vertical edges on each loose body
+
+
+def test_holes_are_drilled_into_loose_bodies_before_they_are_joined(ocp):
+    holes = hole([("10 mm", "10 mm", "10 mm"), ("60 mm", "10 mm", "10 mm")], "4 mm")
+    r = run(spec([LOOSE_A, LOOSE_B, holes, BRIDGE]))
+    assert r.ok, r.error
+    want = 14000 - 2 * math.pi * 4 * 10
+    assert r.data["solids"] == 1
+    assert r.value.quantity == pytest.approx(want, abs=1e-6)
+    assert _volume_by_independent_read(r) == pytest.approx(want, abs=1e-6)
+
+
+def test_an_extreme_face_selector_picks_edges_of_the_outermost_loose_body_only(ocp):
+    r = run(spec([LOOSE_A, LOOSE_B, fillet(">x & |z", "2 mm"), BRIDGE]))
+    assert r.ok, r.error
+    want = 14000 - 2 * (4 - math.pi) * 10
+    assert r.data["features"][2]["edges_used"] == 2  # the two vertical edges at x = 70, none of the box at x = 0
+    assert r.value.quantity == pytest.approx(want, abs=1e-6)
+    assert _volume_by_independent_read(r) == pytest.approx(want, abs=1e-6)
+
+
+CUBE = box(("10 mm", "10 mm", "10 mm"))
+
+
+@pytest.mark.parametrize("edge_op", [fillet("all", "5 mm"), chamfer("all", "5 mm")], ids=["fillet", "chamfer"])
+def test_an_edge_operation_of_exactly_half_the_part_is_refused_naming_the_feature(ocp, edge_op):
+    r = failed(run(spec([CUBE, edge_op])), "geometry.build_failed")
+    assert r.error.details["feature_index"] == 2 and r.error.details["pointer"] == "/features/1"
+
+
+def test_a_fillet_just_under_half_the_part_builds_the_exact_rounded_cube(ocp):
+    radius = 4.9
+    side = 10 - 2 * radius
+    want = side**3 + 6 * side**2 * radius + 3 * math.pi * side * radius**2 + 4 / 3 * math.pi * radius**3
+    r = run(spec([CUBE, fillet("all", "4.9 mm")]))
+    assert r.ok, r.error
+    assert r.data["solids"] == 1
+    assert r.value.quantity == pytest.approx(want, rel=1e-9)
+    assert _volume_by_independent_read(r) == pytest.approx(want, rel=1e-9)
+
+
+def test_the_hole_limit_counts_positions_over_all_hole_features_and_fails_before_the_engine():
+    row = [(f"{10 + i} mm", "10 mm", "10 mm") for i in range(600)]
+    text = spec([box(("1000 mm", "100 mm", "10 mm")), hole(row, "1 mm"), hole(row, "2 mm")])
+    r = failed(run(text), "input.invalid")
+    assert r.error.details["limit"] == 1000
+    assert "in all" in r.error.message
+
+
+def test_a_fillet_larger_than_the_plate_is_thick_is_refused(ocp):
+    r = failed(run(spec([box(("100 mm", "50 mm", "2 mm")), fillet("all", "3 mm")])), "geometry.build_failed")
+    assert r.error.details["op"] == "fillet" and r.error.details["feature_index"] == 2
+
+
+@pytest.mark.parametrize("radius", ["0 mm", "-1 mm"])
+def test_a_zero_or_negative_fillet_radius_is_an_input_error_before_the_engine(radius):
+    r = failed(run(spec([CUBE, fillet("all", radius)])), "input.invalid")
+    assert r.error.details["pointer"] == "/features/1/radius"
+
+
+def test_an_intersection_with_a_disjoint_solid_is_a_build_failure_naming_the_feature(ocp):
+    far = box(("5 mm", "5 mm", "5 mm"), at=("100 mm", "0 mm", "0 mm"), mode="intersect")
+    r = failed(run(spec([CUBE, far])), "geometry.build_failed")
+    assert r.error.details["feature_index"] == 2 and "nothing is left" in r.error.message
