@@ -53,6 +53,10 @@ server = FastMCP(
 # Flow-regime limits used for warnings and the nominal uncertainty band.
 _RE_LAMINAR = 2300.0
 _RE_TURBULENT = 4000.0
+# ``fluids.friction.friction_factor`` returns the exact laminar solution 64/Re only below this
+# Reynolds number and applies its turbulent correlation above it. Our regime labels use the
+# classical 2300 limit, so between the two the label says "laminar" but the engine does not.
+_RE_FLUIDS_LAMINAR = float(fluids.friction.LAMINAR_TRANSITION_PIPE)
 
 
 # --------------------------------------------------------------------------- cylinder force
@@ -209,19 +213,34 @@ def pipe_pressure_drop(
             "friction_factor_darcy": QuantityOut(quantity=float(f), unit="dimensionless"),
             "head_loss": to_quantity_out(ureg.Quantity(head_m, "m"), "m"),
         }
+        # Report the correlation fluids actually used for this Re, not the one the regime label implies.
+        if Re < _RE_FLUIDS_LAMINAR:
+            method_used = "laminar solution f = 64/Re"
+        else:
+            method_used = "Colebrook equation (Clamond exact solution)"
         warnings = [
-            f"flow regime: {regime} (Re = {Re:.0f}); uncertainty is a nominal +/-{rel_unc:.0%} band "
-            "for Darcy-Weisbach with Colebrook friction, not a calibrated estimate",
+            f"flow regime: {regime} (Re = {Re:.0f}); friction factor from the {method_used}; "
+            f"uncertainty is a nominal +/-{rel_unc:.0%} band for Darcy-Weisbach, not a calibrated estimate",
         ]
         if regime == "transitional":
             warnings.append("transitional regime (2300 < Re < 4000): friction factor is poorly defined")
+        elif _RE_FLUIDS_LAMINAR <= Re < _RE_LAMINAR:
+            warnings.append(
+                f"Re = {Re:.0f} is below the classical laminar limit ({_RE_LAMINAR:.0f}) but above the "
+                f"point where fluids switches from 64/Re to the Colebrook equation ({_RE_FLUIDS_LAMINAR:.0f}); "
+                "the friction factor and pressure drop are higher than the laminar value, so treat the "
+                "nominal uncertainty band with extra caution"
+            )
         return Computed(
             values=values,
             primary="pressure_drop",
             warnings=warnings,
             data={
                 "formula": "dp = f * (L/D) * rho * v^2 / 2",
-                "friction_method": "fluids.friction.friction_factor(Method='Clamond'); laminar 64/Re",
+                "friction_method": (
+                    f"fluids.friction.friction_factor(Method='Clamond'): {method_used}"
+                    f" (fluids uses 64/Re below Re {_RE_FLUIDS_LAMINAR:.0f})"
+                ),
                 "regime": regime,
                 "relative_roughness": eps_m / D_m,
             },

@@ -226,3 +226,107 @@ def test_pipe_pressure_drop_rejects_non_positive(field):
     assert r.ok is False
     assert r.error.family == "input.invalid"
     assert r.error.details["param"] == field
+
+
+# --------------------------------------------------------------------------- warnings
+
+
+def test_failed_calls_carry_no_warnings():
+    # A failed call has no result, so the "ideal force / straight pipe only" scope warnings
+    # (which describe a result) must not be attached to it.
+    r = _call(cylinder_force, bore="100", rod="", pressure="210 bar")
+    assert r.ok is False
+    assert r.error.family == "units.bare_number"
+    assert r.warnings == []
+
+    r = _call(
+        pipe_pressure_drop,
+        diameter="10 mm",
+        length="1 m",
+        flow_rate="5 L/min",
+        density="870 kg/m^3",
+        viscosity="46 cSt",
+    )
+    assert r.ok is False
+    assert r.warnings == []
+
+
+def test_successful_calls_still_carry_scope_warnings():
+    r = _call(cylinder_force, bore="100 mm", rod="50 mm", pressure="210 bar")
+    assert r.ok and any("seal friction" in w for w in r.warnings)
+
+
+def test_engine_failure_carries_no_warnings():
+    from eng_toolkit.runner import run_tool
+
+    def boom(_):
+        raise RuntimeError("solver diverged")
+
+    r = run_tool(
+        tool_name="calc_test",
+        engine="test",
+        version="0",
+        inputs={"x": "1 m"},
+        compute=boom,
+        standing_warnings=("scope warning that only applies to a result",),
+    )
+    assert r.ok is False
+    assert r.error.family == "engine.failure"
+    assert r.warnings == []
+
+
+def _pipe_at_reynolds(Re: float) -> ToolResult:
+    """10 mm pipe, 870 kg/m^3, 0.04 Pa*s; flow rate chosen to hit the requested Reynolds number."""
+    D, rho, mu = 0.01, 870.0, 0.04
+    v = Re * mu / (rho * D)
+    r = _call(
+        pipe_pressure_drop,
+        diameter="10 mm",
+        length="1 m",
+        flow_rate=f"{v * math.pi / 4 * D**2} m^3/s",
+        density=f"{rho} kg/m^3",
+        viscosity=f"{mu} Pa*s",
+        output_unit="Pa",
+    )
+    assert r.ok, r.error
+    assert math.isclose(r.values["reynolds"].quantity, Re, rel_tol=1e-9)
+    return r
+
+
+def _friction_warning(r: ToolResult) -> str:
+    return next(w for w in r.warnings if w.startswith("flow regime"))
+
+
+def test_laminar_warning_names_64_over_Re_not_colebrook():
+    r = _pipe_at_reynolds(500.0)
+    assert r.data["regime"] == "laminar"
+    assert math.isclose(r.values["friction_factor_darcy"].quantity, 64 / 500.0, rel_tol=1e-9)
+    w = _friction_warning(r)
+    assert "64/Re" in w and "Colebrook" not in w
+    assert "64/Re" in r.data["friction_method"]
+
+
+def test_turbulent_warning_names_colebrook():
+    r = _pipe_at_reynolds(50_000.0)
+    assert r.data["regime"] == "turbulent"
+    w = _friction_warning(r)
+    assert "Colebrook" in w and "64/Re" not in w
+    assert "Colebrook" in r.data["friction_method"]
+
+
+def test_laminar_label_but_colebrook_friction_band_is_flagged():
+    # fluids switches from 64/Re to Colebrook at Re = 2040, our regime label stays "laminar" until 2300.
+    # In that band the friction factor is NOT 64/Re, and the result must say so.
+    r = _pipe_at_reynolds(2200.0)
+    assert r.data["regime"] == "laminar"
+    f = r.values["friction_factor_darcy"].quantity
+    assert f > 1.2 * (64 / 2200.0)  # clearly not the laminar solution
+    w = _friction_warning(r)
+    assert "Colebrook" in w and "64/Re" not in w
+    assert any("2040" in x and "higher than the laminar value" in x for x in r.warnings)
+
+
+def test_no_band_warning_below_fluids_switch_point():
+    r = _pipe_at_reynolds(2000.0)
+    assert math.isclose(r.values["friction_factor_darcy"].quantity, 64 / 2000.0, rel_tol=1e-9)
+    assert not any("higher than the laminar value" in x for x in r.warnings)

@@ -7,6 +7,7 @@ has to parse units and compute:
 2. run the domain's ``compute`` callable;
 3. convert :class:`eng_toolkit.units.UnitsError` into a structured ``ok=False``
    result (error family preserved) and any other exception into ``engine.failure``;
+   failed results carry no ``warnings`` (standing warnings apply to successful results only);
 4. attach provenance (engine, version, sha256 of canonical inputs) and artifacts;
 5. write ``result.json`` + ``manifest.json`` and return the :class:`ToolResult`.
 """
@@ -55,8 +56,10 @@ def run_tool(
     handle = JobHandle(job)
     artifacts: list[Artifact] = [job.write_inputs(inputs)]
     provenance = Provenance(engine=engine, version=version, inputs_hash=inputs_hash(inputs))
-    warnings: list[str] = list(standing_warnings)
 
+    # ``standing_warnings`` describe the scope limits of a *result* (e.g. "ideal force, no seal
+    # friction"). A failed call has no result, so it carries no warnings: attaching them would
+    # make an error look like a computed value with caveats.
     try:
         computed = compute(handle)
     except UnitsError as exc:
@@ -64,7 +67,7 @@ def run_tool(
             ok=False,
             artifacts=artifacts,
             provenance=provenance,
-            warnings=warnings,
+            warnings=[],
             error=ToolError(family=exc.family, message=exc.message, details=exc.details),
         )
     except Exception as exc:  # noqa: BLE001 - engine failures must still honour the contract
@@ -72,7 +75,7 @@ def run_tool(
             ok=False,
             artifacts=artifacts,
             provenance=provenance,
-            warnings=warnings,
+            warnings=[],
             error=ToolError(
                 family="engine.failure",
                 message=f"{type(exc).__name__}: {exc}",
@@ -89,7 +92,7 @@ def run_tool(
             data=computed.data,
             artifacts=artifacts + computed.artifacts,
             provenance=provenance,
-            warnings=warnings + computed.warnings,
+            warnings=list(standing_warnings) + computed.warnings,
         )
 
     result.data = {**result.data, "job_id": job.job_id, "job_dir": str(job.dir)}
