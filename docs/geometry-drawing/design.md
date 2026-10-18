@@ -140,7 +140,11 @@ Why S1 first: it makes the one-owner rule true while there is a single consumer 
 * In-process OCCT with a face-count limit and no proven cancellation, in exchange for no per-call process start-up.
 * An empty default DFM limit table until each value has a source.
 
-## Open questions for the project owner
+## Owner decisions (recorded 2026-10-18)
+
+The project owner accepted the recommendation on all seven questions below. They are decided, not open: (1) no server-side code execution, declarative spec only; (2) default projection is third angle, first angle selectable; (3) `Provenance` gains optional `input_files` and `engine_versions`, and `check_scan`'s `data.input_files` is removed in the same change; (4) no shipped DFM defaults, caller-supplied limits only; (5) ezdxf stays in the `drawing` extra; (6) LibreDWG is documented as a manual install only; (7) no worker process per call in v1. The text of each question and its recommendation follows.
+
+## The seven questions and their recommendations
 
 1. **Server-side code execution.** Accept the declarative spec and no code tool? (Recommended: yes. If not: the gated design in candidate 1, Q4, and a decision on default on/off and on HTTP.)
 2. **Default projection.** First angle (ISO) or third angle (common in Taiwan, Japan and the US)? Candidate 1 chose first, candidate 2 third. (Recommended: third angle as the default, first angle selectable.)
