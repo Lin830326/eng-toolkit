@@ -4,7 +4,7 @@
 
 > ⚠️ 所有輸出皆標示 `review_status: "unreviewed"`。本工具箱的結果是**未經工程核可**的估算，必須由合格工程師複核後才能用於設計或採購。
 
-目前有兩個領域：`calc`（油壓計算）與 `metrology`（ISO 286 配合查詢、一維公差堆疊）。CAD／2D 圖檔／EDA／模擬等領域尚未開始。
+目前有兩個領域：`calc`（油壓計算）與 `metrology`（ISO 286 配合查詢與反查、一維公差堆疊）。CAD／2D 圖檔／EDA／模擬等領域尚未開始。
 
 ---
 
@@ -22,6 +22,7 @@ Claude Code / 任何 MCP 客戶端
 │   │        calc_pipe_pressure_drop  (fluids)   │
 │   ├── mount(namespace="metrology") ► metrology 子 server│
 │   │        metrology_fit_limits  (ISO 286 自建表)  │
+│   │        metrology_fit_search  (間隙窗口反查配合)  │
 │   │        metrology_stackup_1d  (NumPy)           │
 │   └── (未來) cad_*, dxf_*, eda_* ...               │
 ├────────────────────────────────────────────────┤
@@ -80,7 +81,7 @@ uv run eng-toolkit doctor                                       # 健康檢查�
 claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-toolkit" eng-toolkit
 ```
 
-或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可）。接上後 `/mcp` 應看到 `eng-toolkit` 與四個工具。
+或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可）。接上後 `/mcp` 應看到 `eng-toolkit` 與七個工具。
 
 **Cursor**（`~/.cursor/mcp.json` 或專案 `.cursor/mcp.json`）
 
@@ -164,6 +165,14 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 {"nominal": "25 mm", "fit": "H7/g6"}
 ```
 → 孔 `25.000–25.021 mm`、軸 `24.980–24.993 mm`、`min_clearance = 0.007 mm`、`max_clearance = 0.041 mm`、`data.fit_type = "clearance"`；另有上下偏差（µm）、公差、極限尺寸。間隙為「孔尺寸 − 軸尺寸」，負值即干涉（`data.max_interference_mm` 等已換算）。尺寸超出 3–500 mm、未知或格式錯誤的配合代號（`input.unknown_fit_code`）、標準未定義的組合（`input.undefined_class`）都會回明確錯誤。資料表已與兩份獨立公開表逐格比對（見 [docs/iso286-data.md](docs/iso286-data.md)），但標準本身才是權威。
+
+### `metrology_fit_search`
+反查 ISO 286 配合：已知公稱尺寸與可接受的間隙範圍，找出符合的標準配合。輸入：`nominal`（3–500 mm）、`min_clearance`／`max_clearance`（間隙窗口，帶單位的有號長度，如 `"-0.03 mm"`；間隙為「孔 − 軸」，負值即干涉；min 大於 max 回 `input.invalid`）、`basis`（`hole` 孔基制，預設；或 `shaft` 軸基制）、`fit_set`（`preferred` 預設，10 個優選配合；或 `common`，孔 H6–H11 搭軸 c d e f g h js k m n p r s t u，軸公差等級與孔相同或細一級，軸基制則對稱）、`max_results`（1–50，預設 10）。配合的最小間隙 ≥ `min_clearance` 且最大間隙 ≤ `max_clearance` 才算符合；標準在該尺寸沒有定義的組合會略過並計入 `data.skipped_undefined`。
+
+```json
+{"nominal": "25 mm", "min_clearance": "0 mm", "max_clearance": "0.05 mm"}
+```
+→ `candidate_count = 2`，`data.candidates` 依序為 `H7/g6`（0.007–0.041 mm）、`H7/h6`（0–0.034 mm）。排序：孔公差加軸公差較大者優先（製造成本的代理指標），其次是配合中心最接近窗口中心者，再依產生順序。這只是成本代理，**不是**配合是否適用的判斷。沒有符合者時仍回 `ok=true`、`candidates` 為空，並在 `data.nearest` 列出最接近的 3 個配合與 `violation_um`（超出窗口的微米數）及警告，方便放寬窗口。
 
 ### `metrology_stackup_1d`
 一維公差堆疊。`chain` 為 JSON 陣列字串，每個環含 `nominal`、對稱公差 `tol` 或 `plus`/`minus`（皆為量值，`0 mm` 也要帶單位）、`direction`（`"+"` 加入／`"-"` 減去）。`method`：`worst_case`（預設）或 `rss`（各環公差視為獨立常態的 ±3σ）。選配 `monte_carlo=true`（固定 `seed`，預設 12345；`samples` 1000–2000000；`distribution` 為 `normal` 或 `uniform`），配合 `lower_limit`／`upper_limit` 回傳超出規格的機率（附二項標準誤）。
