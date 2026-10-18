@@ -622,7 +622,7 @@ def _deviations_csv(points: np.ndarray, deviation: np.ndarray, labels: np.ndarra
         "histogram, the worst points, clustered out-of-tolerance regions (centroid, bounding box, worst "
         "deviation) and a deviations.csv artifact. registration 'icp' first refines the alignment with "
         "point-to-plane ICP (the scan must already be roughly aligned); 'none' trusts the scan frame. "
-        "Needs the optional scan engines (uv sync --extra scan)."
+        f"Needs the optional scan engines ({scan.INSTALL_COMMAND})."
     ),
 )
 def check_scan(
@@ -689,24 +689,17 @@ def check_scan(
         unit = str(parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units)
         per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
 
-        try:
-            scan_file = scan.check_input_file(scan_path, param="scan_path", extensions=scan.SCAN_EXTENSIONS)
-            model_file = scan.check_input_file(model_path, param="model_path", extensions=scan.MODEL_EXTENSIONS)
-            run = scan.check(
-                scan_file,
-                model_file,
-                to_mm=to_mm,
-                registration=registration,
-                icp_max_distance_mm=icp_mm,
-                deflection_mm=deflection_mm,
-                max_points=max_points,
-            )
-        except scan.ScanEngineUnavailable as exc:
-            raise UnitsError(
-                "engine.unavailable", str(exc), {"module": exc.module, "dist": exc.dist, "install": scan.INSTALL_COMMAND}
-            ) from exc
-        except scan.ScanInputError as exc:
-            raise UnitsError(exc.family, exc.message, exc.details) from exc
+        scan_file = scan.check_input_file(scan_path, param="scan_path", extensions=scan.SCAN_EXTENSIONS)
+        model_file = scan.check_input_file(model_path, param="model_path", extensions=scan.MODEL_EXTENSIONS)
+        run = scan.check(
+            scan_file,
+            model_file,
+            to_mm=to_mm,
+            registration=registration,
+            icp_max_distance_mm=icp_mm,
+            deflection_mm=deflection_mm,
+            max_points=max_points,
+        )
 
         def length(value_mm: float) -> QuantityOut:
             return QuantityOut(quantity=float(f"{value_mm * per_mm:.9g}"), unit=unit)

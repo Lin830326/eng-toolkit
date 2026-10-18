@@ -1,10 +1,10 @@
 """Scan-to-model deviation: a point cloud measured against a STEP model.
 
 Pure computation on millimetres and NumPy arrays: no MCP and no pint.  The model is read and
-tessellated with OpenCASCADE (``OCP``), an Open3D ``RaycastingScene`` finds the closest triangle of
-each scan point, the distance is then recomputed in float64 and the optional registration is Open3D
-point-to-plane ICP.  Both engines are optional (the ``scan`` extra), so they are imported inside
-functions and a missing one raises :class:`ScanEngineUnavailable`.
+tessellated by :mod:`eng_toolkit.brep` (the one owner of OpenCASCADE), an Open3D ``RaycastingScene``
+finds the closest triangle of each scan point, the distance is then recomputed in float64 and the
+optional registration is Open3D point-to-plane ICP.  Both engines are optional (the ``scan`` extra),
+so they are imported inside functions and a missing one raises :class:`EngineUnavailable`.
 
 Deviation is the signed distance from a scan point to the model surface, positive outside the
 material.  A mesh that is not one closed solid has no well-defined inside, so it is measured
@@ -20,13 +20,17 @@ from typing import Any
 
 import numpy as np
 
+from eng_toolkit import brep
+from eng_toolkit.errors import EngineUnavailable, ToolFailure
+from eng_toolkit.licenses import install_hint
+
 SCAN_EXTENSIONS: tuple[str, ...] = (".ply", ".pcd", ".xyz", ".xyzn", ".xyzrgb", ".pts")
 MODEL_EXTENSIONS: tuple[str, ...] = (".step", ".stp")
 REGISTRATIONS: tuple[str, ...] = ("none", "icp")
 
 MIN_POINTS_LIMIT = 1_000
 MAX_POINTS_LIMIT = 5_000_000
-INSTALL_COMMAND = "uv sync --extra scan"
+INSTALL_COMMAND = install_hint("open3d")  # the scan extra installs both engines
 
 SEED = 0
 HISTOGRAM_BINS = 20
@@ -40,7 +44,6 @@ ICP_TARGET_POINTS = 100_000
 ICP_MAX_ITERATIONS = 100
 LOW_FITNESS = 0.5
 MERGE_EPS_MM = 1e-6
-ANGULAR_DEFLECTION_RAD = 0.5
 MAX_COORDINATE_MM = 1e7
 ICP_MAX_SOURCE_POINTS = 200_000
 WEAK_EIGENVALUE_RATIO = 1e-3
@@ -52,55 +55,35 @@ ICP_NOTE = (
 )
 
 
-class ScanInputError(ValueError):
-    """A file or value the caller can fix; ``family`` is the contract's error family."""
-
-    def __init__(self, family: str, message: str, details: dict[str, Any] | None = None):
-        super().__init__(message)
-        self.family = family
-        self.message = message
-        self.details = details or {}
-
-
-class ScanEngineUnavailable(RuntimeError):
-    """``open3d`` or ``OCP`` cannot be imported; the ``scan`` extra is not installed."""
-
-    def __init__(self, module: str, dist: str, cause: BaseException):
-        super().__init__(
-            f"{module} ({dist}) could not be imported: {cause}. metrology_check_scan needs the optional "
-            f"scan engines; install them with: {INSTALL_COMMAND}"
-        )
-        self.module = module
-        self.dist = dist
-
-
 # --------------------------------------------------------------------------- engines
+
+
+def _scan_engine_unavailable(module: str, dist: str, cause: BaseException) -> EngineUnavailable:
+    return EngineUnavailable(
+        module, dist, cause, install=INSTALL_COMMAND, needed_by="metrology_check_scan needs the optional scan engines"
+    )
 
 
 def _open3d():
     try:
         import open3d as o3d
     except (ImportError, OSError) as exc:
-        raise ScanEngineUnavailable("open3d", "open3d", exc) from exc
+        raise _scan_engine_unavailable("open3d", "open3d", exc) from exc
     # Open3D logs warnings to stdout, which is the MCP stdio channel.
     o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
     return o3d
 
 
-def _ocp() -> None:
-    # Importing the package (not a submodule) is what fails when the wheel is absent or its DLLs do not load.
+def _require_ocp() -> None:
     try:
-        import OCP  # noqa: F401
-        from OCP.Message import Message, Message_PrinterOStream
-    except (ImportError, OSError) as exc:
-        raise ScanEngineUnavailable("OCP", "cadquery-ocp-novtk", exc) from exc
-    # OCCT prints STEP parse errors to stdout, which is the MCP stdio channel.
-    Message.DefaultMessenger_s().RemovePrinters(Message_PrinterOStream.get_type_descriptor_s())
+        brep.require_engine()
+    except EngineUnavailable as exc:
+        raise _scan_engine_unavailable(exc.details["module"], exc.details["dist"], exc.__cause__ or exc) from exc
 
 
 def require_engines() -> None:
     _open3d()
-    _ocp()
+    _require_ocp()
 
 
 # --------------------------------------------------------------------------- inputs
@@ -109,9 +92,9 @@ def require_engines() -> None:
 def check_input_file(raw: str, *, param: str, extensions: tuple[str, ...]) -> Path:
     path = Path(raw).expanduser()
     if not path.is_file():
-        raise ScanInputError("input.file_not_found", f"{param}: no such file {str(path)!r}", {"param": param, "path": str(path)})
+        raise ToolFailure("input.file_not_found", f"{param}: no such file {str(path)!r}", {"param": param, "path": str(path)})
     if path.suffix.lower() not in extensions:
-        raise ScanInputError(
+        raise ToolFailure(
             "input.unsupported_format",
             f"{param}: {path.suffix or '(no extension)'!r} is not supported; use one of {list(extensions)}",
             {"param": param, "path": str(path), "supported": list(extensions)},
@@ -184,7 +167,7 @@ def _check_ply_complete(path: Path) -> None:
     else:
         return
     if short:
-        raise ScanInputError(
+        raise ToolFailure(
             "input.invalid",
             f"scan_path: {str(path)!r} is truncated or corrupt: its PLY header declares {needed} but the file has "
             f"{found}",
@@ -199,18 +182,18 @@ def read_scan_points(path: Path, to_mm: float) -> np.ndarray:
     try:
         cloud = o3d.io.read_point_cloud(str(path))
     except Exception as exc:  # noqa: BLE001 - Open3D raises RuntimeError for unreadable files
-        raise ScanInputError("input.invalid", f"scan_path: cannot read {str(path)!r}: {exc}", {"path": str(path)}) from exc
+        raise ToolFailure("input.invalid", f"scan_path: cannot read {str(path)!r}: {exc}", {"path": str(path)}) from exc
     points = np.asarray(cloud.points, dtype=np.float64)
     if len(points) == 0:
-        raise ScanInputError("input.invalid", f"scan_path: {str(path)!r} holds no readable points", {"path": str(path)})
+        raise ToolFailure("input.invalid", f"scan_path: {str(path)!r} holds no readable points", {"path": str(path)})
     with np.errstate(over="ignore", invalid="ignore"):
         scaled = points * to_mm
         finite = bool(np.isfinite(scaled).all())
         largest = float(np.abs(scaled).max()) if finite else math.inf
     if not finite:
-        raise ScanInputError("input.invalid", f"scan_path: {str(path)!r} has non-finite coordinates", {"path": str(path)})
+        raise ToolFailure("input.invalid", f"scan_path: {str(path)!r} has non-finite coordinates", {"path": str(path)})
     if largest > MAX_COORDINATE_MM:
-        raise ScanInputError(
+        raise ToolFailure(
             "input.invalid",
             f"scan_path: {str(path)!r} has a coordinate of {largest:.6g} mm after unit conversion, beyond the "
             f"{int(MAX_COORDINATE_MM)} mm a scan can plausibly hold; the file is corrupt or scan_unit is wrong",
@@ -245,84 +228,22 @@ class ModelMesh:
         return self.watertight and self.solids <= 1
 
 
-def _face_triangles(shape) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
-    from OCP.BRep import BRep_Tool
-    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
-    from OCP.TopExp import TopExp_Explorer
-    from OCP.TopLoc import TopLoc_Location
-    from OCP.TopoDS import TopoDS
-
-    vertices: list[tuple[float, float, float]] = []
-    triangles: list[tuple[int, int, int]] = []
-    explorer = TopExp_Explorer(shape, TopAbs_FACE)
-    while explorer.More():
-        face = TopoDS.Face(explorer.Current())
-        location = TopLoc_Location()
-        triangulation = BRep_Tool.Triangulation_s(face, location)
-        if triangulation is not None:
-            transform = location.Transformation()
-            base = len(vertices)
-            for i in range(1, triangulation.NbNodes() + 1):
-                p = triangulation.Node(i).Transformed(transform)
-                vertices.append((p.X(), p.Y(), p.Z()))
-            reversed_face = face.Orientation() == TopAbs_REVERSED
-            for i in range(1, triangulation.NbTriangles() + 1):
-                a, b, c = triangulation.Triangle(i).Get()
-                if reversed_face:
-                    b, c = c, b
-                triangles.append((base + a - 1, base + b - 1, base + c - 1))
-        explorer.Next()
-    return vertices, triangles
-
-
-def _count(shape, kind) -> int:
-    from OCP.TopExp import TopExp_Explorer
-
-    explorer = TopExp_Explorer(shape, kind)
-    found = 0
-    while explorer.More():
-        found += 1
-        explorer.Next()
-    return found
-
-
 def read_model_mesh(path: Path, deflection_mm: float) -> ModelMesh:
     """Read a STEP file (in millimetres) and tessellate every face with the given linear deflection."""
     o3d = _open3d()
-    _ocp()
-    from OCP.BRepMesh import BRepMesh_IncrementalMesh
-    from OCP.IFSelect import IFSelect_RetDone
-    from OCP.STEPControl import STEPControl_Reader
-    from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
+    _require_ocp()
 
-    def unreadable(why: str) -> ScanInputError:
-        return ScanInputError("input.invalid", f"model_path: {why} in {str(path)!r}", {"path": str(path)})
+    def unreadable(why: str) -> ToolFailure:
+        return ToolFailure("input.invalid", f"model_path: {why} in {str(path)!r}", {"path": str(path)})
 
-    reader = STEPControl_Reader()
-    try:
-        status = reader.ReadFile(str(path))
-    except Exception as exc:  # noqa: BLE001 - OCCT raises its own exception types
-        raise unreadable(f"cannot read STEP ({exc})") from exc
-    if status != IFSelect_RetDone:
-        raise unreadable("not a readable STEP file")
-    roots_in_file = int(reader.NbRootsForTransfer())
-    if reader.TransferRoots() == 0:
-        raise unreadable("no shape to transfer")
-    shape = reader.OneShape()
-    if shape.IsNull():
-        raise unreadable("no shape")
-    # TransferRoots counts a root whose geometry failed to convert as transferred and hands back an empty shape for it.
-    roots_transferred = sum(1 for i in range(1, reader.NbShapes() + 1) if _count(reader.Shape(i), TopAbs_FACE) > 0)
-    solids = _count(shape, TopAbs_SOLID)
-
-    BRepMesh_IncrementalMesh(shape, deflection_mm, False, ANGULAR_DEFLECTION_RAD, True)
-    vertices, triangles = _face_triangles(shape)
-    if not triangles:
+    solid = brep.read_solid(path, param="model_path")
+    raw = brep.triangulate(solid, deflection_mm)
+    if len(raw.triangles) == 0:
         raise unreadable("no faces to measure against")
 
     mesh = o3d.geometry.TriangleMesh(
-        o3d.utility.Vector3dVector(np.asarray(vertices, dtype=np.float64)),
-        o3d.utility.Vector3iVector(np.asarray(triangles, dtype=np.int32)),
+        o3d.utility.Vector3dVector(raw.vertices),
+        o3d.utility.Vector3iVector(raw.triangles),
     )
     # Each face carries its own nodes; welding the shared edge nodes is what makes a closed shell closed.
     mesh = mesh.merge_close_vertices(MERGE_EPS_MM)
@@ -337,9 +258,9 @@ def read_model_mesh(path: Path, deflection_mm: float) -> ModelMesh:
         triangles=np.asarray(mesh.triangles, dtype=np.int32),
         watertight=watertight,
         deflection_mm=deflection_mm,
-        solids=solids,
-        roots_in_file=roots_in_file,
-        roots_transferred=roots_transferred,
+        solids=solid.solids,
+        roots_in_file=solid.roots_in_file,
+        roots_transferred=solid.roots_transferred,
     )
 
 
@@ -602,7 +523,7 @@ def check(
         points = transform_points(points, transform)
     measured = measure(points, mesh, signed=mesh.signed)
     if not np.isfinite(measured.distance).all():
-        raise ScanInputError(
+        raise ToolFailure(
             "input.invalid",
             f"scan_path: {str(scan_file)!r} produced a non-finite distance to the model",
             {"path": str(scan_file)},
@@ -744,8 +665,6 @@ __all__ = [
     "Registration",
     "Regions",
     "ScanCheck",
-    "ScanEngineUnavailable",
-    "ScanInputError",
     "check",
     "check_input_file",
     "closest_points_on_triangles",
