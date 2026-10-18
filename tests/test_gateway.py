@@ -16,6 +16,7 @@ EXPECTED_TOOLS = {
     "metrology_fit_limits",
     "metrology_stackup_1d",
     "metrology_fit_search",
+    "metrology_check_scan",
 }
 
 
@@ -52,6 +53,11 @@ async def test_toolkit_doctor_returns_contract_and_is_healthy():
     for dist in ("fastmcp", "pint", "pydantic", "fluids", "numpy"):
         assert deps[dist]["status"] == "ok", deps[dist]
         assert deps[dist]["detected_tier"] == "permissive"
+    for dist in ("open3d", "cadquery-ocp-novtk"):
+        assert deps[dist]["status"] in ("ok", "not-installed (optional)"), deps[dist]
+    assert deps["cadquery-ocp-novtk"]["declared_tier"] == "lgpl-dynamic"
+    assert "OCCT" in deps["cadquery-ocp-novtk"]["bundled_license"]
+    assert deps["open3d"]["optional"] is True and deps["numpy"]["optional"] is False
     assert r.data["workspace"]["writable"] is True
     assert r.data["license_scan"]["flagged"] == []
     assert r.data["units"]["pint_ok"] is True
@@ -70,8 +76,100 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
     assert engines["fluids"]["tier"] == "permissive"
     assert engines["pint"]["tier"] == "permissive"
     metrology = next(d for d in r.data["domains"] if d["name"] == "metrology")
-    assert set(metrology["tools"]) == {"metrology_fit_limits", "metrology_stackup_1d", "metrology_fit_search"}
-    assert {e["dist"]: e["tier"] for e in metrology["engines"]} == {"pint": "permissive", "numpy": "permissive"}
+    assert set(metrology["tools"]) == {
+        "metrology_fit_limits",
+        "metrology_stackup_1d",
+        "metrology_fit_search",
+        "metrology_check_scan",
+    }
+    assert {e["dist"]: e["tier"] for e in metrology["engines"]} == {
+        "pint": "permissive",
+        "numpy": "permissive",
+        "open3d": "permissive",
+        "cadquery-ocp-novtk": "lgpl-dynamic",
+    }
+    ocp = next(e for e in metrology["engines"] if e["dist"] == "cadquery-ocp-novtk")
+    assert ocp["optional"] is True
+    assert "OCCT" in ocp["bundled_license"]
+
+
+def _doctor(monkeypatch, detected: dict[str, tuple[str | None, str | None]]) -> ToolResult:
+    """Run the doctor with ``installed_license`` overridden for some distributions."""
+    from eng_toolkit.gateway import server as srv
+
+    real = srv.installed_license
+    monkeypatch.setattr(srv, "installed_license", lambda dist: detected.get(dist) or real(dist))
+    return getattr(srv.toolkit_doctor, "fn", srv.toolkit_doctor)(scan_env=False)
+
+
+def _dep(r: ToolResult, dist: str) -> dict:
+    return next(d for d in r.data["dependencies"] if d["dist"] == dist)
+
+
+def test_doctor_reports_a_missing_optional_engine_without_failing(monkeypatch):
+    r = _doctor(monkeypatch, {"open3d": (None, None), "cadquery-ocp-novtk": (None, None)})
+    for dist in ("open3d", "cadquery-ocp-novtk"):
+        row = _dep(r, dist)
+        assert row["status"] == "not-installed (optional)"
+        assert row["version"] is None
+        assert row["optional"] is True
+    assert r.ok
+    assert r.data["failures"] == []
+    assert not any("open3d" in w or "cadquery" in w for w in r.warnings)
+
+
+def test_doctor_still_fails_on_a_missing_required_engine(monkeypatch):
+    r = _doctor(monkeypatch, {"numpy": (None, None)})
+    assert _dep(r, "numpy")["status"] == "missing"
+    assert not r.ok
+    assert any("numpy" in f for f in r.data["failures"])
+
+
+def test_doctor_accepts_a_stricter_declared_tier_explained_by_a_bundled_license(monkeypatch):
+    r = _doctor(monkeypatch, {"cadquery-ocp-novtk": ("8.0.1.1.0", "Apache-2.0")})
+    row = _dep(r, "cadquery-ocp-novtk")
+    assert row["status"] == "ok"
+    assert row["declared_tier"] == "lgpl-dynamic" and row["detected_tier"] == "permissive"
+    assert "OCCT" in row["bundled_license"]
+    assert r.ok
+    assert not any("cadquery" in w for w in r.warnings)
+
+
+def test_doctor_still_warns_on_a_real_license_mismatch(monkeypatch):
+    # permissive declared, GPL installed: not explained by anything
+    r = _doctor(monkeypatch, {"pint": ("0.0.0", "GPL-3.0-only")})
+    assert _dep(r, "pint")["status"] == "license-mismatch"
+    assert any("'pint'" in w and "declared" in w for w in r.warnings)
+    # a bundled license never excuses a looser declaration than the detected tier
+    r = _doctor(monkeypatch, {"cadquery-ocp-novtk": ("8.0.1.1.0", "GPL-3.0-only")})
+    assert _dep(r, "cadquery-ocp-novtk")["status"] == "license-mismatch"
+
+
+@pytest.mark.parametrize("tier", ["gpl-isolated", "forbidden"])
+@pytest.mark.parametrize("bundled", ["GPL-3.0-only solver bundled in the wheel", ""])
+@pytest.mark.parametrize("metadata", ["MIT", "GPL-3.0-only"])
+def test_doctor_fails_on_an_installed_engine_declared_gpl_or_forbidden(monkeypatch, tier, bundled, metadata):
+    from eng_toolkit.gateway import server as srv
+    from eng_toolkit.licenses import Engine
+
+    engine = Engine("numpy", "MIT", tier, "hypothetical in-process engine", ("metrology",), optional=True, bundled_license=bundled)
+    monkeypatch.setitem(srv.KNOWN, "numpy", engine)
+    r = _doctor(monkeypatch, {"numpy": ("1.0", metadata)})
+    row = _dep(r, "numpy")
+    assert row["status"] == "policy-violation"
+    assert not r.ok
+    assert any("numpy" in f and tier in f for f in r.data["failures"]), r.data["failures"]
+
+
+def test_doctor_does_not_fail_on_an_optional_gpl_engine_that_is_not_installed(monkeypatch):
+    from eng_toolkit.gateway import server as srv
+    from eng_toolkit.licenses import Engine
+
+    engine = Engine("numpy", "GPL-3.0-only", "gpl-isolated", "separate-process engine", ("metrology",), optional=True)
+    monkeypatch.setitem(srv.KNOWN, "numpy", engine)
+    r = _doctor(monkeypatch, {"numpy": (None, None)})
+    assert _dep(r, "numpy")["status"] == "not-installed (optional)"
+    assert r.ok
 
 
 @pytest.mark.asyncio
@@ -111,7 +209,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_TOOLS = 7  # 2 gateway + 2 calc + 3 metrology
+MAX_TOOLS = 8  # 2 gateway + 2 calc + 4 metrology
 
 
 @pytest.mark.asyncio

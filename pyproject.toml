@@ -31,10 +31,19 @@ eng-toolkit = "eng_toolkit.gateway.server:main"
 [project.urls]
 Homepage = "https://github.com/Lin830326/eng-toolkit"
 
+# Optional engines for metrology_check_scan (uv sync --extra scan):
+#   open3d             - MIT
+#   cadquery-ocp-novtk - Apache-2.0 wrapper; the wheel bundles OpenCASCADE (LGPL-2.1 + OCCT exception), used unmodified
+[project.optional-dependencies]
+scan = [
+    "cadquery-ocp-novtk>=8.0.1.1.0",
+    "open3d>=0.20.0",
+]
+
 [dependency-groups]
 dev = [
   "isofits>=1.0",
-  "pytest>=8.0",
+  "pytest>=8.2",
   "pytest-asyncio>=0.23",
 ]
 

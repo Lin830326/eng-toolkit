@@ -1,22 +1,26 @@
-"""``metrology`` sub-server: ISO 286 fit limits and 1-D tolerance stack-up.
+"""``metrology`` sub-server: ISO 286 fit limits, 1-D tolerance stack-up and scan-to-model checks.
 
 The tools here only parse strings into numbers (through the unit gatekeeper) and shape the
 result into the contract.  The tables and rules live in :mod:`.iso286`, the statistics in
-:mod:`.stackup`.
+:mod:`.stackup`, the point-cloud geometry in :mod:`.scan`.
 """
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import math
+from pathlib import Path
 from typing import Annotated, Any
 
+import numpy as np
 from fastmcp import FastMCP
 from pydantic import Field
 
 from eng_toolkit import __version__
 from eng_toolkit.contract import QuantityOut, ToolResult
-from eng_toolkit.domains.metrology import iso286, stackup
+from eng_toolkit.domains.metrology import iso286, scan, stackup
 from eng_toolkit.domains.metrology.fit_search import (
     BASES,
     FIT_SET_NAMES,
@@ -25,12 +29,13 @@ from eng_toolkit.domains.metrology.fit_search import (
     search_fits,
 )
 from eng_toolkit.runner import Computed, JobHandle, run_tool
-from eng_toolkit.units import UnitsError, parse_quantity, to_quantity_out, ureg
+from eng_toolkit.units import UnitsError, parse_quantity, require_positive, to_quantity_out, ureg
 
 ENGINE_ISO286 = "eng_toolkit.metrology.iso286"
 ENGINE_STACKUP = "eng_toolkit.metrology.stackup"
 ENGINE_FIT_SEARCH = "eng_toolkit.metrology.fit_search"
-TOOL_NAMES: tuple[str, ...] = ("fit_limits", "stackup_1d", "fit_search")
+ENGINE_CHECK_SCAN = "eng_toolkit.metrology.check_scan"
+TOOL_NAMES: tuple[str, ...] = ("fit_limits", "stackup_1d", "fit_search", "check_scan")
 
 QuantityIn = Annotated[
     str,
@@ -539,4 +544,315 @@ def fit_search(
     )
 
 
-__all__ = ["TOOL_NAMES", "fit_limits", "fit_search", "server", "stackup_1d"]
+# --------------------------------------------------------------------------- scan check
+
+SIGN_CONVENTION_SIGNED = (
+    "deviation = signed distance from the scan point to the model surface; positive = outside the "
+    "material, negative = inside"
+)
+SIGN_CONVENTION_UNSIGNED = (
+    "deviation = unsigned distance to the model surface (the model is not exactly one closed solid, so "
+    "outside and inside are undefined or ambiguous); every value is >= 0"
+)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _positive_mm(raw: str, name: str) -> float:
+    qty = require_positive(parse_quantity(raw, name=name, dimension="length"), name=name)
+    return float(qty.to("millimeter").magnitude)
+
+
+def _unit_to_mm(raw: str, name: str) -> float:
+    """Millimetres per one ``raw``, where ``raw`` is a bare unit: '2 mm' or 'mm*2' would silently rescale the scan."""
+    text = raw.strip()
+    not_a_unit = UnitsError(
+        "input.invalid",
+        f"{name} must be a unit only, such as 'mm', 'm', 'inch' or 'um', not a quantity; got {raw!r}",
+        {"param": name, "received": raw},
+    )
+    if not text or text[0] in "+-.0123456789":
+        raise not_a_unit
+    try:
+        unit = ureg.parse_units(text)
+    except ValueError as exc:  # pint: "Unit expression cannot have a scaling factor"
+        raise not_a_unit from exc
+    except Exception as exc:  # noqa: BLE001 - pint raises several error types for an unknown unit
+        raise UnitsError(
+            "units.parse_error", f"{name}: could not parse {raw!r} as a unit ({exc})", {"param": name, "received": raw}
+        ) from exc
+    if not unit.is_compatible_with("millimeter"):
+        raise UnitsError(
+            "units.dimension_mismatch",
+            f"{name} must be a length unit; {raw!r} has dimensionality {unit.dimensionality}",
+            {"param": name, "received": raw, "received_dimensionality": str(unit.dimensionality)},
+        )
+    return float(ureg.Quantity(1.0, unit).to("millimeter").magnitude)
+
+
+def _deviations_csv(points: np.ndarray, deviation: np.ndarray, labels: np.ndarray) -> tuple[str, int]:
+    """CSV text of the out-of-tolerance points, largest |deviation| first, capped at MAX_CSV_ROWS."""
+    order = np.argsort(-np.abs(deviation), kind="stable")[: scan.MAX_CSV_ROWS]
+    table = np.column_stack([points[order], deviation[order], labels[order]])
+    buffer = io.StringIO()
+    np.savetxt(
+        buffer,
+        table,
+        fmt=["%.6f", "%.6f", "%.6f", "%.6f", "%d"],
+        delimiter=",",
+        header="x_mm,y_mm,z_mm,deviation_mm,region",
+        comments="",
+    )
+    return buffer.getvalue(), len(order)
+
+
+@server.tool(
+    name="check_scan",
+    description=(
+        "Compare a 3D scan (point cloud) with its STEP model and report how far the part is from the "
+        "model and where. Deviation is the signed distance from each scan point to the model surface, "
+        "positive outside the material (unsigned if the model is not exactly one closed solid). Returns RMS, mean, "
+        "standard deviation, maximum, 95th percentile, the fraction of points beyond 'tolerance', a "
+        "histogram, the worst points, clustered out-of-tolerance regions (centroid, bounding box, worst "
+        "deviation) and a deviations.csv artifact. registration 'icp' first refines the alignment with "
+        "point-to-plane ICP (the scan must already be roughly aligned); 'none' trusts the scan frame. "
+        "Needs the optional scan engines (uv sync --extra scan)."
+    ),
+)
+def check_scan(
+    scan_path: Annotated[
+        str, Field(description="Path to the point cloud: .ply .pcd .xyz .xyzn .xyzrgb or .pts")
+    ],
+    scan_unit: Annotated[
+        str,
+        Field(
+            description=(
+                "Length unit of the point-cloud coordinates, which carry none, as a unit only with no number: "
+                "'mm', 'm', 'inch', 'um'. '2 mm' is rejected"
+            )
+        ),
+    ],
+    model_path: Annotated[str, Field(description="Path to the STEP model (.step or .stp); read in millimetres")],
+    tolerance: Annotated[
+        QuantityIn,
+        Field(description="Largest acceptable distance between a scan point and the model, with unit, e.g. '0.1 mm'"),
+    ],
+    registration: Annotated[
+        str, Field(description="'none' (default): the scan is already in the model frame. 'icp': refine with ICP first")
+    ] = "none",
+    icp_max_distance: Annotated[
+        str, Field(description="ICP only: largest scan-to-model correspondence distance with unit, e.g. '5 mm'")
+    ] = "5 mm",
+    mesh_deflection: Annotated[
+        str,
+        Field(
+            description=(
+                "Largest chord error allowed when the STEP model is tessellated, with unit, e.g. '0.01 mm'. "
+                "Deviations smaller than this are not meaningful"
+            )
+        ),
+    ] = "0.01 mm",
+    max_points: Annotated[
+        int, Field(description="Scans with more points are downsampled to this many (fixed seed), 1000 to 5000000")
+    ] = 200_000,
+    output_unit: Annotated[str, Field(description="Length unit of the results, e.g. 'mm', 'um', 'inch'")] = "mm",
+) -> ToolResult:
+    inputs = {
+        "scan_path": scan_path,
+        "scan_unit": scan_unit,
+        "model_path": model_path,
+        "tolerance": tolerance,
+        "registration": registration,
+        "icp_max_distance": icp_max_distance,
+        "mesh_deflection": mesh_deflection,
+        "max_points": max_points,
+        "output_unit": output_unit,
+    }
+
+    def compute(job: JobHandle) -> Computed:
+        to_mm = _unit_to_mm(scan_unit, "scan_unit")
+        tolerance_mm = _positive_mm(tolerance, "tolerance")
+        icp_mm = _positive_mm(icp_max_distance, "icp_max_distance")
+        deflection_mm = _positive_mm(mesh_deflection, "mesh_deflection")
+        _choice(registration, scan.REGISTRATIONS, "registration")
+        if not (scan.MIN_POINTS_LIMIT <= max_points <= scan.MAX_POINTS_LIMIT):
+            raise _invalid(
+                f"max_points must be between {scan.MIN_POINTS_LIMIT} and {scan.MAX_POINTS_LIMIT}, got {max_points}",
+                param="max_points",
+            )
+        unit = str(parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units)
+        per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
+
+        try:
+            scan_file = scan.check_input_file(scan_path, param="scan_path", extensions=scan.SCAN_EXTENSIONS)
+            model_file = scan.check_input_file(model_path, param="model_path", extensions=scan.MODEL_EXTENSIONS)
+            run = scan.check(
+                scan_file,
+                model_file,
+                to_mm=to_mm,
+                registration=registration,
+                icp_max_distance_mm=icp_mm,
+                deflection_mm=deflection_mm,
+                max_points=max_points,
+            )
+        except scan.ScanEngineUnavailable as exc:
+            raise UnitsError(
+                "engine.unavailable", str(exc), {"module": exc.module, "dist": exc.dist, "install": scan.INSTALL_COMMAND}
+            ) from exc
+        except scan.ScanInputError as exc:
+            raise UnitsError(exc.family, exc.message, exc.details) from exc
+
+        def length(value_mm: float) -> QuantityOut:
+            return QuantityOut(quantity=float(f"{value_mm * per_mm:.9g}"), unit=unit)
+
+        reg = run.registration
+        stats = scan.deviation_stats(run.deviation)
+        outside = np.abs(run.deviation) > tolerance_mm
+        used = len(run.points)
+        values = {
+            "rms_deviation": length(stats["rms"]),
+            "mean_deviation": length(stats["mean"]),
+            "std_deviation": length(stats["std"]),
+            "max_deviation": length(stats["max_abs"]),
+            "p95_abs_deviation": length(stats["p95_abs"]),
+            "out_of_tolerance_fraction": QuantityOut(quantity=float(outside.sum()) / used, unit="dimensionless"),
+            "points_evaluated": QuantityOut(quantity=float(used), unit="dimensionless"),
+        }
+        if run.signed:
+            values["max_positive_deviation"] = length(stats["max"])
+            values["max_negative_deviation"] = length(stats["min"])
+
+        spacing = scan.scan_spacing(run.points) if outside.any() else 0.0
+        regions = scan.cluster_regions(run.points[outside], run.deviation[outside], spacing)
+        csv_text, csv_rows = _deviations_csv(run.points[outside], run.deviation[outside], regions.labels)
+        artifact = job.write_text("deviations.csv", csv_text, fmt="csv")
+
+        warnings: list[str] = []
+        if not run.mesh.watertight:
+            warnings.append(
+                "The model mesh is not a closed solid (an open shell, or faces that do not join), so inside and "
+                "outside are undefined: deviations are unsigned distances and the signed maximum/minimum are omitted"
+            )
+        elif not run.signed:
+            warnings.append(
+                f"The STEP file holds {run.mesh.solids} solids: more than one solid: overlapping bodies make "
+                "inside and outside ambiguous, so deviations are unsigned distances to the nearest surface of any "
+                "body and the signed maximum/minimum are omitted"
+            )
+        if run.mesh.roots_transferred < run.mesh.roots_in_file:
+            warnings.append(
+                f"Only {run.mesh.roots_transferred} of {run.mesh.roots_in_file} root entities of the STEP file "
+                "could be transferred: the model is incomplete, and the deviation of scan points near the missing "
+                "parts is meaningless"
+            )
+        if used < run.original_count:
+            warnings.append(
+                f"The scan has {run.original_count} points; {used} were kept (max_points, fixed seed) and "
+                "the statistics describe that subset"
+            )
+        if run.registration is not None:
+            warnings.append(
+                "ICP only converges from a close initial alignment. Check registration.fitness (share of points "
+                "whose distance to the model surface after registration is within icp_max_distance) and "
+                "inlier_rmse (RMS of those distances, mm)"
+            )
+            warnings.append(
+                "Deviations after ICP describe form, not location: a best fit can absorb a real defect (a raised "
+                "plateau on part of a face shifts the fit and shrinks its own deviation). Judge location and "
+                "datum-referenced features with registration 'none' on a scan already in the model frame"
+            )
+            if run.registration.fitness < scan.LOW_FITNESS:
+                warnings.append(
+                    f"ICP fitness is {run.registration.fitness:.3f} (below {scan.LOW_FITNESS}): few scan points "
+                    "are within icp_max_distance of the model surface after registration, so the alignment is "
+                    "not trustworthy"
+                )
+            if run.registration.unconstrained:
+                warnings.append(
+                    "The registered points leave the fit unconstrained in: "
+                    + "; ".join(run.registration.unconstrained)
+                    + ". ICP can place the scan anywhere along these, so the deviations do not locate the part "
+                    "in those directions. Scan more surfaces with different normals"
+                )
+        outside_total = int(outside.sum())
+        capped = outside_total > csv_rows
+        if capped:
+            warnings.append(
+                f"deviations.csv holds the {csv_rows} largest of {outside_total} out-of-tolerance points"
+            )
+
+        data: dict[str, Any] = {
+            "signed": run.signed,
+            "sign_convention": SIGN_CONVENTION_SIGNED if run.signed else SIGN_CONVENTION_UNSIGNED,
+            "tolerance_mm": round(tolerance_mm, 9),
+            "mesh": {
+                "triangles": int(len(run.mesh.triangles)),
+                "deflection_mm": deflection_mm,
+                "watertight": run.mesh.watertight,
+                "solids": run.mesh.solids,
+                "step_roots": {"in_file": run.mesh.roots_in_file, "transferred": run.mesh.roots_transferred},
+            },
+            "points": {"original": run.original_count, "used": used},
+            "registration": {
+                "mode": registration,
+                "transform": None if reg is None else reg.transform.tolist(),
+                "fitness": None if reg is None else reg.fitness,
+                "inlier_rmse": None if reg is None else round(reg.inlier_rmse, 9),
+                "source_points": None if reg is None else reg.source_points,
+                "unconstrained": None if reg is None else list(reg.unconstrained),
+                "note": None if reg is None else scan.ICP_NOTE,
+                "unit": "mm",
+            },
+            "histogram": scan.histogram(run.deviation),
+            "worst_points": scan.worst_points(run.points, run.deviation),
+            "regions": regions.listed,
+            "regions_total": regions.total,
+            "points_outside_regions": int((regions.labels < 0).sum()),
+            "deviations_csv": {
+                "rows": csv_rows,
+                "out_of_tolerance_total": outside_total,
+                "capped": capped,
+                "cap": scan.MAX_CSV_ROWS,
+                "columns": ["x_mm", "y_mm", "z_mm", "deviation_mm", "region"],
+                "region_column": "region id as in data.regions; -1 = in no region",
+            },
+            "frame": "points and regions are in the model frame (after registration, if any)",
+            "input_files": {
+                "scan": {
+                    "path": str(scan_file.resolve()),
+                    "bytes": scan_file.stat().st_size,
+                    "sha256": _sha256(scan_file),
+                },
+                "model": {
+                    "path": str(model_file.resolve()),
+                    "bytes": model_file.stat().st_size,
+                    "sha256": _sha256(model_file),
+                },
+            },
+        }
+        return Computed(values=values, primary="rms_deviation", warnings=warnings, data=data, artifacts=[artifact])
+
+    return run_tool(
+        tool_name="metrology_check_scan",
+        engine=ENGINE_CHECK_SCAN,
+        version=__version__,
+        inputs=inputs,
+        compute=compute,
+        standing_warnings=(
+            "Deviations are measured against a tessellated mesh whose error is bounded by mesh_deflection; "
+            "deviations below it are not meaningful. Distances to that mesh are float64, taken against the "
+            "triangle a single-precision search found closest and that triangle's neighbours: below 1e-9 mm "
+            "in the tests, but a degenerate mesh can defeat the search. "
+            "The applicable standard and the quality of the scan (noise, coverage, calibration) are the "
+            "user's responsibility.",
+        ),
+    )
+
+
+__all__ = ["TOOL_NAMES", "check_scan", "fit_limits", "fit_search", "server", "stackup_1d"]
