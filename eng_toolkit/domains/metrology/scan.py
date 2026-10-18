@@ -230,7 +230,6 @@ class ModelMesh:
 
 def read_model_mesh(path: Path, deflection_mm: float) -> ModelMesh:
     """Read a STEP file (in millimetres) and tessellate every face with the given linear deflection."""
-    o3d = _open3d()
     _require_ocp()
 
     def unreadable(why: str) -> ToolFailure:
@@ -241,22 +240,14 @@ def read_model_mesh(path: Path, deflection_mm: float) -> ModelMesh:
     if len(raw.triangles) == 0:
         raise unreadable("no faces to measure against")
 
-    mesh = o3d.geometry.TriangleMesh(
-        o3d.utility.Vector3dVector(raw.vertices),
-        o3d.utility.Vector3iVector(raw.triangles),
-    )
     # Each face carries its own nodes; welding the shared edge nodes is what makes a closed shell closed.
-    mesh = mesh.merge_close_vertices(MERGE_EPS_MM)
-    mesh.remove_degenerate_triangles()
-    mesh.remove_unreferenced_vertices()
+    mesh = brep.weld(raw)
     if len(mesh.triangles) == 0:
         raise unreadable("no faces to measure against")
-    # is_watertight() also tests self-intersection (10x slower at 40k triangles); a tessellated B-Rep has none.
-    watertight = bool(mesh.is_edge_manifold(allow_boundary_edges=False) and mesh.is_vertex_manifold())
     return ModelMesh(
-        vertices=np.asarray(mesh.vertices, dtype=np.float64),
-        triangles=np.asarray(mesh.triangles, dtype=np.int32),
-        watertight=watertight,
+        vertices=mesh.vertices,
+        triangles=mesh.triangles,
+        watertight=brep.mesh_topology(mesh).watertight,
         deflection_mm=deflection_mm,
         solids=solid.solids,
         roots_in_file=solid.roots_in_file,
