@@ -17,6 +17,7 @@ EXPECTED_TOOLS = {
     "metrology_stackup_1d",
     "metrology_fit_search",
     "metrology_check_scan",
+    "geometry_measure",
 }
 
 
@@ -89,6 +90,16 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
         "cadquery-ocp-novtk": "lgpl-dynamic",
     }
     ocp = next(e for e in metrology["engines"] if e["dist"] == "cadquery-ocp-novtk")
+    assert ocp["optional"] is True
+    assert "OCCT" in ocp["bundled_license"]
+    geometry = next(d for d in r.data["domains"] if d["name"] == "geometry")
+    assert set(geometry["tools"]) == {"geometry_measure"}
+    assert {e["dist"]: e["tier"] for e in geometry["engines"]} == {
+        "pint": "permissive",
+        "numpy": "permissive",
+        "cadquery-ocp-novtk": "lgpl-dynamic",
+    }
+    ocp = next(e for e in geometry["engines"] if e["dist"] == "cadquery-ocp-novtk")
     assert ocp["optional"] is True
     assert "OCCT" in ocp["bundled_license"]
 
@@ -209,7 +220,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_TOOLS = 8  # 2 gateway + 2 calc + 4 metrology
+MAX_TOOLS = 9  # 2 gateway + 2 calc + 4 metrology + 1 geometry
 
 
 @pytest.mark.asyncio

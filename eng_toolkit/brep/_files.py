@@ -1,4 +1,4 @@
-"""Reading a STEP file into a ``Solid`` and tessellating it into a ``Mesh``."""
+"""Reading a STEP, IGES or BREP file into a ``Solid`` and tessellating it into a ``Mesh``."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from eng_toolkit.brep._types import Mesh, Solid
 from eng_toolkit.errors import ToolFailure
 
 ANGULAR_DEFLECTION_RAD = 0.5
+SOLID_EXTENSIONS: tuple[str, ...] = (".step", ".stp", ".iges", ".igs", ".brep")
 
 
 def _count(shape, kind) -> int:
@@ -24,10 +25,44 @@ def _count(shape, kind) -> int:
     return found
 
 
+def _has_topology_header(path: Path) -> bool:
+    with path.open("rb") as fh:
+        head = fh.read(4096)
+    return any(line.rstrip(b"\r").startswith(b"CASCADE Topology V") for line in head.split(b"\n"))
+
+
+def _read_brep(path: Path, unreadable):
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepTools import BRepTools
+    from OCP.TopoDS import TopoDS_Shape
+
+    # BRepTools.Read prints to std::cout, which the message printers do not cover, when the header line is
+    # missing; stdout is the MCP channel, so a file without it never reaches OCCT.
+    try:
+        has_header = _has_topology_header(path)
+    except OSError as exc:
+        raise unreadable(f"cannot read BREP ({exc})") from exc
+    if not has_header:
+        raise unreadable("not a readable BREP file")
+    shape = TopoDS_Shape()
+    try:
+        done = BRepTools.Read_s(shape, str(path), BRep_Builder())
+    except Exception as exc:  # noqa: BLE001 - OCCT raises its own exception types
+        raise unreadable(f"cannot read BREP ({exc})") from exc
+    if not done or shape.IsNull():
+        raise unreadable("not a readable BREP file")
+    return shape
+
+
 def read_solid(path: Path, *, param: str | None = None) -> Solid:
-    """Read a STEP file (in millimetres).  ``param`` names the caller's parameter in error messages."""
+    """Read a STEP, IGES or BREP file (STEP and IGES in millimetres; BREP numbers are taken as millimetres).
+
+    The format follows the extension: ``.iges``/``.igs`` and ``.brep`` as named, anything else is read as STEP.
+    ``param`` names the caller's parameter in error messages.
+    """
     _occ.load()
     from OCP.IFSelect import IFSelect_RetDone
+    from OCP.IGESControl import IGESControl_Reader
     from OCP.STEPControl import STEPControl_Reader
     from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
 
@@ -35,21 +70,27 @@ def read_solid(path: Path, *, param: str | None = None) -> Solid:
         prefix = f"{param}: " if param else ""
         return ToolFailure("input.invalid", f"{prefix}{why} in {str(path)!r}", {"path": str(path)})
 
-    reader = STEPControl_Reader()
-    try:
-        status = reader.ReadFile(str(path))
-    except Exception as exc:  # noqa: BLE001 - OCCT raises its own exception types
-        raise unreadable(f"cannot read STEP ({exc})") from exc
-    if status != IFSelect_RetDone:
-        raise unreadable("not a readable STEP file")
-    roots_in_file = int(reader.NbRootsForTransfer())
-    if reader.TransferRoots() == 0:
-        raise unreadable("no shape to transfer")
-    shape = reader.OneShape()
-    if shape.IsNull():
-        raise unreadable("no shape")
-    # TransferRoots counts a root whose geometry failed to convert as transferred and hands back an empty shape for it.
-    roots_transferred = sum(1 for i in range(1, reader.NbShapes() + 1) if _count(reader.Shape(i), TopAbs_FACE) > 0)
+    suffix = path.suffix.lower()
+    if suffix == ".brep":
+        shape = _read_brep(path, unreadable)
+        roots_in_file = 1
+        roots_transferred = 1 if _count(shape, TopAbs_FACE) > 0 else 0
+    else:
+        label, reader = ("IGES", IGESControl_Reader()) if suffix in (".iges", ".igs") else ("STEP", STEPControl_Reader())
+        try:
+            status = reader.ReadFile(str(path))
+        except Exception as exc:  # noqa: BLE001 - OCCT raises its own exception types
+            raise unreadable(f"cannot read {label} ({exc})") from exc
+        if status != IFSelect_RetDone:
+            raise unreadable(f"not a readable {label} file")
+        roots_in_file = int(reader.NbRootsForTransfer())
+        if reader.TransferRoots() == 0:
+            raise unreadable("no shape to transfer")
+        shape = reader.OneShape()
+        if shape.IsNull():
+            raise unreadable("no shape")
+        # TransferRoots counts a root whose geometry failed to convert as transferred and hands back an empty shape for it.
+        roots_transferred = sum(1 for i in range(1, reader.NbShapes() + 1) if _count(reader.Shape(i), TopAbs_FACE) > 0)
     return Solid(
         _handle=shape,
         solids=_count(shape, TopAbs_SOLID),

@@ -65,10 +65,20 @@ KNOWN: dict[str, Engine] = {
         Engine("mcp", "MIT", TIER_PERMISSIVE, "MCP protocol SDK (fastmcp dependency)", ("gateway",)),
         Engine("pydantic", "MIT", TIER_PERMISSIVE, "return-contract models", ("gateway",)),
         Engine(
-            "pint", "BSD-3-Clause", TIER_PERMISSIVE, "units and dimensional analysis", ("gateway", "calc", "metrology")
+            "pint",
+            "BSD-3-Clause",
+            TIER_PERMISSIVE,
+            "units and dimensional analysis",
+            ("gateway", "calc", "metrology", "geometry"),
         ),
         Engine("fluids", "MIT", TIER_PERMISSIVE, "fluid mechanics (friction factor, Reynolds)", ("calc",)),
-        Engine("numpy", "BSD-3-Clause", TIER_PERMISSIVE, "seeded Monte Carlo sampling for tolerance stack-up", ("metrology",)),
+        Engine(
+            "numpy",
+            "BSD-3-Clause",
+            TIER_PERMISSIVE,
+            "seeded Monte Carlo sampling for tolerance stack-up; array maths for meshes and geometry",
+            ("metrology", "geometry"),
+        ),
         Engine(
             "open3d",
             "MIT",
@@ -82,8 +92,8 @@ KNOWN: dict[str, Engine] = {
             "cadquery-ocp-novtk",
             "Apache-2.0",
             TIER_LGPL,
-            "OpenCASCADE bindings: reads STEP and tessellates it for scan checks",
-            ("metrology",),
+            "OpenCASCADE bindings: reads STEP, IGES and BREP, tessellates it for scan checks, measures it exactly",
+            ("metrology", "geometry"),
             optional=True,
             bundled_license="LGPL-2.1 with OCCT exception (OpenCASCADE shared libraries in the wheel)",
             extra="cad",
