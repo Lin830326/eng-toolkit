@@ -6,7 +6,10 @@ OpenCASCADE) and shapes the answer into the contract.  The query grammar lives i
 
 from __future__ import annotations
 
+import json
 import math
+import re
+import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any
@@ -16,6 +19,7 @@ from pydantic import Field
 
 from eng_toolkit import __version__, brep
 from eng_toolkit.contract import QuantityOut, ToolResult
+from eng_toolkit.domains.geometry import part as partspec
 from eng_toolkit.domains.geometry import queries as grammar
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.licenses import install_hint
@@ -23,8 +27,14 @@ from eng_toolkit.runner import Computed, JobHandle, run_tool
 from eng_toolkit.units import UnitsError, parse_quantity, require_positive, ureg
 
 ENGINE_MEASURE = "eng_toolkit.geometry.measure"
-TOOL_NAMES: tuple[str, ...] = ("measure",)
+ENGINE_MAKE_PART = "eng_toolkit.geometry.make_part"
+TOOL_NAMES: tuple[str, ...] = ("measure", "make_part")
 MAX_INVENTORY_LIMIT = 500
+PART_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
+PART_FORMATS: tuple[str, ...] = ("step", "glb", "stl", "brep")  # the order the files are written in
+MESH_DEFLECTION_MM = (0.001, 100.0)
+MAX_HOLES_IN_DATA = 50
+READBACK_TOLERANCE = 1e-6
 AXIS_VECTORS: dict[str, tuple[float, float, float]] = {
     "+x": (1.0, 0.0, 0.0),
     "-x": (-1.0, 0.0, 0.0),
@@ -379,4 +389,175 @@ def measure(
     )
 
 
-__all__ = ["TOOL_NAMES", "measure", "server"]
+MAKE_PART_DESCRIPTION = (
+    "Build a 3D part from a declarative JSON spec (nothing is executed) and write STEP, optionally GLB, STL and BREP, "
+    "with exact volume, surface area, bounding-box size and optional mass. Needs the optional cad engine "
+    f"({install_hint('cadquery-ocp-novtk')}).\n"
+    f"{partspec.grammar_text()}\n"
+    'Divide by plain numbers ("$L / 4"), not by lengths. '
+    f"Example: {json.dumps(partspec.EXAMPLE_SPEC, separators=(',', ':'))}\n"
+    "Errors: input.invalid has details.pointer (e.g. /features/2/diameter) and details.allowed; geometry.empty_selection and "
+    "geometry.build_failed name the failing feature_index. Also writes <name>.features.json (declared holes, bound to the STEP by sha256) and spec.json."
+)
+
+
+def _invalid_param(param: str, message: str, **details: Any) -> ToolFailure:
+    return ToolFailure("input.invalid", f"{param}: {message}", {"param": param, **details})
+
+
+def _part_formats(formats: str) -> list[str]:
+    wanted = [item.strip().lower() for item in formats.split(",") if item.strip()]
+    unknown = [item for item in wanted if item not in PART_FORMATS]
+    if unknown:
+        raise _invalid_param("formats", f"{unknown} is not a format; use a comma list of {list(PART_FORMATS)}", allowed=list(PART_FORMATS))
+    return [fmt for fmt in PART_FORMATS if fmt == "step" or fmt in wanted]  # STEP is the read-back reference, so it is always written
+
+
+@server.tool(name="make_part", description=MAKE_PART_DESCRIPTION)
+def make_part(
+    spec: Annotated[
+        str,
+        Field(description="Part spec as a JSON string, at most 64 kB: {params, features}. The grammar and an example are in the tool description"),
+    ],
+    name: Annotated[str, Field(description="Product name in the STEP file and stem of the output files: 1 to 64 letters, digits, '_' or '-'")] = "part",
+    formats: Annotated[
+        str, Field(description="Comma list of files to write besides the always-written STEP: 'glb', 'stl', 'brep'. Empty = STEP only")
+    ] = "step",
+    mesh_deflection: Annotated[
+        str, Field(description="Chord error of the GLB/STL tessellation, 0.001 mm to 100 mm, e.g. '0.01 mm'")
+    ] = "0.01 mm",
+    density: Annotated[
+        str, Field(description="Optional material density with unit, e.g. '2700 kg/m^3'; adds 'mass'. Empty = no mass")
+    ] = "",
+    output_unit: Annotated[str, Field(description="Length unit of the results, e.g. 'mm', 'cm', 'inch'")] = "mm",
+) -> ToolResult:
+    inputs = {
+        "spec": spec,
+        "name": name,
+        "formats": formats,
+        "mesh_deflection": mesh_deflection,
+        "density": density,
+        "output_unit": output_unit,
+    }
+
+    def compute(job: JobHandle) -> Computed:
+        unit_obj = parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units
+        unit = str(unit_obj)
+        per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
+        density_kg_m3 = None
+        if density.strip():
+            rho = require_positive(parse_quantity(density, name="density", dimension="density"), name="density")
+            density_kg_m3 = float(rho.to("kilogram / meter ** 3").magnitude)
+        deflection_mm = float(parse_quantity(mesh_deflection, name="mesh_deflection", dimension="length").to("millimeter").magnitude)
+        if not MESH_DEFLECTION_MM[0] <= deflection_mm <= MESH_DEFLECTION_MM[1]:
+            raise _invalid_param(
+                "mesh_deflection",
+                f"must be between {MESH_DEFLECTION_MM[0]:g} mm and {MESH_DEFLECTION_MM[1]:g} mm, got {deflection_mm:g} mm",
+                limits_mm=list(MESH_DEFLECTION_MM),
+            )
+        if not PART_NAME.fullmatch(name):
+            raise _invalid_param("name", f"{name!r} must be 1 to 64 ASCII letters, digits, '_' or '-'", pattern=PART_NAME.pattern)
+        wanted = _part_formats(formats)
+
+        parsed = partspec.parse_spec(spec)
+        built = partspec.build(parsed)
+        props = brep.mass_properties(built.solid)
+
+        with tempfile.TemporaryDirectory(prefix="eng-toolkit-") as scratch:
+            step_path = Path(scratch) / "part.step"
+            brep.write_step(built.solid, step_path, product_name=name)
+            step_art = job.write_bytes(f"{name}.step", step_path.read_bytes(), fmt="step")
+            written = props.volume_mm3 or 0.0
+            read_back = brep.read_solid(Path(step_art.path), param="step")
+            read = brep.mass_properties(read_back).volume_mm3 or 0.0
+            difference = abs(written - read) / max(abs(written), 1e-300)
+            if read_back.solids != 1 or difference > READBACK_TOLERANCE:
+                raise ToolFailure(
+                    "geometry.readback_mismatch",
+                    f"the STEP file read back as {read_back.solids} solids with volume {read:.9g} mm^3 instead of {written:.9g} mm^3",
+                    {"volume_written_mm3": written, "volume_read_mm3": read, "solids_read": read_back.solids},
+                )
+            artifacts = [
+                step_art,
+                job.write_json(
+                    f"{name}.features.json", partspec.features_document(parsed, built, step_art.sha256, part_name=name)
+                ),
+                job.write_text("spec.json", parsed.canonical, fmt="json"),
+            ]
+            mesh_info: dict[str, Any] | None = None
+            if "glb" in wanted or "stl" in wanted:
+                mesh = brep.triangulate(built.solid, deflection_mm)
+                mesh_info = {"deflection_mm": deflection_mm, "triangles": int(len(mesh.triangles))}
+                for fmt in ("glb", "stl"):
+                    if fmt in wanted:
+                        target = Path(scratch) / f"part.{fmt}"
+                        brep.write_mesh(mesh, target, fmt=fmt, name=name)
+                        artifacts.append(job.write_bytes(f"{name}.{fmt}", target.read_bytes(), fmt=fmt))
+            if "brep" in wanted:
+                target = Path(scratch) / "part.brep"
+                brep.write_brep(built.solid, target)
+                artifacts.append(job.write_bytes(f"{name}.brep", target.read_bytes(), fmt="brep"))
+
+        def length(mm: float) -> QuantityOut:
+            return QuantityOut(quantity=float(f"{mm * per_mm:.12g}"), unit=unit)
+
+        volume_mm3 = props.volume_mm3 or 0.0
+        values: dict[str, QuantityOut] = {
+            "volume": QuantityOut(quantity=float(f"{volume_mm3 * per_mm**3:.12g}"), unit=str(unit_obj**3)),
+            "surface_area": QuantityOut(quantity=float(f"{props.area_mm2 * per_mm**2:.12g}"), unit=str(unit_obj**2)),
+        }
+        for axis, lo, hi in zip(("size_x", "size_y", "size_z"), props.bbox_min_mm, props.bbox_max_mm):
+            values[axis] = length(hi - lo)
+        if density_kg_m3 is not None:
+            values["mass"] = QuantityOut(quantity=float(f"{density_kg_m3 * volume_mm3 * 1e-9:.12g}"), unit="kilogram")
+
+        warnings = list(built.warnings)
+        callouts = {h.feature: h for h in built.holes if h.thread or h.fit}
+        if callouts:
+            shown = "; ".join(
+                f"{feature}: " + ", ".join(f"{label} {value}" for label, value in (("thread", h.thread), ("fit", h.fit)) if value)
+                for feature, h in callouts.items()
+            )
+            warnings.append(
+                f"Hole callouts ({shown}) are text in the features file only: the holes are modelled at their nominal "
+                "diameter and no thread geometry exists"
+            )
+        data: dict[str, Any] = {
+            "name": name,
+            "formats": wanted,
+            "features": [record.to_dict() for record in built.records],
+            "holes_total": len(built.holes),
+            "holes": [hole.to_dict() for hole in built.holes[:MAX_HOLES_IN_DATA]],
+            "params": dict(parsed.params),
+            "bbox": {"min_mm": list(props.bbox_min_mm), "max_mm": list(props.bbox_max_mm)},
+            "solids": built.solid.solids,
+            "faces": built.solid.faces,
+            "readback": {
+                "volume_written_mm3": written,
+                "volume_read_mm3": read,
+                "relative_difference": difference,
+                "solids_read": read_back.solids,
+                "faces_read": read_back.faces,
+            },
+            "spec_sha256": parsed.sha256,
+            "step_sha256": step_art.sha256,
+        }
+        if mesh_info is not None:
+            data["mesh"] = mesh_info
+        return Computed(values=values, primary="volume", warnings=warnings, data=data, artifacts=artifacts)
+
+    return run_tool(
+        tool_name="geometry_make_part",
+        engine=ENGINE_MAKE_PART,
+        version=__version__,
+        inputs=inputs,
+        compute=compute,
+        engines=("cadquery-ocp-novtk", "numpy"),
+        standing_warnings=(
+            "The part is built exactly as the spec says and checked for validity by OpenCASCADE; it is an unreviewed model, "
+            "not an engineering-approved design. Dimensions, fits, threads and material are the caller's responsibility.",
+        ),
+    )
+
+
+__all__ = ["TOOL_NAMES", "make_part", "measure", "server"]

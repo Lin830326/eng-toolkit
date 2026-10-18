@@ -18,6 +18,7 @@ EXPECTED_TOOLS = {
     "metrology_fit_search",
     "metrology_check_scan",
     "geometry_measure",
+    "geometry_make_part",
 }
 
 
@@ -93,7 +94,7 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
     assert ocp["optional"] is True
     assert "OCCT" in ocp["bundled_license"]
     geometry = next(d for d in r.data["domains"] if d["name"] == "geometry")
-    assert set(geometry["tools"]) == {"geometry_measure"}
+    assert set(geometry["tools"]) == {"geometry_measure", "geometry_make_part"}
     assert {e["dist"]: e["tier"] for e in geometry["engines"]} == {
         "pint": "permissive",
         "numpy": "permissive",
@@ -220,7 +221,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_TOOLS = 9  # 2 gateway + 2 calc + 4 metrology + 1 geometry
+MAX_TOOLS = 10  # 2 gateway + 2 calc + 4 metrology + 2 geometry
 
 
 @pytest.mark.asyncio
