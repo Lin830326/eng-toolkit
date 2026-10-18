@@ -5,7 +5,7 @@ has to parse units and compute:
 
 1. open a workspace job ``ws/<job-id>/`` and write ``inputs.json``;
 2. run the domain's ``compute`` callable;
-3. convert :class:`eng_toolkit.units.UnitsError` into a structured ``ok=False``
+3. convert :class:`eng_toolkit.errors.ToolFailure` (every ``UnitsError`` is one) into a structured ``ok=False``
    result (error family preserved) and any other exception into ``engine.failure``;
    failed results carry no ``warnings`` (standing warnings apply to successful results only);
 4. attach provenance (engine, version, sha256 of canonical inputs) and artifacts;
@@ -26,7 +26,7 @@ from eng_toolkit.contract import (
     ToolResult,
     inputs_hash,
 )
-from eng_toolkit.units import UnitsError
+from eng_toolkit.errors import ToolFailure
 from eng_toolkit.workspace import Workspace
 
 
@@ -62,7 +62,7 @@ def run_tool(
     # make an error look like a computed value with caveats.
     try:
         computed = compute(handle)
-    except UnitsError as exc:
+    except ToolFailure as exc:
         result = ToolResult(
             ok=False,
             artifacts=artifacts,

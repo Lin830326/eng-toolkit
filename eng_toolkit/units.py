@@ -24,6 +24,8 @@ from typing import Any, Mapping
 import pint
 from pint import Quantity, UnitRegistry
 
+from eng_toolkit.errors import ToolFailure
+
 # One shared registry.  ``autoconvert_offset_to_baseunit`` lets "20 degC" convert cleanly.
 ureg = UnitRegistry(autoconvert_offset_to_baseunit=True)
 Q_ = ureg.Quantity
@@ -49,17 +51,8 @@ DIMENSIONS: dict[str, str] = {
 }
 
 
-class UnitsError(ValueError):
+class UnitsError(ToolFailure):
     """Structured unit error; maps 1:1 onto :class:`eng_toolkit.contract.ToolError`."""
-
-    def __init__(self, family: str, message: str, details: dict[str, Any] | None = None):
-        super().__init__(message)
-        self.family = family
-        self.message = message
-        self.details = details or {}
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"family": self.family, "message": self.message, "details": self.details}
 
 
 def _is_bare_number(raw: Any) -> bool:
