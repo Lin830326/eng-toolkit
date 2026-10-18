@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import threading
+
 from eng_toolkit.errors import EngineUnavailable
 from eng_toolkit.licenses import install_hint
 
 MODULE = "OCP"
 DIST = "cadquery-ocp-novtk"
+TRANSLATOR_LOCK = threading.Lock()  # OCCT's Interface_Static parameters are process-wide; FastMCP runs sync tools on a thread pool
 
 
 def load() -> None:

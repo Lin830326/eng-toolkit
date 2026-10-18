@@ -92,7 +92,7 @@ KNOWN: dict[str, Engine] = {
             "cadquery-ocp-novtk",
             "Apache-2.0",
             TIER_LGPL,
-            "OpenCASCADE bindings: reads STEP, IGES and BREP, tessellates it for scan checks, measures it exactly",
+            "OpenCASCADE bindings: reads STEP, IGES and BREP, tessellates it for scan checks, measures it exactly, builds parts from a spec",
             ("metrology", "geometry"),
             optional=True,
             bundled_license="LGPL-2.1 with OCCT exception (OpenCASCADE shared libraries in the wheel)",
