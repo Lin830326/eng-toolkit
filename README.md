@@ -4,7 +4,7 @@
 
 > ⚠️ 所有輸出皆標示 `review_status: "unreviewed"`。本工具箱的結果是**未經工程核可**的估算，必須由合格工程師複核後才能用於設計或採購。
 
-目前有兩個領域：`calc`（油壓計算）與 `metrology`（ISO 286 配合查詢與反查、一維公差堆疊）。CAD／2D 圖檔／EDA／模擬等領域尚未開始。
+目前有兩個領域：`calc`（油壓計算）與 `metrology`（ISO 286 配合查詢與反查、一維公差堆疊、掃描點雲對 STEP 模型的偏差檢查）。CAD／2D 圖檔／EDA／模擬等領域尚未開始。
 
 ---
 
@@ -24,6 +24,7 @@ Claude Code / 任何 MCP 客戶端
 │   │        metrology_fit_limits  (ISO 286 自建表)  │
 │   │        metrology_fit_search  (間隙窗口反查配合)  │
 │   │        metrology_stackup_1d  (NumPy)           │
+│   │        metrology_check_scan  (Open3D + OCP, 選用)│
 │   └── (未來) cad_*, dxf_*, eda_* ...               │
 ├────────────────────────────────────────────────┤
 │  contract.py   統一回傳契約 (pydantic)          │
@@ -47,15 +48,17 @@ cd eng-toolkit
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-腳本會：安裝 uv → `uv sync` 依 `uv.lock` 建立 `.venv` → 執行 `toolkit_doctor` → 印出註冊到 Claude Code 的指令。
+腳本會：安裝 uv → `uv sync --all-groups --extra scan` 依 `uv.lock` 建立 `.venv`（含掃描檢查用的 Open3D 與 OpenCASCADE） → 執行 `toolkit_doctor` → 印出註冊到 Claude Code 的指令。
 
 手動安裝（已有 uv）：
 
 ```bash
-uv sync --all-groups
+uv sync --all-groups --extra scan
 uv run eng-toolkit doctor        # 健康檢查；exit 0 = 全部通過
 uv run pytest                    # 測試
 ```
+
+`metrology_check_scan` 用的 Open3D 與 `cadquery-ocp-novtk` 合計約 340 MB、匯入也慢，所以放在選用的 `scan` extra，不在核心依賴也不在 `dev` 群組：預設的 `uv sync` 與 `uv run eng-toolkit` 不會安裝它們，要用這個工具（或跑它的測試）請加 `--extra scan`，開發環境用上面的 `uv sync --all-groups --extra scan`。沒裝時工具仍會列出，呼叫會回 `engine.unavailable` 並附安裝指令，`toolkit_doctor` 也只標示 `not-installed (optional)`，不算失敗；`metrology_check_scan` 的測試會因缺少引擎而跳過並提示 `uv sync --extra scan`。
 
 ---
 
@@ -81,7 +84,13 @@ uv run eng-toolkit doctor                                       # 健康檢查�
 claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-toolkit" eng-toolkit
 ```
 
-或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可）。接上後 `/mcp` 應看到 `eng-toolkit` 與七個工具。
+要用 `metrology_check_scan`，註冊指令要帶 scan extra，否則該工具只會回 `engine.unavailable`：
+
+```bash
+claude mcp add --scope user eng-toolkit -- uv run --extra scan --directory "C:\path\to\eng-toolkit" eng-toolkit
+```
+
+（其他客戶端的 `args` 同理，在 `run` 後加 `"--extra", "scan"`。）或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可；它不帶 scan extra，要用掃描檢查請改成上面的指令）。接上後 `/mcp` 應看到 `eng-toolkit` 與八個工具。
 
 **Cursor**（`~/.cursor/mcp.json` 或專案 `.cursor/mcp.json`）
 
@@ -127,7 +136,7 @@ command = "uv"
 args = ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
 ```
 
-> 為了讓地端中小模型也能穩定呼叫，工具維持少量粗粒度（目前 6 個），所有輸入參數都是**基本 JSON 型別**（字串／布林），每個參數附描述；數量一律是「數字 + 單位」的單一字串，如 `"100 mm"`。
+> 為了讓地端中小模型也能穩定呼叫，工具維持少量粗粒度（目前 8 個），所有輸入參數都是**基本 JSON 型別**（字串／布林／整數），每個參數附描述；數量一律是「數字 + 單位」的單一字串，如 `"100 mm"`。
 
 ---
 
@@ -190,6 +199,17 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 ```
 → `result_nominal = 50 mm`、`result_min/max = 49.859/50.093 mm`（最壞情況）。`data.contributions[i].kind` 為 `"dimension"` 或 `"fit"`（配合環另有 `fit`）。配合代號、尺寸範圍與單位的錯誤沿用 `metrology_fit_limits` 的 `error.family`，訊息前加 `link N (name):`，`details` 帶 `link_index`／`link_name`。配合環的間隙帶視為一個獨立變數（RSS、Monte Carlo 皆然）。
 
+### `metrology_check_scan`
+掃描點雲對 STEP 模型的偏差檢查：回答「零件離模型多遠、在哪裡」。需要選用的 `scan` extra（`uv sync --extra scan`，見上方安裝）。輸入：`scan_path`（`.ply` `.pcd` `.xyz` `.xyzn` `.xyzrgb` `.pts`）、`scan_unit`（點雲座標沒有單位，必須給，且只能是單位本身，如 `"mm"`、`"m"`、`"inch"`、`"um"`；`"2 mm"`、`"0 mm"` 這類帶數字的寫法會回 `input.invalid`，免得悄悄縮放掃描）、`model_path`（`.step`／`.stp`，以 mm 讀入）、`tolerance`（正的長度，如 `"0.1 mm"`）、`registration`（`none` 預設，點雲已在模型座標系；`icp`，先以點對面 ICP 從單位矩陣精修，點雲必須已大致對齊）、`icp_max_distance`（預設 `"5 mm"`）、`mesh_deflection`（STEP 離散化的弦高誤差上限，預設 `"0.01 mm"`）、`max_points`（1000 到 5000000，預設 200000；超過就用固定種子降取樣，結果可重現）、`output_unit`（預設 `mm`）。
+
+```json
+{"scan_path": "C:/scans/bracket.ply", "scan_unit": "mm", "model_path": "C:/cad/bracket.step",
+ "tolerance": "0.1 mm", "registration": "icp"}
+```
+→ 主值 `rms_deviation`，另有 `mean_deviation`、`std_deviation`（母體標準差）、`max_deviation`（絕對值最大）、`max_positive_deviation`、`max_negative_deviation`（有號最小值）、`p95_abs_deviation`、`out_of_tolerance_fraction`（|偏差| > `tolerance` 的比例）、`points_evaluated`。`data` 含 `histogram`（絕對偏差 20 格）、`worst_points`（前 10 大偏差的座標）、`regions`（超差點以 DBSCAN 分群；先把座標相同（四捨五入到 1e-6 mm）的點併成一個位置，`eps` 為整份使用點雲（去重後）最近鄰距離中位數的 5 倍，所以重複記錄的點不影響分區；每區有相異位置數、重心、外框、最大偏差，依位置數排序，最多 20 區）、`registration`（4×4 變換、`fitness`、`inlier_rmse`、估計變換用的點數 `source_points`、`unconstrained` 未被約束的方向、`note`）、`mesh`（三角形數、`deflection_mm`、是否封閉、`solids` 實體數、`step_roots` STEP 根實體數與實際轉出的數量）與 `points`（原始與實際使用點數）；每個超差點寫入 `deviations.csv` 工作區產物（欄位 `x_mm,y_mm,z_mm,deviation_mm,region`，最多 100000 列，超過會警告）。
+
+偏差是掃描點到模型表面的**有號距離，在材料外為正**。模型不是剛好一個封閉實體時內外無定義或有歧義：開放殼面，或 STEP 內有多個實體（重疊的實體會讓射線奇偶判斷出錯），都改用到最近表面的無號距離，`data.signed = false` 並警告，有號的最大／最小值不回傳。STEP 有根實體沒轉成幾何時（`step_roots.transferred` 小於 `in_file`）也會警告模型不完整。量測對象是離散化後的網格，誤差上限即 `mesh_deflection`，小於它的偏差沒有意義。到網格的距離以 float64 計算：Open3D 在平移到網格中心後的 float32 座標只負責找出最近三角形，再對它與共用頂點的所有鄰接三角形重算精確距離（測試中誤差低於 1e-9 mm；退化網格仍可能選錯三角形）。ICP 只在初始對齊夠近時收斂；`fitness` 是配準後與模型表面距離不超過 `icp_max_distance` 的點的比例（與 `inlier_rmse` 同一批點），低於 0.5 會警告；估計變換最多用 200000 個點（固定種子子集），再套用到全部點；相同輸入重跑，ICP 結果可能在 1e-5 mm 量級有差異（多執行緒浮點加總）。**ICP 後的偏差描述的是形狀，不是位置**：最佳擬合會吸收真實缺陷（例如頂面 28% 範圍凸起 0.2 mm，不配準時 22.2% 超差，配準後只剩 2.7%），所以一律警告；已配準的點若只在單一平面或圓柱上，平移或旋轉有未約束的方向（單一平面無法固定面內平移與繞法向的旋轉），會在警告與 `registration.unconstrained` 具名列出。全域配準（未對齊的掃描）不在範圍內。ASCII／二進位 PLY 會對照標頭驗證資料是否完整（被截斷的檔案回 `input.invalid`）；座標超過 1e7 mm 或非有限值一律視為壞檔。掃描品質與適用標準由使用者負責。
+
 ---
 
 ## 輸入規則：每個物理量都要帶單位
@@ -251,6 +271,8 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 
 目前核心依賴全為 permissive：fastmcp (Apache-2.0)、mcp (MIT)、pydantic (MIT)、pint (BSD-3-Clause)、fluids (MIT)、numpy (BSD-3-Clause)。`tests/test_licenses.py` 會在 CI 中斷言環境裡沒有任何 GPL／AGPL 套件。
 
+選用的 `scan` extra：open3d (MIT, permissive) 與 cadquery-ocp-novtk。後者的 wrapper 是 Apache-2.0，但 wheel 內含 OpenCASCADE（LGPL-2.1 加 OCCT exception），所以在 `licenses.KNOWN` 誠實宣告為 `lgpl-dynamic`（動態連結、不修改、不內嵌進本 repo），並以 `bundled_license` 記下來源；`toolkit_doctor` 不會因 metadata 顯示 Apache 而誤報授權不符；這個「bundled 說明」只適用於 permissive wrapper 宣告為 `lgpl-dynamic`，任何已安裝、宣告為 `gpl-isolated` 或 `forbidden` 的引擎，doctor 一律判定失敗（`policy-violation`）。OCP wheel 另外還內含其他雙重授權的函式庫（回報有 FreeImage、LibRaw、FreeType、zstd，各有非 GPL 的授權選項）；再散布前應逐一確認。
+
 ## Clean-room 聲明
 
 本專案為獨立的開源工程工具箱，不含、也不得引入任何雇主或客戶的程式碼、資料、模型、圖檔或品牌。貢獻時請遵守此界線。
@@ -260,7 +282,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 ## 開發
 
 ```bash
-uv sync --all-groups
+uv sync --all-groups --extra scan
 uv run pytest -v
 uv run eng-toolkit doctor
 ```
