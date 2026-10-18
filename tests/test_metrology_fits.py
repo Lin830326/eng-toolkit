@@ -200,12 +200,37 @@ def test_hand_checked_holes_that_use_the_special_rule():
     assert (p7_small.upper_um, p7_small.lower_um) == (-6, -16)
 
 
-def test_notes_flag_cells_that_have_no_second_source():
-    solid = _call(nominal="25 mm", fit="H7/g6")
-    assert not any("transcribed" in w for w in solid.warnings)
-    thin = _call(nominal="30 mm", fit="H7/t6")  # t is not in isofits
-    assert any("t6" in w and "transcribed" in w for w in thin.warnings)
-    assert any("M9" in w for w in _call(nominal="20 mm", fit="M9/h9").warnings)
+# Spot values for the positions isofits does not cover, taken from RoyMech's published ISO 286
+# fundamental-deviation tables (0-500 mm), which the full one-off cell-for-cell comparison also used.
+# (size mm, class, ES or es, EI or ei) in micrometres; IT6 = 13 and IT7 = 21 in 18-30 mm, etc.
+SECOND_SOURCE_SPOT_VALUES = [
+    (100, "b7", -220, -220 - 35),  # 80-100: es = -220 ; IT7 = 35
+    (25, "c7", -110, -110 - 21),
+    (3, "cd6", -34, -34 - 6),  # up to 3 mm: es = -34 ; IT6 = 6
+    (5, "ef6", -14, -14 - 8),
+    (8, "fg6", -8, -8 - 9),
+    (25, "s6", 35 + 13, 35),  # 24-30: ei = +35
+    (28, "t6", 41 + 13, 41),
+    (16, "u6", 33 + 11, 33),  # 14-18: ei = +33
+    (16, "v6", 39 + 11, 39),
+    (450, "x6", 740 + 40, 740),  # 400-450: ei = +740 ; IT6 = 40
+    (60, "y6", 144 + 19, 144),  # 50-65: ei = +144 ; IT6 = 19
+    (60, "z6", 172 + 19, 172),
+    (300, "za6", 1000 + 32, 1000),  # 280-315: ei = +1000 ; IT6 = 32
+    (300, "zb6", 1300 + 32, 1300),  # two independent tables and the ISO formula (IT9 + 4 D) agree on 1300
+    (500, "zc6", 2600 + 40, 2600),
+    (28, "T7", -33, -33 - 21),  # 24-30: ES = -ei(41) + delta(8)
+    (60, "Z7", -161, -161 - 30),  # 50-65: ES = -172 + delta(11)
+    (3, "U6", -18, -18 - 6),  # up to 3 mm, delta 0
+    (25, "M9", -8, -8 - 52),  # M above IT8: ES = -ei = -8
+    (25, "N9", 0, -52),  # N above IT8 over 3 mm: ES = 0
+]
+
+
+@pytest.mark.parametrize("size, cls, upper, lower", SECOND_SOURCE_SPOT_VALUES)
+def test_positions_without_an_isofits_oracle_match_a_second_published_table(size, cls, upper, lower):
+    zone = iso286.zone_deviations_um(size, cls)
+    assert (zone.upper_um, zone.lower_um) == (upper, lower)
 
 
 # --------------------------------------------------------------------------- error paths
@@ -355,11 +380,15 @@ def _iso_um(body: str, size: float, cls: str) -> tuple[float, float]:
 # from the ISO 286-1 rules and our value is the one the rules give; the sweeps below pin exactly this
 # list so any other disagreement, in either direction, fails.
 #
-#   E7, 315-400 mm: e = +125 um, IT7 = 57 um  -> ES = 125 + 57 = 182 (isofits has 185)
-#   K6, 6-10 mm:    k = +1, delta = IT6 - IT5 = 9 - 6 = 3 -> ES = -1 + 3 = +2, EI = 2 - 9 = -7 (isofits -6)
+#   E7, 315-400 mm: e = +125 um, IT7 = 57 um  -> ES = 125 + 57 = 182 (isofits has 185; the same
+#                   source gives E6 +161 = 125 + 36 and E11 +485 = 125 + 360, so 185 is a typo)
+#   K6, 6-10 mm:    k = +1, delta = IT6 - IT5 = 9 - 6 = 3 -> ES = -1 + 3 = +2, EI = 2 - 9 = -7 (isofits -6;
+#                   RoyMech's copy of the table was corrected to -7)
 #   M6, 250-315 mm: m = +20, delta = IT6 - IT5 = 32 - 23 = 9 -> ES = -20 + 9 = -11, EI = -11 - 32 = -43
-#                   (isofits -9/-41; M7 of the same range, -20 + 20 = 0, agrees)
-#   f6, 120-180 mm: f = -43, IT6 = 25 -> ei = -43 - 25 = -68 (isofits -48, not even self-consistent)
+#                   (isofits and RoyMech -9/-41; the same table's N6 at 250-315 is -25 = -34 + 9, i.e.
+#                   it uses delta 9 there, so M6 -9 is a typo; M7, -20 + 20 = 0, agrees)
+#   f6, 120-180 mm: f = -43, IT6 = 25 -> ei = -43 - 25 = -68 (isofits -48, not even self-consistent;
+#                   RoyMech's copy was corrected to -68)
 KNOWN_ISOFITS_ERRORS = {
     ("hole", "E7", 355), ("hole", "E7", 400),
     ("hole", "K6", 10),

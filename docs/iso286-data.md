@@ -7,10 +7,16 @@
 * 內容是國際標準 **ISO 286-1 / ISO 286-2**（極限與配合系統，2010 版）中公布的**數值事實**：IT 公差等級表（Table 1）與軸基本偏差表。這些是公開引用的工程常數，本 repo 不含標準文本、圖表或排版，也不含任何其他軟體套件或公司資料。
 * 表由本專案人工謄錄，授權隨整個 repo 為 Apache-2.0。**標準本身才是權威**：用於正式圖面或安全相關設計前，請對照合法取得的標準複核。所有輸出皆為 `review_status: "unreviewed"`。
 * JSON 只存 IT 值與軸的基本偏差；孔的偏差由標準的一般規則（A–H：EI = −es）與特殊規則（K–N 至 IT8、P–ZC 至 IT7：ES = −ei + Δ）在 `iso286.py` 推導。
-* 測試用的第三方比對資料（**不是執行期依賴**）：
-  * [`isofits`](https://pypi.org/project/isofits/)（MIT）：在 `dev` 依賴群組，測試逐格掃描它的 37 個孔類別與 37 個軸類別（3–400 mm 全部尺寸範圍）。它自己有 8 個尺寸範圍的格子（E7、K6、M6、f6）與標準規則不符（見 `tests/test_metrology_fits.py` 的 `KNOWN_ISOFITS_ERRORS`，附手算），測試把這份清單釘死。
+* 比對資料（**不是執行期依賴**，也沒有複製進 repo）：
+  * [`isofits`](https://pypi.org/project/isofits/)（MIT）：在 `dev` 依賴群組，測試逐格掃描它的 37 個孔類別與 37 個軸類別（3–400 mm 全部尺寸範圍）。它自己有 8 個尺寸範圍的格子（E7、K6、M6、f6）與標準規則不符，見 `tests/test_metrology_fits.py` 的 `KNOWN_ISOFITS_ERRORS`（附手算），測試把這份清單釘死。
+  * [RoyMech](https://www.roymech.co.uk/Useful_Tables/ISO_Tolerances/ISO_SHAFT_LIM_1.html) 公開的 ISO 286 基本偏差表（0–500 mm，軸與孔）：一次性人工比對共約 1400 格（軸 a–zc 全部位置、孔 A–ZC 與 M/N 的 IT8 以上規則）。差異只有下列幾格，全部是來源表的筆誤：
+    * 軸 j5、j6：其基本偏差表在 18–65 mm 與它自己的極限偏差表不一致；本表與其極限偏差表、isofits 一致。
+    * 孔 N7 ≤ 3 mm：來源 −5，同表 N8 與 N>8 皆為 −4；本表取 −4（= −n，ISO 在 3 mm 以下 Δ = 0）。
+    * 孔 ZC 65–80 mm（來源 −490，同站軸表 zc = 480）與孔 X 180–200 mm（來源 −340，同站軸表 x = 350）：本表跟隨軸表。
+    * 軸 zb 280–315 mm：來源兩張表皆為 1300，本表原先誤記 1350，已改為 1300（也最接近 ISO 公式 IT9 + 4D = 1318）。
   * [`@casys/mcp-tolerance`](https://jsr.io/@casys/mcp-tolerance)（MIT）：只把其公開測試資料中與手算一致的 6 組配合值複製成純測試資料。
   * ISO 286-1 的 IT 公式與基本偏差公式：測試用公式重算整張表，誤差超過 max(3 µm, 4 %) 就失敗，用來抓謄錯數字。
+  * 注意：isofits 與 RoyMech 的極限偏差表來自同一個上游（連筆誤都相同），所以它們互相印證的程度有限；基本偏差表是 RoyMech 另外整理的，是較獨立的一份。
 
 ## 涵蓋範圍
 
@@ -25,8 +31,8 @@
 
 ## 已知缺口與信心分級
 
-1. **逐格驗證只到 isofits 的範圍**：孔 E F G H J JS K M N P R、軸 a d e f g h j js k m n p r，尺寸 3 < D ≤ 400 mm。其餘（b c cd ef fg s t u v x y z za zb zc、3 mm 以下的段、400–500 mm）只對公式驗證（容差約 ±4 %），結果會附 `warnings` 提醒「僅公式驗證」。
-2. **M、N 孔在 IT8 以上**（M9–M18、N9–N18）：採 M：ES = −ei、N：ES = 0（D > 3 mm）。未找到獨立來源逐格驗證，結果會附警告。
+1. **沒有對照 ISO 標準原文**：所有比對都是對照公開網頁與套件，不是對照付費取得的標準。正式圖面、安全相關設計前，請對照標準複核。
+2. **M、N 孔在 IT8 以上**（M9–M18：ES = −ei；N9–N18、D > 3 mm：ES = 0）已與 RoyMech 的 ">M8"、">N8" 欄一致。
 3. **孔 J 僅 J6–J8、軸 j 僅 j5–j7**（標準的定義範圍）；其他等級回 `input.undefined_class`。
 4. **孔 K–ZC 低於 IT3 不支援**（特殊規則的 Δ 只定義於 IT3 起）。
 5. **JS／js 不做奇數取整**：標準允許 IT7–IT11 為奇數 µm 時取 (IT−1)/2，本工具取精確的 ±IT/2（與 isofits 一致）。

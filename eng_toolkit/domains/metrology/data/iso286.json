@@ -8,7 +8,7 @@
   "size_range_rule": "ranges are lower-exclusive and upper-inclusive: a size of 18 mm belongs to 10-18; 3 mm belongs to 0-3",
   "hole_rules": "A..H and CD, EF, FG: EI = -es of the shaft position with the same letter. JS: +/-IT/2 exactly. J: tabulated ES (IT6 to IT8). K, M, N up to IT8 and P..ZC up to IT7: ES = -ei + delta with delta = IT(n) - IT(n-1) of the same size range, and 0 for sizes up to 3 mm; K uses the tabulated k value for IT8 too. Above those grades: ES = -ei (K: 0; N above IT8 and over 3 mm: 0).",
   "shaft_rules": "a..g: es tabulated, ei = es - IT. h: es = 0. js: +/-IT/2. j: ei tabulated for IT5 to IT7. k: ei tabulated for IT4 to IT7, 0 otherwise. m..zc: ei tabulated, es = ei + IT. null = position not defined for that size range.",
-  "unverified": "Positions t, v, x, y, z, za, zb, zc, cd, ef, fg, a, b, c and all sizes up to 3 mm or above 400 mm were checked against the ISO 286-1 formulas only, not cell-for-cell against a second table."
+  "verification": "Every shaft position (a..zc) and every hole rule was compared cell for cell with an independent published fundamental-deviation table (RoyMech, 0 to 500 mm) and, for 3 to 400 mm, with the isofits package; remaining disagreements are source typos resolved by the standard's own rules (see docs/iso286-data.md). zb 280-315 mm is 1300 (two independent tables and the ISO formula agree), not 1350."
  },
  "size_ranges_mm": [
   [0, 3],
@@ -94,7 +94,7 @@
   "y": [null, null, null, null, null, 63, 75, 94, 114, 144, 174, 214, 254, 300, 340, 380, 425, 470, 520, 580, 650, 730, 820, 920, 1000],
   "z": [26, 35, 42, 50, 60, 73, 88, 112, 136, 172, 210, 258, 310, 365, 415, 465, 520, 575, 640, 710, 790, 900, 1000, 1100, 1250],
   "za": [32, 42, 52, 64, 77, 98, 118, 148, 180, 226, 274, 335, 400, 470, 535, 600, 670, 740, 820, 920, 1000, 1150, 1300, 1450, 1600],
-  "zb": [40, 50, 67, 90, 108, 136, 160, 200, 242, 300, 360, 445, 525, 620, 700, 780, 880, 960, 1050, 1200, 1350, 1500, 1650, 1850, 2100],
+  "zb": [40, 50, 67, 90, 108, 136, 160, 200, 242, 300, 360, 445, 525, 620, 700, 780, 880, 960, 1050, 1200, 1300, 1500, 1650, 1850, 2100],
   "zc": [60, 80, 97, 130, 150, 188, 218, 274, 325, 405, 480, 585, 690, 800, 900, 1000, 1150, 1250, 1350, 1550, 1700, 1900, 2100, 2400, 2600]
  },
  "shaft_j_lower_deviation_um": {

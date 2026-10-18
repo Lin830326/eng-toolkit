@@ -39,14 +39,6 @@ _CLEARANCE_LETTERS = frozenset({"a", "b", "c", "cd", "d", "e", "ef", "f", "fg", 
 _DESIGNATION = re.compile(r"^([A-Za-z]{1,2})(\d{1,2})$")
 _EXAMPLE = "'H7/g6' (hole in upper case first, shaft in lower case second)"
 
-# Letters whose table cells were additionally checked cell-for-cell against the isofits package
-# (sizes above 3 mm up to 400 mm).  Everything else was checked against the ISO 286-1 formulas
-# only (within ~4 %), and results for it carry a note.
-_EXACT_CHECKED_SHAFT = frozenset("a d e f g h j js k m n p r".split())
-_EXACT_CHECKED_HOLE = frozenset("E F G H J JS K M N P R".split())
-_EXACT_CHECK_RANGE_MM = (3.0, 400.0)
-
-
 @dataclass(frozen=True)
 class Zone:
     """Limits of one tolerance class (hole or shaft) in micrometres."""
@@ -57,7 +49,6 @@ class Zone:
     upper_um: float  # ES / es
     lower_um: float  # EI / ei
     tolerance_um: float  # IT value of the grade in this size range
-    notes: tuple[str, ...] = ()
 
     @property
     def designation(self) -> str:
@@ -275,24 +266,6 @@ def _hole_zone(letter: str, grade: str, r: int) -> tuple[float, float]:
 # --------------------------------------------------------------------------- public API
 
 
-def _notes(kind: str, letter: str, grade: str, size_mm: float) -> tuple[str, ...]:
-    notes = []
-    exact = _EXACT_CHECKED_HOLE if kind == "hole" else _EXACT_CHECKED_SHAFT
-    lo, hi = _EXACT_CHECK_RANGE_MM
-    if letter.lower() not in ("h", "js") and (letter not in exact or not (lo < size_mm <= hi)):
-        notes.append(
-            f"{letter}{grade}: fundamental deviation transcribed from the ISO 286-1 table and checked "
-            "against the standard's formulas only (about +/-4 %), not cell-for-cell against a second "
-            "table source; verify against the standard before relying on it"
-        )
-    if kind == "hole" and letter in ("M", "N") and _grade_number(grade) > 8:
-        notes.append(
-            f"{letter}{grade}: rule for {letter} above IT8 (N: ES = 0 over 3 mm; M: ES = -ei) "
-            "is not cross-checked by an independent source"
-        )
-    return tuple(notes)
-
-
 def zone_deviations_um(size_mm: float, designation: str) -> Zone:
     """Limits of one class such as ``'H7'`` or ``'g6'`` for a nominal size."""
     kind, letter, grade = parse_designation(designation)
@@ -309,7 +282,6 @@ def zone_deviations_um(size_mm: float, designation: str) -> Zone:
         upper_um=round(upper, 4),
         lower_um=round(lower, 4),
         tolerance_um=_it(r, grade),
-        notes=_notes(kind, letter, grade, size_mm),
     )
 
 

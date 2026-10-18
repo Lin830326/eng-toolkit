@@ -96,7 +96,6 @@ def fit_limits(
         return Computed(
             values=values,
             primary="min_clearance",
-            warnings=[*h.notes, *s.notes],
             data={
                 "fit_type": res.fit_type,
                 "hole": h.designation,

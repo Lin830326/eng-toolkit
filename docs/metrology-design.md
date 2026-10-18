@@ -63,7 +63,7 @@ Interface depth: `iso286.fit_limits(size_mm, "H7/g6")` hides range lookup, IT gr
 
 ## Tradeoffs accepted
 
-- We accept transcribing the shaft tables by hand in exchange for owning a small, testable, documented data file. Mitigated by the isofits and formula cross-checks.
+- We accept transcribing the shaft tables by hand in exchange for owning a small, testable, documented data file. Mitigated by the isofits sweep, a one-off cell-for-cell comparison with RoyMech's fundamental-deviation tables (about 1400 cells; the few differences were source typos, plus one real fix in our `zb` 280-315 mm), and the formula check.
 - Hole deviations are derived, not tabulated, so they are only as right as the general/special rule implementation. The isofits sweep covers K, M, N, P, R, J, JS holes at the grades isofits has.
 - RSS treats every tolerance as a +/-3 sigma bound on a centered or mean-shifted normal. This is the common drawing-office convention and is stated in the result; it is not a process-capability study.
 - Sizes below 3 mm and above 500 mm are refused with an explicit error rather than extrapolated.
