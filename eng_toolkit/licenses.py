@@ -69,7 +69,7 @@ KNOWN: dict[str, Engine] = {
             "BSD-3-Clause",
             TIER_PERMISSIVE,
             "units and dimensional analysis",
-            ("gateway", "calc", "metrology", "geometry"),
+            ("gateway", "calc", "metrology", "geometry", "drawing"),
         ),
         Engine("fluids", "MIT", TIER_PERMISSIVE, "fluid mechanics (friction factor, Reynolds)", ("calc",)),
         Engine(
@@ -77,7 +77,7 @@ KNOWN: dict[str, Engine] = {
             "BSD-3-Clause",
             TIER_PERMISSIVE,
             "seeded Monte Carlo sampling for tolerance stack-up; array maths for meshes and geometry",
-            ("metrology", "geometry"),
+            ("metrology", "geometry", "drawing"),
         ),
         Engine(
             "open3d",
@@ -92,11 +92,29 @@ KNOWN: dict[str, Engine] = {
             "cadquery-ocp-novtk",
             "Apache-2.0",
             TIER_LGPL,
-            "OpenCASCADE bindings: reads STEP, IGES and BREP, tessellates it for scan checks, measures it exactly, builds parts from a spec",
-            ("metrology", "geometry"),
+            "OpenCASCADE bindings: reads STEP, IGES and BREP, tessellates it for scan checks, measures it exactly, builds parts from a spec, projects them into drawing views",
+            ("metrology", "geometry", "drawing"),
             optional=True,
             bundled_license="LGPL-2.1 with OCCT exception (OpenCASCADE shared libraries in the wheel)",
             extra="cad",
+        ),
+        Engine(
+            "ezdxf",
+            "MIT",
+            TIER_PERMISSIVE,
+            "writes the DXF and PDF of a drawing (the one DXF module of the drawing domain)",
+            ("drawing",),
+            optional=True,
+            extra="drawing",
+        ),
+        # A guard, not a dependency: ezdxf[draw] pulls PyMuPDF for a PDF backend, and the doctor must flag it.
+        Engine(
+            "pymupdf",
+            "AGPL-3.0",
+            TIER_FORBIDDEN,
+            "ezdxf's AGPL PDF backend: must never be installed",
+            ("drawing",),
+            optional=True,
         ),
     )
 }

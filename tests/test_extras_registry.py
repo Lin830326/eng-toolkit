@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from eng_toolkit.licenses import KNOWN, install_hint
+from eng_toolkit.licenses import KNOWN, TIER_FORBIDDEN, install_hint
 
 PYPROJECT = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
 PROJECT_NAME = PYPROJECT["project"]["name"]
@@ -34,11 +34,12 @@ def dists_of(extra: str, seen: frozenset[str] = frozenset()) -> set[str]:
     return found
 
 
-OPTIONAL = [engine for engine in KNOWN.values() if engine.optional]
+GUARDS = [engine for engine in KNOWN.values() if engine.tier == TIER_FORBIDDEN]  # listed so the doctor flags them, never installed by an extra
+OPTIONAL = [engine for engine in KNOWN.values() if engine.optional and engine not in GUARDS]
 
 
 def test_the_registry_has_optional_engines_to_check():
-    assert {e.dist for e in OPTIONAL} >= {"open3d", "cadquery-ocp-novtk"}
+    assert {e.dist for e in OPTIONAL} >= {"open3d", "cadquery-ocp-novtk", "ezdxf"}
 
 
 @pytest.mark.parametrize("engine", OPTIONAL, ids=lambda e: e.dist)
@@ -65,6 +66,29 @@ def test_every_distribution_in_an_extra_is_in_the_registry(extra):
 def test_scan_installs_both_engines_and_cad_only_the_kernel():
     assert dists_of("cad") == {"cadquery-ocp-novtk"}
     assert dists_of("scan") == {"cadquery-ocp-novtk", "open3d"}
+
+
+def test_drawing_installs_ezdxf_on_top_of_the_kernel():
+    assert dists_of("drawing") == {"cadquery-ocp-novtk", "ezdxf"}
+    assert install_hint("ezdxf") == "uv sync --extra drawing"
+
+
+@pytest.mark.parametrize("guard", GUARDS, ids=lambda e: e.dist)
+def test_a_forbidden_guard_row_is_optional_and_in_no_extra(guard):
+    assert guard.optional and not guard.extra
+    assert all(_canonical(guard.dist) not in dists_of(extra) for extra in EXTRAS)
+
+
+def test_pymupdf_is_the_guard_for_ezdxfs_agpl_pdf_backend():
+    assert {g.dist for g in GUARDS} == {"pymupdf"}
+    assert "AGPL" in KNOWN["pymupdf"].license
+
+
+def test_pdfplumber_is_a_dev_dependency_only():
+    groups = PYPROJECT["dependency-groups"]
+    assert any(line.lower().startswith("pdfplumber") for line in groups["dev"])
+    assert "pdfplumber" not in {_canonical(k) for k in KNOWN}
+    assert all(not line.lower().startswith("pdfplumber") for lines in EXTRAS.values() for line in lines)
 
 
 def test_install_hint_rejects_an_unknown_distribution():

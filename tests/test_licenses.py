@@ -14,6 +14,7 @@ from eng_toolkit.licenses import (
     installed_license,
     scan_environment,
     tier_explained_by_bundle,
+    violates_policy,
 )
 
 
@@ -76,6 +77,26 @@ def test_bundle_explains_only_a_declared_lgpl_dynamic_against_a_permissive_wrapp
 def test_a_bundled_license_never_explains_away_a_gpl_or_forbidden_declaration(declared, detected):
     engine = Engine("x", "MIT", declared, "engine bundling GPL code", bundled_license="GPL-3.0-only solver in the wheel")
     assert not tier_explained_by_bundle(engine, detected)
+
+
+def test_ezdxf_is_declared_permissive_and_optional_and_pymupdf_is_a_forbidden_guard():
+    ezdxf = KNOWN["ezdxf"]
+    assert ezdxf.optional and ezdxf.tier == TIER_PERMISSIVE and ezdxf.extra == "drawing" and ezdxf.domains == ("drawing",)
+    guard = KNOWN["pymupdf"]
+    assert guard.optional and guard.tier == TIER_FORBIDDEN and classify_license(guard.license) == TIER_FORBIDDEN
+    assert violates_policy(guard) and not violates_policy(ezdxf)
+
+
+@pytest.mark.parametrize("metadata", ["AGPL-3.0-only", "MIT", "GNU Affero General Public License v3"])
+def test_the_doctor_flags_an_installed_pymupdf_as_a_policy_failure(monkeypatch, metadata):
+    from eng_toolkit.gateway import server as srv
+
+    real = srv.installed_license
+    monkeypatch.setattr(srv, "installed_license", lambda dist: ("1.24.0", metadata) if dist == "pymupdf" else real(dist))
+    report = getattr(srv.toolkit_doctor, "fn", srv.toolkit_doctor)(scan_env=False)
+    row = next(d for d in report.data["dependencies"] if d["dist"] == "pymupdf")
+    assert row["status"] == "policy-violation"
+    assert report.ok is False and any("pymupdf" in f for f in report.data["failures"])
 
 
 def test_environment_has_no_gpl_or_forbidden_distributions():
