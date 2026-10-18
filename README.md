@@ -183,6 +183,13 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 ```
 → `result_nominal = 0.50 mm`、`result_mean = 0.56 mm`、`result_min/max = 0.433/0.687 mm`，`data.contributions` 給每環佔比。只算一維線性鏈，不含形位公差、熱變形與裝配效應。
 
+環也可以是 ISO 286 配合：寫 `"fit"`（如 `"H7/g6"`）、`"nominal"` 與 `"direction"`，不可再帶 `tol`／`plus`／`minus`。此時 `nominal` 是孔軸直徑（3–500 mm，任何長度單位），環本身是間隙（孔 − 軸）：名目 0、上限為最大間隙、下限為最小間隙，干涉配合的上限為負值，因此不必手動換算符號。
+
+```json
+{"chain": "[{\"name\":\"housing\",\"nominal\":\"50 mm\",\"tol\":\"0.10 mm\",\"direction\":\"+\"},{\"name\":\"seat play\",\"fit\":\"H7/g6\",\"nominal\":\"25 mm\",\"direction\":\"-\"}]"}
+```
+→ `result_nominal = 50 mm`、`result_min/max = 49.859/50.093 mm`（最壞情況）。`data.contributions[i].kind` 為 `"dimension"` 或 `"fit"`（配合環另有 `fit`）。配合代號、尺寸範圍與單位的錯誤沿用 `metrology_fit_limits` 的 `error.family`，訊息前加 `link N (name):`，`details` 帶 `link_index`／`link_name`。配合環的間隙帶視為一個獨立變數（RSS、Monte Carlo 皆然）。
+
 ---
 
 ## 輸入規則：每個物理量都要帶單位
