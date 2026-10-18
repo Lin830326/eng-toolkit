@@ -4,6 +4,7 @@ import pytest
 
 from eng_toolkit.licenses import (
     KNOWN,
+    Engine,
     TIER_FORBIDDEN,
     TIER_GPL,
     TIER_LGPL,
@@ -12,6 +13,7 @@ from eng_toolkit.licenses import (
     classify_license,
     installed_license,
     scan_environment,
+    tier_explained_by_bundle,
 )
 
 
@@ -38,12 +40,42 @@ def test_classify_license(text, tier):
     assert classify_license(text) == tier
 
 
-def test_every_known_engine_is_installed_and_permissive():
-    for dist, engine in KNOWN.items():
+def test_every_required_engine_is_installed_and_permissive():
+    required = {dist: e for dist, e in KNOWN.items() if not e.optional}
+    assert required, "the core engines must be listed"
+    for dist, engine in required.items():
         version, text = installed_license(dist)
         assert version is not None, f"{dist} not installed"
         assert engine.tier == TIER_PERMISSIVE
         assert classify_license(text) == TIER_PERMISSIVE, (dist, text)
+
+
+def test_optional_engines_are_declared_with_their_real_tier():
+    assert KNOWN["open3d"].optional and KNOWN["open3d"].tier == TIER_PERMISSIVE
+    ocp = KNOWN["cadquery-ocp-novtk"]
+    assert ocp.optional
+    assert ocp.tier == TIER_LGPL
+    # the wrapper metadata says Apache-2.0; the tier comes from the OCCT code bundled in the wheel
+    assert classify_license(ocp.bundled_license) == TIER_LGPL
+
+
+def test_bundle_explains_only_a_declared_lgpl_dynamic_against_a_permissive_wrapper():
+    ocp = KNOWN["cadquery-ocp-novtk"]
+    assert tier_explained_by_bundle(ocp, TIER_PERMISSIVE)
+    assert not tier_explained_by_bundle(ocp, TIER_LGPL)  # equal tiers need no explanation
+    assert not tier_explained_by_bundle(ocp, TIER_GPL)  # a looser declaration than reality is a real mismatch
+    assert not tier_explained_by_bundle(ocp, TIER_FORBIDDEN)
+    assert not tier_explained_by_bundle(ocp, TIER_UNKNOWN)
+    # without a bundled license a stricter declaration is never explained away
+    plain = Engine("plain", "LGPL-2.1", TIER_LGPL, "test engine")
+    assert not tier_explained_by_bundle(plain, TIER_PERMISSIVE)
+
+
+@pytest.mark.parametrize("declared", [TIER_GPL, TIER_FORBIDDEN])
+@pytest.mark.parametrize("detected", [TIER_PERMISSIVE, TIER_LGPL, TIER_GPL, TIER_FORBIDDEN, TIER_UNKNOWN])
+def test_a_bundled_license_never_explains_away_a_gpl_or_forbidden_declaration(declared, detected):
+    engine = Engine("x", "MIT", declared, "engine bundling GPL code", bundled_license="GPL-3.0-only solver in the wheel")
+    assert not tier_explained_by_bundle(engine, detected)
 
 
 def test_environment_has_no_gpl_or_forbidden_distributions():

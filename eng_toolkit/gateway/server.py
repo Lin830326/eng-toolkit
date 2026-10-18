@@ -34,6 +34,8 @@ from eng_toolkit.licenses import (
     classify_license,
     installed_license,
     scan_environment,
+    tier_explained_by_bundle,
+    violates_policy,
 )
 from eng_toolkit.workspace import Workspace
 
@@ -89,8 +91,10 @@ def _engine_rows(dists: tuple[str, ...]) -> list[dict[str, Any]]:
                 "version": version,
                 "installed": version is not None,
                 "declared_license": known.license if known else None,
+                "bundled_license": (known.bundled_license or None) if known else None,
                 "detected_license": text,
                 "tier": known.tier if known else classify_license(text),
+                "optional": known.optional if known else False,
             }
         )
     return rows
@@ -159,10 +163,18 @@ def toolkit_doctor(
         version, text = installed_license(engine.dist)
         detected = classify_license(text)
         status = "ok"
-        if version is None:
+        if version is None and engine.optional:
+            status = "not-installed (optional)"
+        elif version is None:
             status = "missing"
             hard_failures.append(f"dependency '{engine.dist}' is not installed")
-        elif detected != engine.tier:
+        elif violates_policy(engine):
+            status = "policy-violation"
+            hard_failures.append(
+                f"'{engine.dist}' {version} is installed but declared {engine.tier} ({engine.license}): "
+                f"{POLICY[engine.tier]}"
+            )
+        elif detected != engine.tier and not tier_explained_by_bundle(engine, detected):
             status = "license-mismatch"
             warnings.append(
                 f"'{engine.dist}': declared {engine.license} ({engine.tier}) but metadata says "
@@ -176,6 +188,8 @@ def toolkit_doctor(
                 "version": version,
                 "declared_license": engine.license,
                 "declared_tier": engine.tier,
+                "bundled_license": engine.bundled_license or None,
+                "optional": engine.optional,
                 "detected_license": text,
                 "detected_tier": detected,
                 "status": status,

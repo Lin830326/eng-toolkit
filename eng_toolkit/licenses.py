@@ -39,6 +39,22 @@ class Engine:
     tier: str
     role: str  # what it does for us
     domains: tuple[str, ...] = field(default_factory=tuple)
+    optional: bool = False  # installed through an extra; absence is informational, not a failure
+    bundled_license: str = ""  # license of code shipped inside the wheel when it differs from the metadata
+
+
+def tier_explained_by_bundle(engine: Engine, detected: str) -> bool:
+    """True when a permissive wrapper is declared ``lgpl-dynamic`` because its wheel bundles LGPL code.
+
+    This is the only mismatch a bundled license may explain.  A declared ``gpl-isolated`` or
+    ``forbidden`` engine is never excused, whatever it bundles or its metadata says.
+    """
+    return bool(engine.bundled_license) and engine.tier == TIER_LGPL and detected == TIER_PERMISSIVE
+
+
+def violates_policy(engine: Engine) -> bool:
+    """True for an engine declared ``gpl-isolated`` or ``forbidden``: it must not be installed in the toolkit environment."""
+    return engine.tier in (TIER_GPL, TIER_FORBIDDEN)
 
 
 KNOWN: dict[str, Engine] = {
@@ -52,6 +68,23 @@ KNOWN: dict[str, Engine] = {
         ),
         Engine("fluids", "MIT", TIER_PERMISSIVE, "fluid mechanics (friction factor, Reynolds)", ("calc",)),
         Engine("numpy", "BSD-3-Clause", TIER_PERMISSIVE, "seeded Monte Carlo sampling for tolerance stack-up", ("metrology",)),
+        Engine(
+            "open3d",
+            "MIT",
+            TIER_PERMISSIVE,
+            "point-cloud registration (ICP), distance queries and clustering for scan checks",
+            ("metrology",),
+            optional=True,
+        ),
+        Engine(
+            "cadquery-ocp-novtk",
+            "Apache-2.0",
+            TIER_LGPL,
+            "OpenCASCADE bindings: reads STEP and tessellates it for scan checks",
+            ("metrology",),
+            optional=True,
+            bundled_license="LGPL-2.1 with OCCT exception (OpenCASCADE shared libraries in the wheel)",
+        ),
     )
 }
 
@@ -130,4 +163,6 @@ __all__ = [
     "classify_license",
     "installed_license",
     "scan_environment",
+    "tier_explained_by_bundle",
+    "violates_policy",
 ]
