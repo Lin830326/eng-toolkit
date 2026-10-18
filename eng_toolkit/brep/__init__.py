@@ -8,8 +8,10 @@ needs neither OCP nor Open3D, and so is :func:`parse_edge_selector`.
 
 Face and hole ids from :func:`inventory` are valid only for the same file bytes and the same OCCT version.
 
-Modelling (``make_*``, :func:`combine`, :func:`fillet`, :func:`chamfer`) and the writers (:func:`write_step`,
-:func:`write_brep`, :func:`write_mesh`) are what the part spec language in ``domains/geometry/part.py`` builds on.
+Modelling (``make_*``, :func:`combine`, :func:`fillet`, :func:`chamfer`, :func:`transform`) and the writers
+(:func:`write_step`, :func:`write_brep`, :func:`write_mesh`) are what the part spec language in
+``domains/geometry/part.py`` builds on.  :func:`project` turns a solid into the 2D lines, arcs, ellipses and
+polylines of one of the seven fixed views (:data:`VIEW_FRAMES`), hidden lines removed exactly.
 """
 
 from eng_toolkit.brep._files import SOLID_EXTENSIONS, read_solid, triangulate
@@ -37,9 +39,11 @@ from eng_toolkit.brep._model import (
     make_sphere,
     parse_edge_selector,
     select_edges,
+    transform,
     validity,
 )
 from eng_toolkit.brep._occ import load as require_engine
+from eng_toolkit.brep._project import VIEW_FRAMES, Arc2, Ellipse2, Line2, Poly2, Prim2, Projection, ViewFrame, ViewName, project
 from eng_toolkit.brep._query import angle, distance, inventory, lookup, mass_properties, wall_thickness
 from eng_toolkit.brep._types import (
     Entity,
@@ -62,8 +66,11 @@ __all__ = [
     "EDGE_TERMS",
     "MODES",
     "SOLID_EXTENSIONS",
+    "VIEW_FRAMES",
     "WELD_EPS_MM",
+    "Arc2",
     "Circle2",
+    "Ellipse2",
     "EdgeMatch",
     "EdgeSelector",
     "EngineUnavailable",
@@ -73,17 +80,23 @@ __all__ = [
     "HoleInfo",
     "HoleRef",
     "Inventory",
+    "Line2",
     "MassProperties",
     "Mesh",
     "MeshTopology",
     "PointRef",
+    "Poly2",
     "Polygon2",
+    "Prim2",
     "Profile2",
+    "Projection",
     "Rect2",
     "SketchPlane",
     "Slot2",
     "Solid",
     "Vec3",
+    "ViewFrame",
+    "ViewName",
     "angle",
     "chamfer",
     "combine",
@@ -101,9 +114,11 @@ __all__ = [
     "mass_properties",
     "mesh_topology",
     "parse_edge_selector",
+    "project",
     "read_solid",
     "require_engine",
     "select_edges",
+    "transform",
     "triangulate",
     "validity",
     "wall_thickness",

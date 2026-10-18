@@ -473,6 +473,33 @@ def combine(base: Solid, tool: Solid, mode: Mode) -> Solid:
     return _checked(unifier.Shape(), mode)
 
 
+# --------------------------------------------------------------------------- rigid motion
+
+
+def transform(solid: Solid, rotation: Sequence[Sequence[float]], translation: Vec3) -> Solid:
+    """Rotate about the origin by the 3 x 3 ``rotation`` matrix (given by rows), then translate; the result is a copy."""
+    _occ.load()
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.gp import gp_Trsf
+
+    try:
+        matrix = np.asarray(rotation, dtype=np.float64)
+        shift = np.asarray(translation, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ToolFailure("input.invalid", f"transform: the rotation must be 3 x 3 numbers and the translation 3 numbers ({exc})") from exc
+    if matrix.shape != (3, 3) or shift.shape != (3,) or not (np.isfinite(matrix).all() and np.isfinite(shift).all()):
+        raise ToolFailure("input.invalid", f"transform: the rotation must be a finite 3 x 3 matrix and the translation 3 finite numbers, got shapes {matrix.shape} and {shift.shape}")
+    if not (np.allclose(matrix.T @ matrix, np.eye(3), atol=1e-9) and np.linalg.det(matrix) > 0.0):
+        raise ToolFailure("input.invalid", "transform: the matrix is not a rotation (it must be orthonormal with determinant +1; no scaling or mirroring)")
+    motion = gp_Trsf()
+    motion.SetValues(*(float(c) for row, t in zip(matrix, shift) for c in (*row, t)))
+    try:
+        moved = BRepBuilderAPI_Transform(solid._handle, motion, True).Shape()
+    except Exception as exc:  # noqa: BLE001 - OCCT raises its own exception types
+        raise _failure("transform: the kernel could not move the shape", exc) from exc
+    return _wrap(moved)
+
+
 # --------------------------------------------------------------------------- edges
 
 

@@ -474,6 +474,38 @@ def test_validity_is_empty_for_a_good_solid():
     assert brep.validity(brep.make_box((1, 2, 3), (0, 0, 0))) == ()
 
 
+# --------------------------------------------------------------------------- rigid motion
+
+
+def test_transform_translates_a_solid_and_keeps_its_volume():
+    moved = brep.transform(brep.make_box((10, 20, 30), (0, 0, 0)), ((1, 0, 0), (0, 1, 0), (0, 0, 1)), (100.0, -5.0, 7.0))
+    props = brep.mass_properties(moved)
+    assert props.bbox_min_mm == pytest.approx((100, -5, 7), abs=1e-9) and props.bbox_max_mm == pytest.approx((110, 15, 37), abs=1e-9)
+    assert props.volume_mm3 == pytest.approx(6000.0, abs=1e-6)
+    assert (moved.solids, moved.faces) == (1, 6)
+
+
+def test_transform_rotates_before_it_translates():
+    # a quarter turn about z sends (x, y) to (-y, x): the box [0,10] x [0,20] becomes [-20,0] x [0,10]; then +5 on x
+    quarter = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+    props = brep.mass_properties(brep.transform(brep.make_box((10, 20, 30), (0, 0, 0)), quarter, (5.0, 0.0, 0.0)))
+    assert props.bbox_min_mm == pytest.approx((-15, 0, 0), abs=1e-9) and props.bbox_max_mm == pytest.approx((5, 10, 30), abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    "rotation",
+    [
+        ((2.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),  # scales
+        ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0)),  # mirrors
+        ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),  # not 3 x 3
+    ],
+)
+def test_transform_refuses_anything_but_a_rotation(rotation):
+    with pytest.raises(ToolFailure) as info:
+        brep.transform(brep.make_box((1, 1, 1), (0, 0, 0)), rotation, (0.0, 0.0, 0.0))
+    assert info.value.family == "input.invalid"
+
+
 # --------------------------------------------------------------------------- writers
 
 
