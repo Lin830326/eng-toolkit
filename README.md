@@ -4,7 +4,7 @@
 
 > ⚠️ 所有輸出皆標示 `review_status: "unreviewed"`。本工具箱的結果是**未經工程核可**的估算，必須由合格工程師複核後才能用於設計或採購。
 
-目前有三個領域：`calc`（油壓計算）、`metrology`（ISO 286 配合查詢與反查、一維公差堆疊、掃描點雲對 STEP 模型的偏差檢查）與 `geometry`（STEP／IGES／BREP 模型的精確量測：體積、面積、質量、面與孔清單、距離角度厚度查詢）。2D 圖檔／EDA／模擬等領域尚未開始。
+目前有三個領域：`calc`（油壓計算）、`metrology`（ISO 286 配合查詢與反查、一維公差堆疊、掃描點雲對 STEP 模型的偏差檢查）與 `geometry`（STEP／IGES／BREP 模型的精確量測：體積、面積、質量、面與孔清單、距離角度厚度查詢；以及由 JSON 規格建出零件並輸出 STEP／GLB／STL／BREP，不執行任何程式碼）。2D 圖檔／EDA／模擬等領域尚未開始。
 
 ---
 
@@ -27,6 +27,7 @@ Claude Code / 任何 MCP 客戶端
 │   │        metrology_check_scan  (Open3D + OCP, 選用)│
 │   ├── mount(namespace="geometry") ► geometry 子 server  │
 │   │        geometry_measure  (OCP, 選用 cad extra)  │
+│   │        geometry_make_part (JSON 規格 → STEP, OCP)│
 │   └── (未來) drawing_*, eda_* ...                  │
 ├────────────────────────────────────────────────┤
 │  contract.py   統一回傳契約 (pydantic)          │
@@ -94,7 +95,7 @@ claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-to
 claude mcp add --scope user eng-toolkit -- uv run --extra scan --directory "C:\path\to\eng-toolkit" eng-toolkit
 ```
 
-（其他客戶端的 `args` 同理，在 `run` 後加 `"--extra", "scan"`。）或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可；它不帶 scan extra，要用掃描檢查請改成上面的指令）。接上後 `/mcp` 應看到 `eng-toolkit` 與九個工具（要用 `geometry_measure` 則註冊指令至少帶 `--extra cad`）。
+（其他客戶端的 `args` 同理，在 `run` 後加 `"--extra", "scan"`。）或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可；它不帶 scan extra，要用掃描檢查請改成上面的指令）。接上後 `/mcp` 應看到 `eng-toolkit` 與十個工具（要用 `geometry_measure`、`geometry_make_part` 則註冊指令至少帶 `--extra cad`）。
 
 **Cursor**（`~/.cursor/mcp.json` 或專案 `.cursor/mcp.json`）
 
@@ -140,7 +141,7 @@ command = "uv"
 args = ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
 ```
 
-> 為了讓地端中小模型也能穩定呼叫，工具維持少量粗粒度（目前 8 個），所有輸入參數都是**基本 JSON 型別**（字串／布林／整數），每個參數附描述；數量一律是「數字 + 單位」的單一字串，如 `"100 mm"`。
+> 為了讓地端中小模型也能穩定呼叫，工具維持少量粗粒度（目前 10 個），所有輸入參數都是**基本 JSON 型別**（字串／布林／整數），每個參數附描述；數量一律是「數字 + 單位」的單一字串，如 `"100 mm"`。
 
 ---
 
@@ -229,6 +230,42 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 
 面編號（`F<n>`）是 OpenCASCADE 走訪面的順序，孔編號依軸向、直徑、入口排序：兩者只對**同一個檔案的位元組與同一版 OpenCASCADE** 有效，`face_ids_valid_for` 給出該檔的 sha256，重新匯出的檔案要重新取得清單。先不帶 `queries` 呼叫一次讀 `data.faces`／`data.holes`，再下查詢。單位：STEP 與 IGES 由 OpenCASCADE 依檔內單位轉成 mm，BREP 沒有單位，數字一律當 mm。IGES 只有在輸出端寫成實體（B-rep solid）時才有體積；只有曲面的 IGES 沒有封閉實體，`volume` 不出現，`surface_area` 成為主值並警告。曲面 IGES 還可能把圓柱存成旋轉曲面，列為 `kind: other` 而不是圓柱，所以**偵測不到孔**（Open CASCADE 自己的 IGES 曲面輸出就是如此，其他 CAD 的輸出各不相同）；需要體積或孔資訊時請用 STEP，或把 IGES 輸出成實體。檔案沒有封閉實體（殼面、散面）時同樣如此，且 `density` 會被忽略並警告；多個實體時體積與面積是各實體的總和，重疊的實體會重複計算。這些結果沒有經過工程核可，量測的前提（單位、檔案是否忠於設計）由使用者負責。
 
+### `geometry_make_part`
+由宣告式 JSON 規格建出零件：輸出 STEP（可加 GLB／STL／BREP）、精確的體積、表面積、外框尺寸與選配的質量。**伺服器不執行任何程式碼**（沒有 `make_from_code`）：想用 build123d 的代理在自己的 shell 裡跑，再把 STEP 交給 `geometry_measure` 等工具。需要選用的 `cad` extra（`uv sync --extra cad`）。輸入：`spec`（JSON 字串，上限 64 kB）、`name`（產品名，也是輸出檔名主幹，`[A-Za-z0-9_-]{1,64}`，預設 `part`）、`formats`（逗號分隔的 `glb`、`stl`、`brep`；STEP 一律輸出，因為它是讀回驗證的依據）、`mesh_deflection`（GLB／STL 離散化的弦高誤差，0.001 到 100 mm，預設 `"0.01 mm"`）、`density`（可省略，帶單位，會多回傳 `mass`）、`output_unit`（預設 `mm`）。
+
+**規格語法。** 規格是 `{"params": {...}, "features": [...]}`。每個數字都是帶單位的字串（`"25 mm"`、`"90 deg"`、`"1.5 inch"`；裸數字回 `units.bare_number`，長度欄位給質量回 `units.dimension_mismatch`）。`params` 是 `名稱: 運算式`；任何欄位都可以用 `$名稱` 引用**較前面**的 param（引用後面的或自己，即前向引用與循環，回 `input.invalid`），運算式交給 `units.parse_quantity`（pint 的解析器，不是 `eval`），例如 `"($L - 2 mm) / 2"`。注意 pint 把「數字 空格 單位」當隱含乘法：`$L / 2 mm` 是（$L ÷ 2）× mm，是面積，不是長度；除以長度要加括號 `($L) / (2 mm)`（結果無因次），一般只除以純數字。features 依序作用在**同一個實體**上，第一個必須是 `mode` 為 `"add"` 的實體（body）；每個 feature 有 `op`、選填的 `name`（預設 `<op><序號>`）與該 op 的欄位。
+
+運算式護欄（`units.parse_quantity` 本身不受影響，其他工具照舊）：實測未加護欄時 pint 對 `9**9**9 mm` 會算一個三億多位數的整數、10 秒內不返回（`9**9**9**9 mm` 同樣；`10**1000000 mm` 約 0.14 秒後才溢位出錯）。因此 Resolver 在交給 pint 之前拒絕：超過 200 字元、括號巢狀超過 8 層、任何數字絕對值超過 1e9、`**` 或 `^` 後面不是 6 以下的一般數字或接著連乘（`2 ** 2 ** 2`），一律回 `input.invalid`（`details.pointer` 指出欄位）。`(100 mm) / 4 + 2 mm`、`2 * (10 mm + 5 mm)` 照常運作。
+
+| op | 角色 | 欄位（`*` 必填） |
+|---|---|---|
+| `box` | body | `size`* `[x, y, z]`、`at`（最小角，預設原點）、`mode` |
+| `cylinder` | body | `diameter`*、`height`*、`at`（底面圓心，預設原點）、`axis`（預設 `"+z"`）、`mode` |
+| `sphere` | body | `diameter`*、`at`（球心，預設原點）、`mode` |
+| `cone` | body | `diameter`*（底面）、`top_diameter`*（頂面，可為 `"0 mm"` 成為尖錐；與 `diameter` 相等就是圓柱）、`height`*、`at`（底面圓心，預設原點）、`axis`（預設 `"+z"`）、`mode` |
+| `extrude` | body | `plane`（`"xy"` 預設、`"xz"`、`"yz"`）、`offset`（沿平面法向移動，預設 `0 mm`）、`profile`*、`distance`*（沿法向，負值反向）、`mode` |
+| `revolve` | body | `plane`、`offset`、`profile`*、`axis`（平面的 `"u"` 或 `"v"` 軸，過平面原點，預設 `"v"`）、`angle`（預設 `360 deg`）、`mode` |
+| `hole` | 修改 | `at`*（入口點清單 `[[x, y, z], ...]`）、`axis`（鑽入方向，預設 `"-z"`）、`diameter`*、`depth`（長度或 `"thru"`，預設 `"thru"`；從入口算起）、`counterbore` `{diameter, depth}`、`countersink` `{diameter, angle}`（含角）、`thread`、`fit`（後兩者只是標註文字，不產生螺紋或公差幾何） |
+| `fillet` | 修改 | `edges`*（邊選擇器）、`radius`* |
+| `chamfer` | 修改 | `edges`*、`distance`*（對稱倒角） |
+
+`mode` 是 `"add"`（預設，聯集）、`"cut"` 或 `"intersect"`；`axis` 是 `"+x" "-x" "+y" "-y" "+z" "-z"` 之一。平面 `plane` 的草圖座標 (u, v) 為 (x, y)、(x, z)、(y, z)，法向 +z、+y、+x。輪廓 `profile` 是恰有一個鍵的物件：`{"rect": {"size": [u, v], "at": [u, v], "centered": false}}`（`at` 是最小角，`centered` 為 true 時是中心）、`{"circle": {"diameter", "at"}}`、`{"polygon": {"points": [[u, v], ...]}}`（至少 3 點，不可自交）、`{"slot": {"length", "width", "at", "angle"}}`（`length` 含兩端圓頭，須大於 `width`）。`revolve` 的輪廓必須在旋轉軸的同一側。孔從 `at` 的入口點沿 `axis` 鑽 `depth`（`"thru"` 為穿過整個零件；盲孔深過零件就是穿透）；整個 feature 沒切掉任何材料時回警告（多半是入口點或方向弄反了）。
+
+**邊選擇器**是以 `&` 相交的詞：`all`；`|x` `|y` `|z`（平行該軸的直線邊）；`>x` `<x` `>y` `<y` `>z` `<z`（位於零件外框該方向極值面上的邊）；`convex`（外角）與 `concave`（內角），由相鄰兩面的二面角判斷，平滑相接（例如圓柱的接縫線，兩側是同一個面）兩者都不是，所以 `|z & convex` 只會選到外緣的四條豎邊，不會選到孔的接縫線；`line`（直線邊）與 `circle`（圓邊）。沒有任何邊符合時回 `geometry.empty_selection`，`details.matches_per_term` 列出每個詞各單獨符合幾條，方便修正選擇器。
+
+```json
+{"params":{"L":"100 mm","W":"50 mm","T":"20 mm","d":"10 mm"},"features":[{"op":"box","name":"body","size":["$L","$W","$T"]},{"op":"hole","name":"bore","at":[["$L / 4","$W / 2","$T"]],"axis":"-z","diameter":"$d","depth":"thru","fit":"H7"},{"op":"fillet","name":"corners","edges":"|z & convex","radius":"2 mm"}]}
+```
+→ 主值 `volume = 98360.531085 mm³`（手算 100·50·20 − π·5²·20 − 4·(2² − π·2²/4)·20），`surface_area = 16395.699 mm²`，`size_x/y/z = 100/50/20 mm`，給 `density` 時另有 `mass`。用 `geometry_measure` 讀產出的 STEP：1 個貫穿孔、直徑 10 mm、入口 (25, 25, 20)。
+
+`data`：`features`（每個 feature 的 `index`（從 1 起）、`name`、`op`、`volume_after_mm3`、`edges_used`）、`holes`（宣告的孔，已換成 mm：入口、鑽入方向、直徑、深度（`null` 為貫穿）、沉孔、錐孔、`thread`、`fit`；`data` 內最多列 50 個，`holes_total` 是總數，完整清單在 `features.json`）、`params`（解析後的 param，長度為 mm、角度為 rad）、`bbox`、`solids`、`faces`、`readback`（把寫出的 STEP 讀回，比對體積：`volume_written_mm3`、`volume_read_mm3`、`relative_difference`；超過 1e-6 回 `geometry.readback_mismatch`）、`spec_sha256` 與 `step_sha256`。產物：`<name>.step`、`<name>.features.json`、`spec.json`，以及要求的 `<name>.glb`（公尺、+Y 向上）、`<name>.stl`（二進位，毫米）、`<name>.brep`。`spec.json` 是**正規化後的規格**（預設值補齊、運算式與單位都解成 mm 與 rad、鍵排序、無多餘空白），它本身就是合法規格，其 sha256 就是 `spec_sha256`：空白或鍵順序不同的同一份規格得到相同的雜湊。`features.json` 是宣告的設計意圖（孔位置、直徑、深度、沉孔、螺紋與配合標註），內含 STEP 的 sha256，之後的工程圖工具只有在 STEP 雜湊相符時才會印出 `Ø10 H7 THRU` 這類標註。
+
+**確定性。** 同一份規格得到位元組完全相同的 STEP（XCAF 寫出器、固定的 `FILE_NAME` 標頭與時間戳、產品名取自 `name`；同一行程內與跨行程都測試過，也不受 `PYTHONHASHSEED` 影響）。布林運算以單執行緒進行，合併共面的面。
+
+**錯誤。** 規格錯誤是 `input.invalid`，`details.pointer` 是 JSON pointer（如 `/features/2/diameter`），`details.allowed` 是該處允許的欄位或值；單位錯誤沿用 `units.bare_number`、`units.dimension_mismatch`、`units.parse_error`，`details` 同樣帶 `pointer`。核心建模失敗時 `error.details` 帶 `feature_index`（從 1 起）、`feature_name`、`op` 與 `pointer`：`geometry.build_failed`（核心失敗，如不可能的圓角半徑；`details.occt` 是核心訊息）、`geometry.empty_selection`；最後結果必須恰好是一個通過 BRepCheck 的實體，否則回 `geometry.invalid_result`（例如兩個互不相連的實體）。失敗的結果不帶警告，也不寫出零件檔。
+
+限制：規格 64 kB、200 個 feature、全規格孔位置共 1000、運算式 200 字元。v1 沒有螺紋幾何、放樣、掃掠、陣列、鏡射、薄殼、傾斜拉伸與匯入既有 STEP；結果同樣是未經工程核可的模型。
+
 ---
 
 ## 輸入規則：每個物理量都要帶單位
@@ -313,7 +350,8 @@ uv run eng-toolkit doctor
 
 * [docs/metrology-design.md](docs/metrology-design.md)：`metrology` 領域的設計決策（資料表自建、NumPy 而非 monaco、工具切分粒度）。
 * [docs/iso286-data.md](docs/iso286-data.md)：ISO 286 資料表來源、授權、涵蓋範圍與已知缺口。
-* [docs/geometry-drawing/design.md](docs/geometry-drawing/design.md)：`geometry` 與 `drawing` 領域的合成設計（目前只實作了 `geometry_measure`）：兩份候選設計與跨評審結論、切片交付計畫、待專案負責人決定的問題。
+* [docs/geometry-drawing/design.md](docs/geometry-drawing/design.md)：`geometry` 與 `drawing` 領域的合成設計（目前實作了 `geometry_measure` 與 `geometry_make_part`）：兩份候選設計與跨評審結論、切片交付計畫、待專案負責人決定的問題。
+* [docs/geometry-drawing/make-part-eval.md](docs/geometry-drawing/make-part-eval.md)：`geometry_make_part` 的小模型評測（基準為 Claude Haiku，由專案負責人決定）：18 題的解析解、與 build123d 的對照結果、據此新增 `sphere` 與 `cone`、結果的限制，以及如何重跑。
 
 ## 路線圖（摘要）
 
