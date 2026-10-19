@@ -25,7 +25,8 @@ def __getattr__(name: str) -> Any:
             "Orthographic views with exact hidden lines on an ISO 5457 sheet with title block and overall dimensions, "
             "first or third angle, as a deterministic DXF and a vector PDF (OpenCASCADE and ezdxf); and a reader of DXF and PDF "
             "drawings: units, layers, dimensions with DIMLFAC applied, title block, texts, PDF text and vector statistics, read in a "
-            "limited child process (ezdxf and pdfminer.six; optional 'drawing' extra)."
+            "limited child process (ezdxf and pdfminer.six; optional 'drawing' extra); and a converter of DXF drawings to PDF, SVG, PNG at true scale or to another "
+            "DXF release, with a report of what the target cannot carry."
         ),
         engines=("pint", "numpy", "cadquery-ocp-novtk", "ezdxf", "pdfminer.six"),
         server=server,

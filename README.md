@@ -424,6 +424,14 @@ drawing_read(path=".../flange.dxf")
 
 **確定性。** 同一檔案得到同一結果（`inputs_hash`、`input_files` 的 sha256 記在 `provenance`）。**範圍與限制：** `data.extents.model` 與 `paper` 各有兩個外框：`geometry`（只含幾何實體：LINE、ARC、CIRCLE、多段線、SPLINE、區塊裡的幾何等；不含文字、尺寸、引線、標註，區塊內的也不含）與 `with_annotations`（再加上文字插入點與尺寸的定義點，也就是尺寸線與文字擺的位置）。例：100 × 60 的零件上方 25 mm 處有一個尺寸與一行文字，`geometry` 是 100 × 60，`with_annotations` 是 100 × 85；摘要與 `values.extent_width`／`extent_height` 用 `geometry`，摘要括號裡另附含標註的大小。只有文字與尺寸、沒有幾何時 `geometry` 是 `null`。舊版的單一 `min`／`max`／`size`／`size_mm` 已移除，因為它們把標註算進零件大小。外框是點的外框（弧與圓每 15 度取樣再加軸向極值，不含填充圖案、圖片、視埠）；圖層長度只計 LINE、ARC、CIRCLE、ELLIPSE、LWPOLYLINE、2D POLYLINE；尺寸文字的公制以外格式（分數、建築）不自行計算，只回塊內文字；不讀 DWG、不做 OCR、不解析 GD&T；標題欄與視圖數是推測，已標註。小模型可用性檢查（Claude Haiku）的結果在 [docs/geometry-drawing/drawing-read.md](docs/geometry-drawing/drawing-read.md)。
 
+### `drawing_convert`
+把 `.dxf`（R12 到 R2018）轉成 `pdf`、`svg`、`png`，或改寫成另一個 DXF 版本（`R12` `R2000` `R2004` `R2007` `R2010` `R2013` `R2018`）。只轉模型空間，**真實比例**：單位取自 `$INSUNITS`（沒寫單位就當 mm 並警告），1:1 時 100 mm 的線在 PDF 裡是 283.465 pt。需要選用的 `drawing` extra（`uv sync --extra drawing`）；PNG 另需 `png` extra。輸入（全為字串）：`input_path`、`output_format`、`sheet`（`auto`＝圖面範圍外各加 10 mm，或 `A4` 到 `A0`）、`scale`（`auto` 或 ISO 5455 比例，`1:1` 到 `1:10000`、`2:1` 到 `50:1`；圖紙放不下會拒絕而不是裁切）、`dxf_version`（只對 DXF 輸出有效）。
+
+```
+drawing_convert(input_path=".../flange.dxf", output_format="pdf", sheet="A3", scale="1:1")
+```
+→ 輸出 `converted.<格式>` 在工作目錄（原檔不動，附 sha256）；`data.losses.items` 列出目標格式放不下或沒畫出的東西（顏色一律黑、字型被取代、PDF/SVG/PNG 的文字沒有文字層、MTEXT 格式、ACIS 實體與代理物件、被關閉或凍結的圖層、圖紙空間、外部參考；DXF 輸出則是舊版本沒有的實體類型與屬性，例如 R12 沒有 LWPOLYLINE、線寬、真彩色、`$INSUNITS`，是寫出檔案再讀回來數出來的），`data.entities` 依類型數出畫了與跳過的實體數。`.dwg` 回 `engine.unavailable`（需要 `dwg2dxf`，列為 S9，尚未提供）。檔案不受信任：在子行程裡轉換（預設 60 秒、2048 MB；`ENG_TOOLKIT_CONVERT_TIMEOUT_S`、`ENG_TOOLKIT_CONVERT_MEMORY_MB`、`ENG_TOOLKIT_CONVERT_MAX_MB` 可調），超過 20 萬個實體、100 萬單位工作量（區塊展開後）、區塊自我參照或巢狀超過 16 層、座標超過 1e12 mm、頁面超過 5080 mm 的檔案會被拒絕或截掉並說明原因，NaN 與無限大座標的實體會被移除並列出。詳見 `docs/drawing-convert/design.md`。
+
 ---
 
 ## 輸入規則：每個物理量都要帶單位
