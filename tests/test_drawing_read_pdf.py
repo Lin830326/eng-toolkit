@@ -101,6 +101,24 @@ def test_the_font_size_is_the_font_size_times_the_text_and_current_matrices(tmp_
     assert found and all(value == pytest.approx(size, abs=0.05) for value in found), found
 
 
+def test_a_stroke_without_a_width_operator_is_one_point_wide(tmp_path):
+    """The PDF specification's initial line width is 1 (pdfminer starts at 0, a hairline)."""
+    styles = {s["width_pt"]: s for s in read(tmp_path, R.document([(b"50 50 m 250 50 l S", R.A4, 0)]))["pages"][0]["vector"]["by_style"]}
+    assert list(styles) == [1.0] and styles[1.0]["length_mm"] == pytest.approx(200 * MM, abs=0.01)
+
+
+def test_an_explicit_zero_width_stays_a_hairline(tmp_path):
+    page = R.document([(b"0 w 50 50 m 250 50 l S 2 w 50 80 m 250 80 l S", R.A4, 0)])
+    assert sorted(s["width_pt"] for s in read(tmp_path, page)["pages"][0]["vector"]["by_style"]) == [0.0, 2.0]
+
+
+def test_the_width_set_on_the_page_does_not_leak_to_the_next_page(tmp_path):
+    page = R.document([(b"3 w 50 50 m 250 50 l S", R.A4, 0), (b"50 50 m 250 50 l S", R.A4, 0)])
+    pages = read(tmp_path, page)["pages"]
+    assert [s["width_pt"] for s in pages[0]["vector"]["by_style"]] == [3.0]
+    assert [s["width_pt"] for s in pages[1]["vector"]["by_style"]] == [1.0]
+
+
 def test_lines_come_in_reading_order_top_to_bottom_then_left_to_right(tmp_path):
     content = b"BT /F1 12 Tf 300 400 Td (RIGHT) Tj ET BT /F1 12 Tf 72 400 Td (LEFT) Tj ET BT /F1 12 Tf 72 700 Td (TOP) Tj ET BT /F1 12 Tf 72 100 Td (BOTTOM) Tj ET"
     r = read(tmp_path, R.document([(content, R.A4, 0)]))

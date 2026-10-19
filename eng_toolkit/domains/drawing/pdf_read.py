@@ -33,6 +33,7 @@ MAX_LOOK_DEPTH = 40
 MAX_LOOK_ITEMS = 100_000
 MAX_STRING = 4000
 FIGURE_DEPTH = 8
+INITIAL_LINE_WIDTH = 1.0  # PDF 32000-1 table 52: the line width a page starts with (pdfminer starts at 0, a hairline)
 # dictionary keys that mean active content, and values of /S (action type) that do
 ACTIVE_KEYS = {
     "JS": "JavaScript",
@@ -352,6 +353,18 @@ class _Vector:
 # --------------------------------------------------------------------------- pages
 
 
+def _interpreter(manager, device):
+    """pdfminer's page interpreter, with the line width a page starts with set to the PDF default of 1 pt."""
+    from pdfminer.pdfinterp import PDFPageInterpreter
+
+    class Interpreter(PDFPageInterpreter):
+        def init_state(self, ctm):
+            super().init_state(ctm)
+            self.graphicstate.linewidth = INITIAL_LINE_WIDTH
+
+    return Interpreter(manager, device)
+
+
 def _font_size(char) -> float:
     """The size the character is drawn at, in points: the Tf size times the scale of the text and current matrices.
 
@@ -415,7 +428,7 @@ def _page_content(layout, scale: float, max_lines: int) -> tuple[dict[str, Any],
 def read(path: str, limits_dict: dict[str, int] | None = None) -> dict[str, Any]:
     require_engine()
     from pdfminer.layout import LAParams
-    from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
+    from pdfminer.pdfinterp import PDFResourceManager
     from pdfminer.pdfpage import PDFPage
     from pdfminer.pdfparser import PDFParser
     from pdfminer.converter import PDFPageAggregator
@@ -439,7 +452,7 @@ def read(path: str, limits_dict: dict[str, int] | None = None) -> dict[str, Any]
 
         manager = PDFResourceManager()
         device = PDFPageAggregator(manager, laparams=LAParams())
-        interpreter = PDFPageInterpreter(manager, device)
+        interpreter = _interpreter(manager, device)
         pages: list[dict[str, Any]] = []
         total_vector = _Vector()
         text_chars = 0
