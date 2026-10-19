@@ -73,7 +73,10 @@ def test_input_file_records_path_size_and_hash(tmp_path):
 
     r = run(compute)
     assert r.ok
-    assert seen == [data]
+    # the tool gets a copy of exactly the bytes that were hashed, in the job directory, under the file's own name
+    (copy,) = seen
+    assert copy != data and copy.name.endswith("data.txt") and copy.suffix == ".txt" and copy.parent.name == "input"
+    assert copy.read_bytes() == b"hello provenance"
     (ref,) = r.provenance.input_files
     assert ref.path == str(data.resolve())
     assert ref.bytes == len(b"hello provenance")

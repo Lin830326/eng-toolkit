@@ -290,7 +290,7 @@ def test_the_allow_list_applies_to_every_tool_through_the_shared_file_check(tmp_
         handle.input_file(str(outside), param="model_path", extensions=(".step",))
     assert caught.value.family == "input.path_not_allowed"
     (allowed / "model.step").write_text("x")
-    assert handle.input_file(str(allowed / "model.step"), param="model_path", extensions=(".step",)).name == "model.step"
+    assert handle.input_file(str(allowed / "model.step"), param="model_path", extensions=(".step",)).name.endswith("model.step")
 
 
 # --------------------------------------------------------------------------- round trip on drawing_make_views' own files (slice 4)
