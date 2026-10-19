@@ -136,17 +136,25 @@ def hole_drawing(tmp_path):
 def test_the_summary_groups_ordinates_by_axis_and_names_the_hole_callouts(tmp_path):
     r = call(hole_drawing(tmp_path))
     summary = r.data["summary"]
-    assert "Ordinates (5): x 10, 90; y 10, 25, 40." in summary
-    assert "Hole callouts (2, found by their wording in the texts): 4× Ø6.6 THRU; Ø5 DEEP 8." in summary
+    assert "Ordinates (5): x 10, 90; y 10, 25, 40 (coordinates from the datum corner of the view; 0 is the datum)." in summary
+    assert "Hole callouts (2, found by their wording in the texts): 4× Ø6.6 THRU (4 holes); Ø5 DEEP 8 (1 hole)." in summary
+    assert "The ordinates probably position these holes" in summary
     assert "ordinate 10 mm" not in summary  # the flat list of ordinate values is gone
     assert r.data["hole_callouts"] == {"inferred": True, "total": 2, "items": [{"text": "4× Ø6.6 THRU", "at": [110.0, 10.0]}, {"text": "Ø5 DEEP 8", "at": [110.0, 25.0]}]}
     items = r.data["dimensions"]["items"]
     assert [(i["kind"], i["ordinate_axis"]) for i in items] == [("ordinate", "x"), ("ordinate", "x"), ("ordinate", "y"), ("ordinate", "y"), ("ordinate", "y")]
 
 
+def test_a_callout_text_without_any_dimension_is_summarised_without_a_claim_about_ordinates(tmp_path):
+    r = call(dxf_file(tmp_path, RD.document(RD.V2000, insunits=4, entities=(RD.line((0, 0), (10, 0)), RD.text("2X Ø4 THRU", (5, 5), 2.5, "0"))), encoding="cp1252"))
+    assert r.ok, r.error
+    assert "Hole callouts (1, found by their wording in the texts): 2X Ø4 THRU (2 holes)." in r.data["summary"]
+    assert "Ordinates" not in r.data["summary"] and "probably position" not in r.data["summary"]
+
+
 def test_a_drawing_without_hole_texts_or_ordinates_says_nothing_about_them(tmp_path):
     r = call(inch_drawing(tmp_path))
-    assert "Ordinates" not in r.data["summary"] and "Hole callouts" not in r.data["summary"]
+    assert "Ordinates" not in r.data["summary"] and "Hole callouts" not in r.data["summary"] and "probably position" not in r.data["summary"]
     assert r.data["hole_callouts"] == {"inferred": True, "total": 0, "items": []}
 
 

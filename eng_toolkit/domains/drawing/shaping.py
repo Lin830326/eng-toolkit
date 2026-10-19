@@ -87,6 +87,19 @@ def _dim_text(d: dict[str, Any], mm_per_unit: float | None, unit_name: str) -> s
     return f"{d['kind']} {shown}{suffix}{in_mm}{drawn}"
 
 
+HOLE_COUNT = re.compile(r"^\s*(\d+)\s*[x×X]\s*[Ø⌀∅]")
+DIAMETER_SIGN = re.compile(r"[Ø⌀∅]\s*\d")
+
+
+def _callout_phrase(text: str) -> str:
+    """The callout and, when it has a diameter, how many holes it names: ``4x dia 6.6 THRU`` is 4, ``dia 10 THRU`` without a count is 1."""
+    shown = _cut(text, 60)
+    if not DIAMETER_SIGN.search(text):
+        return shown
+    count = int(m.group(1)) if (m := HOLE_COUNT.match(text)) else 1
+    return f"{shown} ({count} hole{'s' if count != 1 else ''})"
+
+
 def _ordinate_sentence(ordinates: list[dict[str, Any]]) -> str:
     """``x 10, 90; y 10, 25, 40``: the shown values of the ordinate dimensions per axis, in the order of the file, repeats dropped."""
     out = []
@@ -141,6 +154,7 @@ def dxf_summary(full: dict[str, Any]) -> str:
         parts.append(f"Made by {full['recognised_as']}.")
     parts.append(_title_sentence(full["title_block"]))
     dims = full["dimensions"]
+    ordinates: list[dict[str, Any]] = []
     if dims:
         ordinates = [d for d in dims if d["kind"] == "ordinate"]
         others = [d for d in dims if d["kind"] != "ordinate"]
@@ -149,13 +163,15 @@ def dxf_summary(full: dict[str, Any]) -> str:
         more = f"; and {other_total - 12} more" if other_total > 12 else ""
         parts.append(f"Dimensions ({full['dimensions_total']}): {listed}{more}.")
         if ordinates:
-            parts.append(f"Ordinates ({len(ordinates)}): {_ordinate_sentence(ordinates)}.")
+            parts.append(f"Ordinates ({len(ordinates)}): {_ordinate_sentence(ordinates)} (coordinates from the datum corner of the view; 0 is the datum).")
     else:
         parts.append("Dimensions: none.")
     callouts = [t for t in full["texts"] if is_hole_callout(t["text"])]
     if callouts:
-        shown = "; ".join(_cut(t["text"], 60) for t in callouts[:8]) + (f"; and {len(callouts) - 8} more" if len(callouts) > 8 else "")
+        shown = "; ".join(_callout_phrase(t["text"]) for t in callouts[:8]) + (f"; and {len(callouts) - 8} more" if len(callouts) > 8 else "")
         parts.append(f"Hole callouts ({len(callouts)}, found by their wording in the texts): {shown}.")
+        if ordinates:
+            parts.append("The ordinates probably position these holes: their non-zero values are the hole coordinates.")
     views = full["views"]
     if views["count"] is not None:
         parts.append(f"Views: {_n(views['count'], 'group')} of geometry (a guess from positions, confidence {views['confidence']}).")
