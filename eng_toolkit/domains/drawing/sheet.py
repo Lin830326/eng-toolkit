@@ -112,10 +112,23 @@ def parse_dimensions(text: str) -> str:
     return "overall" if value == "auto" else value
 
 
+def fold_spaces(value: str) -> str:
+    """Every space separator (Unicode category Zs: U+3000 ideographic, U+00A0 no-break, the en and em spaces, ...) as U+0020.
+
+    CJK text uses U+3000 as a separator and pasted text carries U+00A0.  A viewer draws them only if its font has the glyph
+    (many CAD fonts do not), and the PDF cannot know the advance of a glyph it lacks; U+0020 looks the same everywhere.
+    """
+    return "".join(" " if unicodedata.category(c) == "Zs" else c for c in value)
+
+
 def clean_text(param: str, value: str, limit: int) -> str:
-    """A free-text field: at most ``limit`` characters, printable (control characters, line breaks and tabs are not)."""
+    """A free-text field: at most ``limit`` characters, printable (control characters, line breaks and tabs are not).
+
+    Space separators other than U+0020 are accepted and become U+0020 (:func:`fold_spaces`).
+    """
     if len(value) > limit:
         raise _invalid(param, f"at most {limit} characters, got {len(value)}", limit=limit, length=len(value))
+    value = fold_spaces(value)
     if not value.isprintable():
         bad = sorted({f"U+{ord(c):04X}" for c in value if not c.isprintable()})
         raise _invalid(param, f"contains characters that cannot be printed ({', '.join(bad)}); no control characters, tabs or line breaks", characters=bad)

@@ -142,6 +142,17 @@ def make_views(
             artifacts.append(job.write_bytes("drawing.pdf", dxf.render_pdf(drawing), fmt="pdf"))
 
         warnings: list[str] = []
+        folded = [
+            name
+            for name, raw in (("title", title), ("part_number", part_number), ("material", material), ("revision", revision),
+                              ("general_tolerance", general_tolerance), ("notes", notes))
+            if S.fold_spaces(raw) != raw
+        ]
+        if folded:
+            warnings.append(
+                f"{', '.join(folded)}: space characters other than U+0020 (full-width U+3000, no-break U+00A0, ...) were written "
+                "as an ordinary space (U+0020), because many CAD fonts have no glyph for them"
+            )
         if solid.solids == 0:
             warnings.append(
                 f"The file holds no closed solid (solids found: {solid.solids}), only surfaces"
