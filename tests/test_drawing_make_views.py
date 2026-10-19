@@ -412,6 +412,44 @@ def test_line_breaks_and_invisible_controls_are_still_rejected(models, bad):
     assert r.error.details["param"] == "title"
 
 
+LITERAL = "%%c10 %%d %%p 50% %%%u %%065 100%"
+
+
+def read_texts(result) -> list[str]:
+    path = artifact(result, "drawing.dxf")
+    out = getattr(read_tool, "fn", read_tool)(path=str(path), max_items=500)
+    assert out.ok, out.error
+    return [t["text"] for t in out.data["texts"]["items"]]
+
+
+def test_percent_codes_in_user_text_are_escaped_so_they_stay_literal(models):
+    """%%c %%d %%p (and %%u, %%nnn) are CAD control codes; the user's text must come back as typed, not as a diameter sign."""
+    r = run(models["probe"], title="%%c10 %%d %%p", notes=f"{LITERAL};5% off")
+    assert r.ok, r.error
+    raw = {e.text for e in dxf_of(r).of("TEXT")}
+    assert "%%%%%%c10 %%%%%%d %%%%%%p" in raw  # every % that touches another % is written as %%%
+    assert "2. 5% off" in raw  # a lone % needs no escape
+    back = read_texts(r)
+    assert "%%c10 %%d %%p" in back and f"1. {LITERAL}" in back and "2. 5% off" in back
+    assert not any(c in "".join(back) for c in "Ø°±")
+
+
+def test_a_real_code_is_still_a_code_for_the_reader_so_the_round_trip_tells_them_apart(models, tmp_path):
+    """The reader turns a raw %%c into a diameter sign, and our escaped literal %%c into the three characters."""
+    import raw_dxf as RD
+
+    raw = tmp_path / "codes.dxf"
+    raw.write_text(RD.document(RD.V2000, entities=(RD.text("%%c10", (0, 0), 2.5, "0"), RD.text("%%%%%%c10", (0, 10), 2.5, "0"))), encoding="utf-8")
+    out = getattr(read_tool, "fn", read_tool)(path=str(raw), max_items=50)
+    assert sorted(t["text"] for t in out.data["texts"]["items"]) == ["%%c10", "Ø10"]
+
+
+def test_an_escaped_percent_text_is_drawn_literally_in_the_pdf(models):
+    plain = {t: artifact(run(models["probe"], title=t), "drawing.pdf").read_bytes() for t in ("%%c10", "Ø10", "%%x10")}
+    assert plain["%%c10"] != plain["Ø10"]  # not the diameter sign any more
+    assert len(plain["%%c10"]) > len(plain["Ø10"]) + 1000  # three more glyphs: %, %, c instead of one
+
+
 def test_a_chinese_title_does_not_crash_and_the_dxf_text_round_trips(models):
     title = "支架 BRACKET Ø10 ±0.1"
     r = run(models["probe"], title=title, notes="去毛邊;未註公差依 ISO 2768-m")

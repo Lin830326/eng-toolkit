@@ -27,6 +27,7 @@ from contextlib import contextmanager
 
 from eng_toolkit.brep import Arc2, Ellipse2, Line2, Poly2
 from eng_toolkit.domains.drawing import conventions as C
+from eng_toolkit.domains.drawing.dimensions import escape_percent
 from eng_toolkit.domains.drawing.sheet import Drawing, PlacedView, SheetText
 from eng_toolkit.errors import EngineUnavailable
 from eng_toolkit.licenses import install_hint
@@ -190,7 +191,7 @@ def _build(ezdxf, drawing: Drawing):
         attribs = {"layer": text.layer, "style": styles.get(text.text, C.TEXT_STYLE)}
         if text.width_factor != 1.0:
             attribs["width"] = text.width_factor
-        msp.add_text(text.text, height=text.height, dxfattribs=attribs).set_placement(text.at)
+        msp.add_text(escape_percent(text.text), height=text.height, dxfattribs=attribs).set_placement(text.at)
 
     # Sorting the CLASS records is what makes the file independent of PYTHONHASHSEED: see the module docstring.
     doc.classes.add_required_classes(doc.dxfversion)

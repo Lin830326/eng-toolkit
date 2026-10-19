@@ -1,6 +1,7 @@
 """The arithmetic of a DIMENSION entity: what it measures, which DIMLFAC applies, and the text a viewer shows.  Hand-calculated, no engine."""
 
 import math
+import re
 
 import pytest
 
@@ -188,3 +189,15 @@ def test_the_override_text_replaces_the_value_at_the_placeholder_and_a_space_hid
 def test_percent_codes_become_symbols():
     assert D.unescape_percent("%%c10 %%p0.1 90%%d") == "Ø10 ±0.1 90°"
     assert D.unescape_percent("100%%%") == "100%"
+
+
+@pytest.mark.parametrize("text", ["%%c10", "a%%d%%p b", "100%", "%", "%%", "%%%", "%%%u", "%%065", "x%%%%y", "5% %%c 5%", "Ø10 ±0.1", ""])
+def test_escape_percent_is_the_inverse_of_unescape_percent(text):
+    escaped = D.escape_percent(text)
+    assert D.unescape_percent(escaped) == text
+    assert not re.search(r"%%[cdpuok0-9]", escaped.replace("%%%", "")), "no live code is left in the escaped text"
+
+
+def test_escape_percent_leaves_a_lone_percent_and_everything_else_alone():
+    assert D.escape_percent("50% off Ø10") == "50% off Ø10"
+    assert D.escape_percent("%%c") == "%%%%%%c"

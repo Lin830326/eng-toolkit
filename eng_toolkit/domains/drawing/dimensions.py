@@ -12,6 +12,7 @@ Points are DXF definition points by group code: 10 (the dimension line / definit
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 
 Point = tuple[float, float, float]
@@ -201,6 +202,16 @@ def apply_override(override: str | None, formatted: str) -> Shown:
     if override == " ":
         return Shown("", True)
     return Shown(override.replace("<>", formatted), False)
+
+
+def escape_percent(text: str) -> str:
+    """``text`` as DXF single-line text that a viewer draws unchanged: the inverse of :func:`unescape_percent`.
+
+    A ``%%`` starts a control code in a TEXT entity (``%%c`` diameter, ``%%d`` degree, ``%%p`` plus-minus, ``%%u`` underline,
+    ``%%nnn`` a character), and ``%%%`` is a literal percent sign.  Every run of two or more ``%`` is therefore written with
+    each ``%`` as ``%%%``; a lone ``%`` is not part of any code and stays as it is.
+    """
+    return re.sub(r"%{2,}", lambda m: "%%%" * len(m.group()), text)
 
 
 def unescape_percent(text: str) -> str:
