@@ -586,6 +586,12 @@ drawing = [
     { name = "ezdxf" },
     { name = "pdfminer-six" },
 ]
+png = [
+    { name = "cadquery-ocp-novtk" },
+    { name = "ezdxf" },
+    { name = "pdfminer-six" },
+    { name = "pypdfium2" },
+]
 scan = [
     { name = "cadquery-ocp-novtk" },
     { name = "open3d" },
@@ -604,6 +610,7 @@ requires-dist = [
     { name = "cadquery-ocp-novtk", marker = "extra == 'cad'", specifier = ">=8.0.1.1.0" },
     { name = "eng-toolkit", extras = ["cad"], marker = "extra == 'drawing'" },
     { name = "eng-toolkit", extras = ["cad"], marker = "extra == 'scan'" },
+    { name = "eng-toolkit", extras = ["drawing"], marker = "extra == 'png'" },
     { name = "ezdxf", marker = "extra == 'drawing'", specifier = ">=1.4.5,<1.5" },
     { name = "fastmcp", specifier = ">=2.10" },
     { name = "fluids", specifier = ">=1.0" },
@@ -612,8 +619,9 @@ requires-dist = [
     { name = "pdfminer-six", marker = "extra == 'drawing'", specifier = ">=20260107,<20270101" },
     { name = "pint", specifier = ">=0.24" },
     { name = "pydantic", specifier = ">=2.7" },
+    { name = "pypdfium2", marker = "extra == 'png'", specifier = ">=5,<6" },
 ]
-provides-extras = ["cad", "scan", "drawing"]
+provides-extras = ["cad", "scan", "drawing", "png"]
 
 [package.metadata.requires-dev]
 dev = [

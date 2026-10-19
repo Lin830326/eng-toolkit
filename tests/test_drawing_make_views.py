@@ -502,9 +502,9 @@ DETERMINISM_SCRIPT = """
 import json, sys
 from eng_toolkit.domains.drawing.tools import make_views
 fn = getattr(make_views, "fn", make_views)
-r = fn(model_path=sys.argv[1], title="支架 BRACKET", part_number="BR-001", notes="deburr;去毛邊")
+r = fn(model_path=sys.argv[1], title="支架 BRACKET", part_number="BR-001", notes="deburr;去毛邊", formats="dxf,pdf,svg,png")
 assert r.ok, r.error
-files = {a.format: a.sha256 for a in r.artifacts if a.format in ("dxf", "pdf")}
+files = {a.format: a.sha256 for a in r.artifacts if a.format in ("dxf", "pdf", "svg", "png")}
 open(sys.argv[2], "w", encoding="utf-8").write(json.dumps({"files": files, "inputs_hash": r.provenance.inputs_hash}))
 """
 
@@ -520,12 +520,12 @@ def run_in_process(model, seed, tmp_path):
     return json.loads(out.read_text(encoding="utf-8"))
 
 
-def test_the_dxf_and_the_pdf_are_the_same_bytes_under_every_hash_seed(models, tmp_path):
+def test_the_dxf_the_pdf_the_svg_and_the_png_are_the_same_bytes_under_every_hash_seed(models, tmp_path):
     seeds = [*range(1, 13), None]
     with ThreadPoolExecutor(max_workers=6) as pool:
         runs = list(pool.map(lambda seed: run_in_process(models["probe"], seed, tmp_path), seeds))
     assert len({json.dumps(r["files"], sort_keys=True) for r in runs}) == 1, {s: r["files"] for s, r in zip(seeds, runs)}
-    assert set(runs[0]["files"]) == {"dxf", "pdf"}
+    assert set(runs[0]["files"]) == {"dxf", "pdf", "svg", "png"}
     assert len({r["inputs_hash"] for r in runs}) == 1
 
 
@@ -589,10 +589,8 @@ def test_a_text_file_named_step(tmp_path, ocp):
         ({"sheet": "letter"}, "sheet"),
         ({"scale": "1:3"}, "scale"),
         ({"scale": "0.5"}, "scale"),
-        ({"formats": "svg"}, "formats"),
-        ({"formats": "png"}, "formats"),
-        ({"formats": "dxf,pdf,svg"}, "formats"),
         ({"formats": "gif"}, "formats"),
+        ({"formats": "dxf,pdf,jpg"}, "formats"),
         ({"title": "x" * 81}, "title"),
         ({"part_number": "x" * 41}, "part_number"),
         ({"material": "x" * 41}, "material"),
@@ -613,11 +611,6 @@ def test_a_text_file_named_step(tmp_path, ocp):
 def test_bad_arguments_are_input_invalid_and_name_the_parameter(models, kwargs, param):
     r = failed(run(models["probe"], **kwargs), "input.invalid")
     assert r.error.details["param"] == param
-
-
-def test_the_message_for_svg_and_png_says_they_come_later(models):
-    r = failed(run(models["probe"], formats="svg,png"), "input.invalid")
-    assert "later" in r.error.message and r.error.details["later"] == ["svg", "png"]
 
 
 def test_a_missing_ezdxf_gives_an_install_hint(models, monkeypatch):

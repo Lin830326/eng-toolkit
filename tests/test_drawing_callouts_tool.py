@@ -206,7 +206,11 @@ def test_four_equal_holes_are_one_callout_and_the_blind_hole_gives_its_depth(pla
     assert blind["count"] == 1 and blind["depth_mm"] == pytest.approx(8.0, abs=1e-6) and blind["thru"] is False
     assert {c["view"] for c in callouts.values()} == {"top"}
     assert sorted(t for t in texts(plate) if "THRU" in t or "DEEP" in t) == [f"4{TIMES} {DIA}6.6 THRU", f"{DIA}5 DEEP 8"]
-    assert len(dxf_of(plate).of("LEADER")) == 2  # one leader per group, not per hole
+    leaders = dxf_of(plate).of("LEADER")
+    assert len(leaders) == 2  # one leader per group, not per hole
+    ox, oy = view(plate, "top")["origin_mm"]
+    four = next(e for e in leaders if abs(e.numbers(20)[0] - (oy + 10.0)) < 1e-6)  # the leader of the 4x group runs along y = 10
+    assert math.dist((four.numbers(10)[0], four.numbers(20)[0]), (ox + 90.0, oy + 10.0)) == pytest.approx(3.3, abs=1e-4)  # it starts on the hole nearest the text, so it crosses no other hole
 
 
 def test_the_plate_has_one_ordinate_per_distinct_coordinate(plate):

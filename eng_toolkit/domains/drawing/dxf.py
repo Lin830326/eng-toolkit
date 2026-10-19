@@ -8,6 +8,9 @@ what the DXF holds.  The same drawing gives the same bytes, in this process and 
   entity types in use by iterating a ``set`` of names, so their order depends on ``PYTHONHASHSEED`` (measured: the
   records LAYOUT and ACDBPLACEHOLDER swap places).  The order of CLASS records has no meaning, so the classes are
   registered and sorted before saving (docs/geometry-drawing/drawing-determinism.md).
+* The SVG is written by :class:`_SvgBackend`, also ours and without dependencies: the same recorded drawing as the PDF,
+  as ``<path>`` elements in sheet millimetres (the page is ``297mm`` wide with a ``viewBox`` of 297 units), black ink on
+  white, consecutive strokes of one weight and dash merged into one element, numbers with at most three decimals.
 * The PDF is written by :class:`_PdfBackend`, ours, because ezdxf's own PDF path needs PyMuPDF (AGPL).  ezdxf's drawing
   frontend turns the document into lines, paths and filled paths (text arrives as filled glyph outlines, so the PDF
   has no text layer and needs no font); the backend writes them as PDF 1.4 operators.  The page is the sheet in
@@ -354,15 +357,132 @@ def _pdf_document(width_mm: float, height_mm: float, content: str) -> bytes:
     return bytes(out)
 
 
-def render_pdf(drawing: Drawing) -> bytes:
-    """The PDF page of a drawing (see the module docstring).  ``engine.unavailable`` without ezdxf."""
+# --------------------------------------------------------------------------- SVG
+
+
+def _svg_backend_class():
+    """The SVG backend class, made on first use for the same reason as the PDF one."""
+    from ezdxf.addons.drawing.backend import BackendInterface
+    from ezdxf.path import Command
+
+    class _SvgBackend(BackendInterface):
+        """Replays ezdxf's recorded drawing as SVG paths in sheet millimetres; y points up, so one group flips it."""
+
+        def __init__(self, width_mm: float, height_mm: float) -> None:
+            self.width_mm, self.height_mm = width_mm, height_mm
+            self.elements: list[str] = []
+            self._style: tuple[float, tuple[float, ...]] | None = None
+            self._run: list[str] = []
+
+        # ---- no-ops of the interface
+        def configure(self, config) -> None:
+            pass
+
+        def enter_entity(self, entity, properties) -> None:
+            pass
+
+        def exit_entity(self, entity) -> None:
+            pass
+
+        def set_background(self, color) -> None:
+            pass
+
+        def draw_image(self, image_data, properties) -> None:
+            pass
+
+        def draw_point(self, pos, properties) -> None:
+            pass
+
+        def clear(self) -> None:
+            self.elements, self._run, self._style = [], [], None
+
+        def finalize(self) -> None:
+            self._flush()
+
+        # ---- drawing
+        @staticmethod
+        def _pt(p) -> str:
+            return f"{_num(p.x)} {_num(p.y)}"
+
+        def _flush(self) -> None:
+            if self._run and self._style is not None:
+                weight, dash = self._style
+                attrs = f'stroke-width="{_num(weight)}"'
+                attrs += f' stroke-dasharray="{" ".join(_num(v) for v in dash)}" stroke-linecap="butt"' if dash else ' stroke-linecap="square"'
+                self.elements.append(f'<path d="{" ".join(self._run)}" {attrs}/>')
+            self._run = []
+
+        def _stroke_state(self, properties) -> None:
+            layer = C.LAYER_BY_NAME.get(properties.layer)
+            style = (round(properties.lineweight, 4), C.dash_array_mm(layer.linetype) if layer else ())
+            if style != self._style:
+                self._flush()
+                self._style = style
+
+        def draw_line(self, start, end, properties) -> None:
+            self._stroke_state(properties)
+            self._run.append(f"M{self._pt(start)} L{self._pt(end)}")
+
+        def draw_solid_lines(self, lines, properties) -> None:
+            self._stroke_state(properties)
+            for a, b in lines:
+                self._run.append(f"M{self._pt(a)} L{self._pt(b)}")
+
+        def _path(self, path) -> str:
+            out = [f"M{self._pt(path.start)}"]
+            here = path.start
+            for cmd in path.commands():
+                if cmd.type == Command.MOVE_TO:
+                    out.append(f"M{self._pt(cmd.end)}")
+                elif cmd.type == Command.LINE_TO:
+                    out.append(f"L{self._pt(cmd.end)}")
+                elif cmd.type == Command.CURVE3_TO:
+                    out.append(f"Q{self._pt(cmd.ctrl)} {self._pt(cmd.end)}")
+                else:
+                    out.append(f"C{self._pt(cmd.ctrl1)} {self._pt(cmd.ctrl2)} {self._pt(cmd.end)}")
+                here = cmd.end
+            return " ".join(out)
+
+        def draw_path(self, path, properties) -> None:
+            if len(path):
+                self._stroke_state(properties)
+                self._run.append(self._path(path))
+
+        def draw_filled_paths(self, paths, properties) -> None:
+            body = " Z ".join(self._path(p) for p in paths if len(p))
+            if body:
+                self._flush()
+                self.elements.append(f'<path d="{body} Z" fill="#000" stroke="none" fill-rule="evenodd"/>')
+
+        def draw_filled_polygon(self, points, properties) -> None:
+            vertices = list(points.vertices())
+            if len(vertices) >= 3:
+                self._flush()
+                self.elements.append(f'<path d="M{self._pt(vertices[0])} ' + " ".join(f"L{self._pt(p)}" for p in vertices[1:]) + ' Z" fill="#000" stroke="none" fill-rule="evenodd"/>')
+
+        def document(self) -> bytes:
+            self._flush()
+            w, h = _num(self.width_mm), _num(self.height_mm)
+            head = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}mm" height="{h}mm" viewBox="0 0 {w} {h}">\n'
+                f'<rect width="{w}" height="{h}" fill="#fff"/>\n'
+                f'<g transform="translate(0 {h}) scale(1 -1)" fill="none" stroke="#000" stroke-linejoin="round">\n'
+            )
+            return (head + "\n".join(self.elements) + "\n</g>\n</svg>\n").encode("utf-8")
+
+    return _SvgBackend
+
+
+def _replay(drawing: Drawing, backend) -> None:
+    """Draw the drawing's DXF document into ``backend`` with ezdxf's frontend (black ink, absolute line weights, solid lines)."""
     ezdxf = require_engine()
     from ezdxf.addons.drawing import Frontend, RenderContext
     from ezdxf.addons.drawing.config import BackgroundPolicy, ColorPolicy, Configuration, LinePolicy, LineweightPolicy
     from ezdxf.addons.drawing.recorder import Recorder
 
     config = Configuration(
-        line_policy=LinePolicy.SOLID,  # dashes are PDF dashes, set from the layer's linetype
+        line_policy=LinePolicy.SOLID,  # dashes are set from the layer's linetype by the backend
         lineweight_policy=LineweightPolicy.ABSOLUTE,
         color_policy=ColorPolicy.BLACK,
         background_policy=BackgroundPolicy.WHITE,
@@ -371,9 +491,21 @@ def render_pdf(drawing: Drawing) -> bytes:
         doc = _build(ezdxf, drawing)
         recorder = Recorder()
         Frontend(RenderContext(doc), recorder, config=config).draw_layout(doc.modelspace())
-    backend = _pdf_backend_class()(*drawing.size_mm)
     recorder.player().replay(backend)
+
+
+def render_svg(drawing: Drawing) -> bytes:
+    """The SVG file of a drawing (see the module docstring).  ``engine.unavailable`` without ezdxf."""
+    backend = _svg_backend_class()(*drawing.size_mm)
+    _replay(drawing, backend)
     return backend.document()
 
 
-__all__ = ["DXF_VERSION", "render_pdf", "require_engine", "text_warnings", "write_dxf"]
+def render_pdf(drawing: Drawing) -> bytes:
+    """The PDF page of a drawing (see the module docstring).  ``engine.unavailable`` without ezdxf."""
+    backend = _pdf_backend_class()(*drawing.size_mm)
+    _replay(drawing, backend)
+    return backend.document()
+
+
+__all__ = ["DXF_VERSION", "render_pdf", "render_svg", "require_engine", "text_warnings", "write_dxf"]

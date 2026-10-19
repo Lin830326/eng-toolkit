@@ -21,7 +21,7 @@ from pydantic import Field
 from eng_toolkit import __version__, brep
 from eng_toolkit.contract import QuantityOut, ToolResult
 from eng_toolkit.domains.drawing import callouts as K
-from eng_toolkit.domains.drawing import dxf, features, reading, shaping
+from eng_toolkit.domains.drawing import dxf, features, raster, reading, shaping
 from eng_toolkit.domains.drawing import sheet as S
 from eng_toolkit.errors import EngineUnavailable, ToolFailure
 from eng_toolkit.isolated import MEMORY_MB, TIMEOUT_S, run_isolated
@@ -31,17 +31,18 @@ from eng_toolkit.runner import Computed, JobHandle, run_tool
 ENGINE_MAKE_VIEWS = "eng_toolkit.drawing.make_views"
 ENGINE_READ = "eng_toolkit.drawing.read"
 TOOL_NAMES: tuple[str, ...] = ("make_views", "read")
-FORMATS: tuple[str, ...] = ("dxf", "pdf")
-LATER_FORMATS: tuple[str, ...] = ("svg", "png")
+FORMATS: tuple[str, ...] = ("dxf", "pdf", "svg", "png")
 COVERAGE = (
     "dimensions: overall size, hole callouts and hole ordinates, all measured from the geometry (fit and thread only from a bound features file); "
     "not: tolerances, counterbores, countersinks, centre lines, features on inclined faces"
 )
 INVENTORY_FACE_LIMIT = 3000  # a model with more faces gets no hole callouts: the hole search would take too long
 DETERMINISM = (
-    "The same model and arguments give the same bytes in drawing.dxf and drawing.pdf, in any process: ezdxf's fixed "
-    "metadata option is set while writing, and the CLASS records of the DXF, whose order would depend on PYTHONHASHSEED, "
-    "are sorted. The PDF has no dates or producer, no compression and a fixed object order."
+    "The same model and arguments give the same bytes in drawing.dxf, drawing.pdf and drawing.svg, in any process: ezdxf's "
+    "fixed metadata option is set while writing, and the CLASS records of the DXF, whose order would depend on PYTHONHASHSEED, "
+    "are sorted. The PDF has no dates or producer, no compression and a fixed object order; the SVG has fixed number formatting. "
+    "drawing.png is PDFium's rendering of the PDF: the same bytes on one machine in any process, not promised across machines "
+    "(PDFium build, zlib)."
 )
 
 server = FastMCP(
@@ -56,13 +57,6 @@ server = FastMCP(
 def _parse_formats(text: str) -> list[str]:
     """The files to write, dxf first; dxf is the source of the drawing, so it is always among them."""
     wanted = [item.strip().lower() for item in text.split(",") if item.strip()]
-    later = [item for item in wanted if item in LATER_FORMATS]
-    if later:
-        raise ToolFailure(
-            "input.invalid",
-            f"formats: {later} arrive in a later version; use a comma list of {list(FORMATS)}",
-            {"param": "formats", "allowed": list(FORMATS), "later": later},
-        )
     unknown = [item for item in wanted if item not in FORMATS]
     if unknown:
         raise ToolFailure(
@@ -145,14 +139,18 @@ def _callout_row(c: S.PlacedCallout) -> dict[str, Any]:
 MAKE_VIEWS_DESCRIPTION = (
     "Make an engineering drawing of a 3D model (.step .stp .iges .igs .brep): orthographic views with hidden lines "
     "removed exactly, on an ISO 5457 sheet with frame and title block, one overall dimension per model axis (true size at "
-    "any scale) and your notes. Writes drawing.dxf (R2018, millimetres, the source) and drawing.pdf (vector, true scale; "
-    "its text is outlines, so it has no text layer). "
+    "any scale), hole callouts (Ø10 THRU, 4× Ø6.6 THRU, Ø5 DEEP 8, found from the geometry, one per group of equal holes) "
+    "with ordinates for their positions, and your notes. Writes drawing.dxf (R2018, millimetres, the source) and drawing.pdf "
+    "(vector, true scale); formats adds drawing.svg (vector, own writer) and drawing.png (the PDF rasterised, greyscale, "
+    "150 dpi or less). PDF, SVG and PNG have no text layer: the DXF holds the text. "
     f"views: comma list of {', '.join(S.VIEW_NAMES)} (at most 7, no repeats). projection: third_angle (default) or first_angle. "
     f"sheet: auto or {', '.join(S.SHEETS)} (landscape). scale: auto or {', '.join(S.scale_text(s) for s in S.SCALES)}; auto "
     "takes the largest standard scale and then the smallest sheet at which the views, their dimension rows and the title "
-    "block fit, and enlarges small parts. dimensions: auto or overall (X, Y and Z once each) or none. The title block "
-    "always says UNREVIEWED. Not a complete manufacturing drawing: no tolerances, fits, hole callouts or centre lines yet. "
-    f"Needs the optional drawing engine ({install_hint('ezdxf')}). svg and png are not available yet."
+    "block fit, and enlarges small parts. dimensions: auto (overall size plus hole callouts and ordinates), overall (X, Y and "
+    "Z once each) or none. features_path: the features.json of geometry_make_part; its fit (H7) and thread appear in the "
+    "callout only when its step_sha256 equals the sha256 of this model file, otherwise a warning and nothing is printed. The "
+    "title block always says UNREVIEWED. Not a complete manufacturing drawing: no tolerances, centre lines, counterbores or "
+    f"countersinks. Needs the optional drawing engine ({install_hint('ezdxf')}); png also needs {install_hint('pypdfium2')}."
 )
 
 
@@ -171,9 +169,10 @@ def make_views(
     revision: Annotated[str, Field(description="Title block revision, at most 8 characters")] = "A",
     general_tolerance: Annotated[str, Field(description="Printed as text only, e.g. 'ISO 2768-m'; at most 80 characters")] = "",
     notes: Annotated[str, Field(description="Notes separated by ';', at most 6 of at most 100 characters; printed above the title block")] = "",
-    formats: Annotated[str, Field(description="Comma list of dxf, pdf. The DXF is always written. svg and png come later")] = "dxf,pdf",
+    formats: Annotated[str, Field(description="Comma list of dxf, pdf, svg, png. The DXF is always written; png needs the png extra")] = "dxf,pdf",
     features_path: Annotated[str, Field(description="features.json written by geometry_make_part: adds the fit (H7) and thread of its holes to the callouts when it belongs to this exact model file")] = "",
 ) -> ToolResult:
+    png_requested = "png" in [item.strip().lower() for item in formats.split(",")]
     inputs = {
         "model_path": model_path,
         "views": views,
@@ -206,6 +205,8 @@ def make_views(
         )
         wanted = _parse_formats(formats)
         dxf.require_engine()
+        if "png" in wanted:
+            raster.require_engine()
 
         model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
         solid = brep.read_solid(model_file, param="model_path")
@@ -222,8 +223,16 @@ def make_views(
         )
 
         artifacts = [job.write_bytes("drawing.dxf", dxf.write_dxf(drawing), fmt="dxf")]
+        pdf_bytes = dxf.render_pdf(drawing) if ("pdf" in wanted or "png" in wanted) else b""
         if "pdf" in wanted:
-            artifacts.append(job.write_bytes("drawing.pdf", dxf.render_pdf(drawing), fmt="pdf"))
+            artifacts.append(job.write_bytes("drawing.pdf", pdf_bytes, fmt="pdf"))
+        if "svg" in wanted:
+            artifacts.append(job.write_bytes("drawing.svg", dxf.render_svg(drawing), fmt="svg"))
+        png_info: dict[str, Any] | None = None
+        if "png" in wanted:
+            png_bytes, width_px, height_px, dpi = raster.render_png(pdf_bytes, *drawing.size_mm)
+            artifacts.append(job.write_bytes("drawing.png", png_bytes, fmt="png"))
+            png_info = {"width_px": width_px, "height_px": height_px, "dpi": dpi, "greyscale": True, "from": "drawing.pdf rendered by PDFium"}
 
         warnings: list[str] = []
         folded = [
@@ -258,8 +267,17 @@ def make_views(
         warnings += hole_data.warnings
         warnings += dxf.text_warnings(drawing)
         warnings += [f"Layout: {w}" for w in drawing.warnings]
-        if "pdf" in wanted:
-            warnings.append("The PDF has no text layer: text is drawn as glyph outlines, so it cannot be searched or copied. The DXF holds the text.")
+        pictures = [name.upper() for name in ("pdf", "svg", "png") if name in wanted]
+        if pictures:
+            warnings.append(
+                f"The {', '.join(pictures)} {'has' if len(pictures) == 1 else 'have'} no text layer: text is drawn as glyph outlines"
+                f"{' (pixels in the PNG)' if 'png' in wanted else ''}, so it cannot be searched or copied. The DXF holds the text."
+            )
+        if png_info:
+            warnings.append(
+                f"The PNG is a {png_info['width_px']} x {png_info['height_px']} pixel greyscale raster ({png_info['dpi']} dpi) of the PDF: the same bytes "
+                "come out of this machine in every process, but another machine's PDFium or zlib may give different pixels or bytes"
+            )
 
         values = {
             "scale": QuantityOut(quantity=drawing.scale_value, unit="dimensionless"),
@@ -300,6 +318,7 @@ def make_views(
             "coverage": COVERAGE,
             "determinism": DETERMINISM,
             "formats": wanted,
+            **({"png": png_info} if png_info else {}),
         }
         return Computed(values=values, primary="scale", warnings=warnings, data=data, artifacts=artifacts)
 
@@ -309,7 +328,7 @@ def make_views(
         version=__version__,
         inputs=inputs,
         compute=compute,
-        engines=("cadquery-ocp-novtk", "ezdxf", "numpy"),
+        engines=("cadquery-ocp-novtk", "ezdxf", "numpy", *(("pypdfium2",) if png_requested else ())),
         standing_warnings=(
             "Overall dimensions come from the bounding box of the projected geometry; hole callouts and ordinates come from the "
             "geometry's own hole search (a fit or thread only from a features file bound to this model by hash). The drawing is "

@@ -116,6 +116,16 @@ KNOWN: dict[str, Engine] = {
             optional=True,
             extra="drawing",
         ),
+        Engine(
+            "pypdfium2",
+            "BSD-3-Clause OR Apache-2.0",
+            TIER_PERMISSIVE,
+            "rasterises the PDF this toolkit has just written into the PNG of a drawing (the one PDFium module, drawing/raster.py; never given a file from a caller)",
+            ("drawing",),
+            optional=True,
+            bundled_license="PDFium BSD-3-Clause and its bundled libraries, all permissive: abseil, llvm-libc (Apache-2.0), AGG 2.3, FreeType (FreeType License), ICU (Unicode-3.0), lcms2, fast_float, simdutf (MIT), libjpeg-turbo (IJG, BSD), OpenJPEG (BSD-2-Clause), libpng, zlib; no GPL or AGPL",
+            extra="png",
+        ),
         # A guard, not a dependency: ezdxf[draw] pulls PyMuPDF for a PDF backend, and the doctor must flag it.
         Engine(
             "pymupdf",

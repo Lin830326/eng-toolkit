@@ -63,7 +63,7 @@ class HoleGroup:
 @dataclass(frozen=True)
 class CalloutPlan:
     group: HoleGroup
-    center: Vec2  # of the first hole, in view coordinates (mm, the coordinates of the projection)
+    center: Vec2  # of the hole the leader points at (see _leader_hole), in view coordinates (mm, the coordinates of the projection)
 
 
 @dataclass(frozen=True)
@@ -186,13 +186,19 @@ def plan(groups: Sequence[HoleGroup], projections: Sequence[Projection]) -> Plan
                 + "; ".join(f"{g.text} ({', '.join(g.hole_ids)})" for g in left)
             )
             listed = listed[:MAX_GROUPS_PER_VIEW]
-        callouts = tuple(CalloutPlan(g, _uv(p, g.entries[0])) for g in listed)
+        callouts = tuple(CalloutPlan(g, _leader_hole(p, g)) for g in listed)
         for g in listed:
             placed[g.hole_ids] = p.view
         centres = [_uv(p, e) for g in listed for e in g.entries]
         ordinates = _ordinates(p, centres, warnings)
         view_plans.append(ViewHolePlan(p.view, (p.bbox_min[0], p.bbox_min[1]), callouts, ordinates))
     return Plan(tuple(view_plans), tuple(groups), placed, tuple(warnings))
+
+
+def _leader_hole(p: Projection, group: HoleGroup) -> Vec2:
+    """The hole of the group the callout points at: the one nearest the callout column (largest u), then the lowest, so the
+    leader crosses no other hole of the group."""
+    return min((_uv(p, e) for e in group.entries), key=lambda c: (-c[0], c[1]))
 
 
 def _ordinates(p: Projection, centres: list[Vec2], warnings: list[str]) -> tuple[OrdinatePlan, ...]:

@@ -39,7 +39,7 @@ OPTIONAL = [engine for engine in KNOWN.values() if engine.optional and engine no
 
 
 def test_the_registry_has_optional_engines_to_check():
-    assert {e.dist for e in OPTIONAL} >= {"open3d", "cadquery-ocp-novtk", "ezdxf", "pdfminer.six"}
+    assert {e.dist for e in OPTIONAL} >= {"open3d", "cadquery-ocp-novtk", "ezdxf", "pdfminer.six", "pypdfium2"}
 
 
 @pytest.mark.parametrize("engine", OPTIONAL, ids=lambda e: e.dist)
@@ -71,6 +71,13 @@ def test_scan_installs_both_engines_and_cad_only_the_kernel():
 def test_drawing_installs_ezdxf_and_pdfminer_on_top_of_the_kernel():
     assert dists_of("drawing") == {"cadquery-ocp-novtk", "ezdxf", "pdfminer-six"}
     assert install_hint("ezdxf") == install_hint("pdfminer.six") == "uv sync --extra drawing"
+
+
+def test_png_adds_pypdfium2_on_top_of_the_drawing_extra_and_only_there():
+    assert dists_of("png") == dists_of("drawing") | {"pypdfium2"}
+    assert install_hint("pypdfium2") == "uv sync --extra png"
+    assert "pypdfium2" not in dists_of("drawing") and all("pypdfium2" not in dists_of(e) for e in ("cad", "scan"))
+    assert KNOWN["pypdfium2"].tier == "permissive" and "no GPL or AGPL" in KNOWN["pypdfium2"].bundled_license
 
 
 @pytest.mark.parametrize("guard", GUARDS, ids=lambda e: e.dist)

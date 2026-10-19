@@ -40,6 +40,8 @@ Homepage = "https://github.com/Lin830326/eng-toolkit"
 #                                 cryptography Apache-2.0 OR BSD-3-Clause), for drawing_make_views and drawing_read.
 #                                 Never install ezdxf[draw]: it pulls PyMuPDF (AGPL), which the doctor flags as a
 #                                 policy failure
+#   png (uv sync --extra png)  - the drawing extra plus pypdfium2 (BSD-3-Clause OR Apache-2.0; the wheel bundles PDFium
+#                                and its permissive libraries, see licenses.KNOWN), for the PNG of drawing_make_views
 [project.optional-dependencies]
 cad = [
     "cadquery-ocp-novtk>=8.0.1.1.0",
@@ -52,6 +54,10 @@ drawing = [
     "eng-toolkit[cad]",
     "ezdxf>=1.4.5,<1.5",
     "pdfminer.six>=20260107,<20270101",
+]
+png = [
+    "eng-toolkit[drawing]",
+    "pypdfium2>=5,<6",
 ]
 
 [dependency-groups]

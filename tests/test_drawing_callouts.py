@@ -60,6 +60,12 @@ def test_a_hole_with_a_fit_and_one_without_are_different_groups():
     assert [g.intent for g in groups if g.text == "Ø10 THRU"] == [False]
 
 
+def test_the_leader_of_a_group_points_at_its_hole_nearest_the_callout_column_lowest_first():
+    holes = [hole(i + 1, (x, y, 20.0), d=6.6) for i, (x, y) in enumerate([(10, 10), (90, 10), (10, 40), (90, 40)])]
+    (view,) = K.plan(K.group_holes(holes), [projection("top")]).views
+    assert [c.center for c in view.callouts] == [(90.0, 10.0)]  # largest x, then smallest y: the leader crosses no other hole
+
+
 # --------------------------------------------------------------------------- which view
 
 

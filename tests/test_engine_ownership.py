@@ -1,4 +1,4 @@
-"""One owner per engine: OCP lives in eng_toolkit/brep, Open3D in metrology/scan.py, ezdxf in the drawing domain's dxf.py (writes) and dxf_read.py (reads), pdfminer in its pdf_read.py, and brep's internals stay inside brep."""
+"""One owner per engine: OCP lives in eng_toolkit/brep, Open3D in metrology/scan.py, ezdxf in the drawing domain's dxf.py (writes) and dxf_read.py (reads), pdfminer in its pdf_read.py, pypdfium2 in its raster.py, and brep's internals stay inside brep."""
 
 import ast
 from pathlib import Path
@@ -10,6 +10,7 @@ OCP_OWNER = "brep/"
 OPEN3D_OWNER = "domains/metrology/scan.py"
 EZDXF_OWNERS = ("domains/drawing/dxf.py", "domains/drawing/dxf_read.py")  # the writer and the reader of the one DXF library
 PDFMINER_OWNER = "domains/drawing/pdf_read.py"
+PDFIUM_OWNER = "domains/drawing/raster.py"  # rasterises our own PDF into a PNG
 BREP = "eng_toolkit.brep"
 
 
@@ -49,6 +50,8 @@ def violations(source: str, relpath: str) -> list[str]:
                 found.append(f"{relpath}:{node.lineno} imports {name}; only {' and '.join(EZDXF_OWNERS)} may use ezdxf")
             if _is_module(name, "pdfminer") and relpath != PDFMINER_OWNER:
                 found.append(f"{relpath}:{node.lineno} imports {name}; only {PDFMINER_OWNER} may use pdfminer")
+            if _is_module(name, "pypdfium2") and relpath != PDFIUM_OWNER:
+                found.append(f"{relpath}:{node.lineno} imports {name}; only {PDFIUM_OWNER} may use pypdfium2")
             if _is_module(name, BREP) and not inside_brep:
                 private = [part for part in name[len(BREP) :].split(".") if part.startswith("_")]
                 if private:
@@ -83,6 +86,7 @@ def test_the_owners_actually_use_their_engines():
     assert "open3d" in sources[OPEN3D_OWNER]
     assert all("ezdxf" in sources[owner] for owner in EZDXF_OWNERS)
     assert "pdfminer" in sources[PDFMINER_OWNER]
+    assert "pypdfium2" in sources[PDFIUM_OWNER]
 
 
 @pytest.mark.parametrize(
@@ -101,6 +105,9 @@ def test_the_owners_actually_use_their_engines():
         ("from ezdxf import recover\n", "domains/drawing/shaping.py"),
         ("import pdfminer\n", "domains/drawing/dxf_read.py"),
         ("from pdfminer.layout import LTChar\n", "domains/drawing/tools.py"),
+        ("import pypdfium2\n", "domains/drawing/tools.py"),
+        ("def f():\n    import pypdfium2 as pdfium\n", "domains/drawing/dxf.py"),
+        ("from pypdfium2 import PdfDocument\n", "domains/drawing/pdf_read.py"),
         ("def f():\n    import pdfminer.high_level\n", "runner.py"),
         ("from eng_toolkit.brep import _handle\n", "domains/geometry/tools.py"),
         ("from eng_toolkit.brep._files import read_solid\n", "domains/geometry/tools.py"),
@@ -123,6 +130,7 @@ def test_the_checker_reports_a_forbidden_use(source, relpath):
         ("import ezdxf\n", "domains/drawing/dxf.py"),
         ("import ezdxf\nfrom ezdxf import recover\n", "domains/drawing/dxf_read.py"),
         ("from pdfminer.layout import LTChar\nimport pdfminer\n", "domains/drawing/pdf_read.py"),
+        ("import pypdfium2\nfrom pypdfium2 import PdfDocument\n", "domains/drawing/raster.py"),
         ("from eng_toolkit import brep\nbrep.read_solid\n", "domains/metrology/scan.py"),
         ("from eng_toolkit.brep import read_solid, Solid\n", "domains/geometry/tools.py"),
         ("import numpy\n", "domains/geometry/tools.py"),

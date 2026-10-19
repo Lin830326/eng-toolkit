@@ -6,7 +6,8 @@
   1. Installs uv (Astral's Python package manager) if it is not on PATH.
   2. Lets uv fetch Python 3.12 and create .venv with the locked dependencies, including the
      optional `scan` extra (Open3D and OpenCASCADE, about 340 MB) used by metrology_check_scan,
-     and the optional `drawing` extra (ezdxf, MIT) used by drawing_make_views.
+     the optional `drawing` extra (ezdxf, MIT) used by drawing_make_views, and the optional `png` extra
+     (pypdfium2, BSD or Apache) for its PNG output.
   3. Runs the toolkit doctor (dependency / license / workspace check).
   4. Prints the Claude Code command that registers the MCP server.
 
@@ -31,7 +32,7 @@ uv --version
 
 # 2. Python 3.12 + locked dependencies (uv downloads a managed Python if none is present)
 uv python install 3.12
-uv sync --all-groups --extra scan --extra drawing --python 3.12
+uv sync --all-groups --extra scan --extra drawing --extra png --python 3.12
 if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
 
 # 3. doctor
