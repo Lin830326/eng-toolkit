@@ -142,6 +142,13 @@ def make_views(
             artifacts.append(job.write_bytes("drawing.pdf", dxf.render_pdf(drawing), fmt="pdf"))
 
         warnings: list[str] = []
+        if solid.solids == 0:
+            warnings.append(
+                f"The file holds no closed solid (solids found: {solid.solids}), only surfaces"
+                + ("; IGES stores surfaces unless the exporter wrote a solid" if model_file.suffix.lower() in (".iges", ".igs") else "")
+                + ". The faces were sewn together and projected as they are: hidden lines depend on the surfaces being "
+                "complete and closed, so check each view against the model"
+            )
         for view in drawing.views:
             if view.projection.method == "polygonal":
                 warnings.append(

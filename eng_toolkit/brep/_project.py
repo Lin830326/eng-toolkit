@@ -173,7 +173,7 @@ def project(solid: Solid, view: ViewName, *, hidden: bool = True, exact_face_lim
     if frame is None:
         raise ToolFailure("input.invalid", f"view {view!r} is not one of {list(VIEW_FRAMES)}", {"view": view, "allowed": list(VIEW_FRAMES)})
     _occ.load()
-    shape = solid._handle
+    shape = _projectable(solid)
     faces = _face_count(shape)
     if faces == 0:
         raise ToolFailure("drawing.no_geometry", f"nothing to project: the shape has no faces ({view} view)", {"view": view})
@@ -223,6 +223,47 @@ def project(solid: Solid, view: ViewName, *, hidden: bool = True, exact_face_lim
         approximated=sum(isinstance(p, Poly2) for p in (*visible_sorted, *hidden_sorted)),
         verified=verified,
     )
+
+
+SEWING_TOLERANCE_MM = 1e-3  # gaps between loose faces that are closed up; far below the 0.01 mm the drawing resolves
+REGULARITY_TOLERANCE_RAD = 1e-4  # surfaces that meet within this angle are tangent; IGES surfaces are only that exact (the default 1e-10 finds none)
+
+
+def _projectable(solid: Solid):
+    """The shape to project.  A file with no solid holds loose faces (IGES surfaces): they are sewn into shells, so that
+    faces share their edges, and each seam (an edge that bounds one face on both sides, as a cylinder stored as a
+    surface of revolution has) is marked as continuous, the way OCCT's own cylinders are, so HLR counts it as a seam
+    instead of drawing it.  A model with a solid is returned as read."""
+    shape = solid._handle
+    if solid.solids > 0:
+        return shape
+    from OCP.BRep import BRep_Builder, BRep_Tool
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
+    from OCP.BRepLib import BRepLib
+    from OCP.GeomAbs import GeomAbs_CN
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    sewing = BRepBuilderAPI_Sewing(SEWING_TOLERANCE_MM)
+    sewing.Add(shape)
+    sewing.Perform()
+    sewn = sewing.SewedShape()
+    if sewn is None or sewn.IsNull() or _face_count(sewn) != _face_count(shape):
+        return shape  # sewing is a convenience; if it changed the faces, project what was read
+    BRepLib.EncodeRegularity_s(sewn, REGULARITY_TOLERANCE_RAD)  # smooth joins (a fillet and its neighbour) become tangent edges, as in a STEP file
+    builder = BRep_Builder()
+    faces = TopExp_Explorer(sewn, TopAbs_FACE)
+    while faces.More():
+        face = TopoDS.Face(faces.Current())
+        edges = TopExp_Explorer(face, TopAbs_EDGE)
+        while edges.More():
+            edge = TopoDS.Edge(edges.Current())
+            if BRep_Tool.IsClosed_s(edge, face):
+                builder.Continuity(edge, face, face, GeomAbs_CN)
+            edges.Next()
+        faces.Next()
+    return sewn
 
 
 def _face_count(shape) -> int:

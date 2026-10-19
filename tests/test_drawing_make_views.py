@@ -52,6 +52,7 @@ def models(ocp, tmp_path_factory):
         "probe": cad.write_step(probe, root / "probe.step"),
         "probe_iges": cad.write_iges(probe, root / "probe.iges"),
         "probe_brep": cad.write_brep(probe, root / "probe.brep"),
+        "probe_iges_faces": cad.write_iges_faces(probe, root / "probe_faces.iges"),
         "cube": cad.write_step(cad.box(length=5.0, width=5.0, height=5.0), root / "cube.step"),
         "plate": cad.write_step(cad.box(length=1500.0, width=50.0, height=10.0), root / "plate.step"),
         "block": cad.write_step(cad.box(length=500.0, width=100.0, height=20.0), root / "block.step"),
@@ -472,6 +473,25 @@ def test_iges_and_brep_models_work_too(models, key):
     r = run(models[key])
     assert r.ok, r.error
     assert sorted(d["text"] for d in r.data["dimensions"]) == ["100", "20", "50"]
+
+
+def test_a_surface_only_iges_draws_the_same_hidden_lines_as_the_solid(models, probe):
+    """Loose IGES faces store the hole as a surface of revolution; its seam must not show as a dashed line in the hole centre."""
+    r = run(models["probe_iges_faces"])
+    assert r.ok, r.error
+    f = dxf_of(r)
+    assert f.total_length("HIDDEN", view_box(r, "front")) == pytest.approx(40.0, abs=1e-4)
+    assert f.total_length("HIDDEN", view_box(r, "right")) == pytest.approx(40.0, abs=1e-4)
+    assert [view(r, n)["hidden_primitives"] for n in ("front", "top", "right")] == [2, 0, 2]
+    assert view(r, "right")["dropped"]["seam"] == 1  # the same count as the solid file of the same part
+    assert view(probe, "right")["dropped"]["seam"] == 1
+
+
+def test_a_model_without_a_closed_solid_says_so(models, probe):
+    r = run(models["probe_iges_faces"])
+    text = " ".join(r.warnings)
+    assert "no closed solid" in text and "IGES" in text
+    assert "no closed solid" not in " ".join(probe.warnings)
 
 
 # --------------------------------------------------------------------------- errors

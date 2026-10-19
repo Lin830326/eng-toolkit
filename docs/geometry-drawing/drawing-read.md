@@ -210,7 +210,7 @@ Checked and solid, from the same review: 15 of 15 forced timeouts with no leftov
 * The memory cap exists on Windows and Linux; on macOS only the time limit applies, and the result says so.
 * The allow-list is not a full sandbox: the allowed directories themselves are trusted, and `ENG_TOOLKIT_READ_DIRS` set to an empty string means "unrestricted" (a design choice to revisit).
 * Found by the coordinator, not changed: PDF font sizes are not multiplied by the text matrix (a scaled text shows its unscaled size); the default PDF line width is reported as 0; the extents include dimension lines and text positions, so they are larger than the part.
-* Not done in this slice (pre-existing, found earlier, not widened here): the cylinder-as-surface-of-revolution IGES extra dashed line in `drawing_make_views`; full-width and no-break spaces rejected in titles; `%%c`/`%%d` not escaped when writing.
+* Not done in this slice (pre-existing, found earlier, not widened here): full-width and no-break spaces rejected in titles; `%%c`/`%%d` not escaped when writing.
 
 ## How to verify independently
 
