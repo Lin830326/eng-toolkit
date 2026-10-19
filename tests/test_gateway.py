@@ -231,6 +231,13 @@ def test_doctor_says_whether_file_reads_are_restricted(monkeypatch, tmp_path):
     assert closed["restricted"] is True and closed["directories"] == 1 and closed["env"] == "ENG_TOOLKIT_READ_DIRS"
 
 
+def test_doctor_reports_an_empty_variable_as_workspace_only_not_as_unrestricted(monkeypatch):
+    monkeypatch.setenv("ENG_TOOLKIT_READ_DIRS", "")
+    empty = _doctor(monkeypatch, {}).data["file_reads"]
+    assert empty["restricted"] is True and empty["directories"] == 0
+    assert "workspace" in empty["note"] and "empty" in empty["note"] and "unrestricted" not in empty["note"]
+
+
 @pytest.mark.asyncio
 async def test_calc_cylinder_force_over_mcp():
     async with Client(gateway) as client:

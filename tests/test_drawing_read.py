@@ -15,7 +15,7 @@ from eng_toolkit.contract import ToolResult
 from eng_toolkit.domains.drawing import tools as drawing_tools
 from eng_toolkit.domains.drawing.tools import read as read_tool
 from eng_toolkit.errors import ToolFailure
-from eng_toolkit.runner import JobHandle
+from eng_toolkit.runner import JobHandle, read_dirs
 
 pytest.importorskip("ezdxf", reason="ezdxf is not installed; run: uv sync --extra drawing")
 pytest.importorskip("pdfminer", reason="pdfminer.six is not installed; run: uv sync --extra drawing")
@@ -263,6 +263,36 @@ def test_with_the_variable_only_those_directories_and_the_workspace_are_read(tmp
     r = failed(call(outside), "input.path_not_allowed")
     assert r.error.details["param"] == "path" and str(other) not in r.error.message and "ENG_TOOLKIT_READ_DIRS" in r.error.message
     assert not r.provenance.input_files
+
+
+@pytest.mark.parametrize("value", ["", "   ", os.pathsep, f" {os.pathsep} "])
+def test_a_variable_that_is_set_but_empty_allows_the_workspace_only(tmp_path, monkeypatch, value):
+    """Set-but-empty must not read as 'unset': an operator who blanked the list wants no directories, not every directory."""
+    monkeypatch.setenv("ENG_TOOLKIT_READ_DIRS", value)
+    assert read_dirs() == []
+    r = failed(call(inch_drawing(tmp_path)), "input.path_not_allowed")
+    assert r.error.details["allowed_directories"] == 0 and "0 configured" in r.error.message
+    assert not r.provenance.input_files
+
+
+def test_with_an_empty_variable_what_another_tool_wrote_into_the_workspace_is_still_read(tmp_path, monkeypatch):
+    monkeypatch.delenv("ENG_TOOLKIT_READ_DIRS", raising=False)
+    first = call(inch_drawing(tmp_path))
+    monkeypatch.setenv("ENG_TOOLKIT_READ_DIRS", "")
+    r = call(artifact(first, "drawing_read.json"))
+    assert r.error is None or r.error.family != "input.path_not_allowed"  # not a drawing, but the workspace passes the allow-list
+
+
+def test_the_empty_variable_is_enforced_by_the_shared_file_check_for_every_tool(tmp_path, monkeypatch):
+    from eng_toolkit.workspace import Workspace
+
+    monkeypatch.setenv("ENG_TOOLKIT_READ_DIRS", "")
+    handle = JobHandle(Workspace().new_job("probe"))
+    outside = tmp_path / "model.step"
+    outside.write_text("x")
+    with pytest.raises(ToolFailure) as caught:
+        handle.input_file(str(outside), param="model_path", extensions=(".step",))
+    assert caught.value.family == "input.path_not_allowed"
 
 
 def test_dot_dot_does_not_escape_the_allow_list(tmp_path, monkeypatch):

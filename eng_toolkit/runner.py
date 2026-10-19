@@ -127,14 +127,16 @@ def _provenance(engine: str, version: str, inputs: dict[str, Any], handle: "JobH
 def read_dirs() -> list[Path] | None:
     """The directories files may be read from, or None when reading is not restricted.
 
-    ``ENG_TOOLKIT_READ_DIRS`` holds directories separated by ``os.pathsep``.  Unset or empty means unrestricted, which is
-    right for the default stdio transport (the server runs as the user who asked); set it when serving over HTTP, where a
-    caller can name any path the server's user can read.
+    ``ENG_TOOLKIT_READ_DIRS`` holds directories separated by ``os.pathsep``.  Unset means unrestricted, which is right for
+    the default stdio transport (the server runs as the user who asked); set it when serving over HTTP, where a caller can
+    name any path the server's user can read.  Set but empty (or only separators and blanks) is a list with no directory:
+    only the server's own workspace can be read.  An operator who blanked the list wants fewer files readable, never more,
+    so an empty value must not fall back to unrestricted.
     """
-    raw = os.environ.get(ENV_READ_DIRS, "").strip()
-    if not raw:
+    raw = os.environ.get(ENV_READ_DIRS)
+    if raw is None:
         return None
-    return [Path(item).expanduser().resolve() for item in raw.split(os.pathsep) if item.strip()]
+    return [Path(item.strip()).expanduser().resolve() for item in raw.split(os.pathsep) if item.strip()]
 
 
 def _inside(path: Path, roots: list[Path]) -> bool:

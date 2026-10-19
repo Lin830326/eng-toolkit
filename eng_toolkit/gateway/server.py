@@ -101,6 +101,17 @@ def _engine_rows(dists: tuple[str, ...]) -> list[dict[str, Any]]:
     return rows
 
 
+def _file_reads_note(dirs: list[Any] | None) -> str:
+    if dirs is None:
+        return f"unrestricted: tools read any path this user can read; set {ENV_READ_DIRS} to limit them, always when serving over http"
+    if not dirs:
+        return (
+            f"{ENV_READ_DIRS} is set but empty, which allows the workspace only: no other directory can be read "
+            f"(unset the variable to remove the limit, or list the directories to allow)"
+        )
+    return f"reads are limited to the {len(dirs)} configured director(ies) and the workspace"
+
+
 def _gateway_result(*, ok: bool, data: dict[str, Any], warnings: list[str], inputs: dict[str, Any]) -> ToolResult:
     return ToolResult(
         ok=ok,
@@ -260,11 +271,7 @@ def toolkit_doctor(
             "restricted": read_dirs() is not None,
             "directories": None if read_dirs() is None else len(read_dirs() or []),
             "env": ENV_READ_DIRS,
-            "note": (
-                f"reads are limited to the {len(read_dirs() or [])} configured director(ies) and the workspace"
-                if read_dirs() is not None
-                else f"unrestricted: tools read any path this user can read; set {ENV_READ_DIRS} to limit them, always when serving over http"
-            ),
+            "note": _file_reads_note(read_dirs()),
         },
         "units": {"pint_ok": units_ok},
         "llm_free": {
