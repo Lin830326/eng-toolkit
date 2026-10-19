@@ -7,6 +7,7 @@ JSON artifact untouched.  ``detail="full"`` adds fields to the items (not items 
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from eng_toolkit.domains.drawing.reading import cut_text
@@ -15,6 +16,14 @@ DETAILS = ("summary", "full")
 MAX_ITEMS = 500
 DEFAULT_ITEMS = 25
 TITLE_ORDER = ("title", "part_number", "revision", "material", "scale", "sheet", "projection", "general_tolerance", "date", "drawn_by", "checked_by", "approved_by", "company", "units")
+
+
+# A text that reads like a hole callout: a diameter sign followed by a number, THRU, DEEP, or a thread such as M6x1.  Found by wording only.
+HOLE_CALLOUT = re.compile(r"[\u00d8\u2300\u2205]\s*\d|\bTHRU\b|\bDEEP\b|(?:^|\s)M\d+(?:\.\d+)?\s*[x\u00d7X]", re.IGNORECASE)
+
+
+def is_hole_callout(text: str) -> bool:
+    return bool(HOLE_CALLOUT.search(text))
 
 
 STRING_LIMIT = 500  # longest string in the answer; the full text is in the JSON file
@@ -78,6 +87,21 @@ def _dim_text(d: dict[str, Any], mm_per_unit: float | None, unit_name: str) -> s
     return f"{d['kind']} {shown}{suffix}{in_mm}{drawn}"
 
 
+def _ordinate_sentence(ordinates: list[dict[str, Any]]) -> str:
+    """``x 10, 90; y 10, 25, 40``: the shown values of the ordinate dimensions per axis, in the order of the file, repeats dropped."""
+    out = []
+    for axis in ("x", "y", None):
+        values: list[str] = []
+        for d in ordinates:
+            if d.get("ordinate_axis") == axis:
+                shown = _num(d["value"]) if d["value"] is not None else _cut(d["text"] or "?", 20)  # the value, not the style's decimals ("10.0000")
+                if shown not in values:
+                    values.append(shown)
+        if values:
+            out.append(f"{axis or 'axis unknown'} {', '.join(values)}")
+    return "; ".join(out)
+
+
 def _title_sentence(tb: dict[str, Any]) -> str:
     if not tb["fields"]:
         return "Title block: none found."
@@ -118,11 +142,20 @@ def dxf_summary(full: dict[str, Any]) -> str:
     parts.append(_title_sentence(full["title_block"]))
     dims = full["dimensions"]
     if dims:
-        listed = "; ".join(_dim_text(d, units["mm_per_unit"], units["name"]) for d in dims[:12])
-        more = f"; and {full['dimensions_total'] - 12} more" if full["dimensions_total"] > 12 else ""
+        ordinates = [d for d in dims if d["kind"] == "ordinate"]
+        others = [d for d in dims if d["kind"] != "ordinate"]
+        listed = "; ".join(_dim_text(d, units["mm_per_unit"], units["name"]) for d in others[:12]) or "ordinates only"
+        other_total = full["dimensions_total"] - len(ordinates)
+        more = f"; and {other_total - 12} more" if other_total > 12 else ""
         parts.append(f"Dimensions ({full['dimensions_total']}): {listed}{more}.")
+        if ordinates:
+            parts.append(f"Ordinates ({len(ordinates)}): {_ordinate_sentence(ordinates)}.")
     else:
         parts.append("Dimensions: none.")
+    callouts = [t for t in full["texts"] if is_hole_callout(t["text"])]
+    if callouts:
+        shown = "; ".join(_cut(t["text"], 60) for t in callouts[:8]) + (f"; and {len(callouts) - 8} more" if len(callouts) > 8 else "")
+        parts.append(f"Hole callouts ({len(callouts)}, found by their wording in the texts): {shown}.")
     views = full["views"]
     if views["count"] is not None:
         parts.append(f"Views: {_n(views['count'], 'group')} of geometry (a guess from positions, confidence {views['confidence']}).")
@@ -130,6 +163,11 @@ def dxf_summary(full: dict[str, Any]) -> str:
     if full["warnings"]:
         parts.append(f"{len(full['warnings'])} warnings: read them.")
     return " ".join(parts)
+
+
+def _hole_callouts(texts: list[dict[str, Any]], n: int) -> dict[str, Any]:
+    found = [{"text": t["text"], "at": t["at"]} for t in texts if is_hole_callout(t["text"])]
+    return {"inferred": True, "total": len(found), "items": found[:n]}
 
 
 def _shape_dxf(full: dict[str, Any], rich: bool, n: int) -> dict[str, Any]:
@@ -147,7 +185,7 @@ def _shape_dxf(full: dict[str, Any], rich: bool, n: int) -> dict[str, Any]:
         if rich:
             dims.append(_drop_none(d))
             continue
-        keys = ("kind", "layer", "measured", "dimlfac", "dimlfac_source", "value", "value_mm", "text", "text_override")
+        keys = ("kind", "ordinate_axis", "layer", "measured", "dimlfac", "dimlfac_source", "value", "value_mm", "text", "text_override")
         row = _drop_none({k: d[k] for k in keys})
         if d["space"] == "paper":
             row["space"] = "paper"
@@ -181,6 +219,7 @@ def _shape_dxf(full: dict[str, Any], rich: bool, n: int) -> dict[str, Any]:
         "title_block": title,
         "dimensions": _listed(dims, full["dimensions_total"], n),
         "texts": _listed(texts, full["texts_total"], n),
+        "hole_callouts": _hole_callouts(full["texts"], n),
         "views": {"count": full["views"]["count"], "inferred": True, "confidence": full["views"]["confidence"], "items": full["views"]["items"][:n]},
         "blocks": {
             "definitions": blocks["definitions"],

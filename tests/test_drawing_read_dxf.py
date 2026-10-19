@@ -289,6 +289,16 @@ def test_a_plain_override_is_the_text_and_a_single_space_hides_it(tmp_path):
     assert d1["text"] == "TYP" and d2["text"] == "" and d2["hidden"] is True
 
 
+def test_an_ordinate_says_which_coordinate_it_measures(tmp_path):
+    ents = (
+        R.dimension(64 + 6, pts={10: (5, 5), 13: (25, 45), 14: (25, 60)}),  # bit 64: an X ordinate
+        R.dimension(6, pts={10: (5, 5), 13: (25, 45), 14: (30, 45)}),
+        R.dimension(0, pts=LINEAR_100, rotation=0),
+    )
+    got = [(d["kind"], d["ordinate_axis"]) for d in dims_of(read(tmp_path, R.document(R.V2000, insunits=4, entities=ents)))]
+    assert got == [("ordinate", "x"), ("ordinate", "y"), ("linear", None)]
+
+
 def test_diameter_radius_aligned_and_ordinate_dimensions(tmp_path):
     ents = (
         R.dimension(3, pts={10: (10, 0), 15: (-10, 0), 11: (0, 0)}),

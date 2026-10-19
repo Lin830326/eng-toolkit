@@ -120,6 +120,46 @@ def test_the_summary_and_the_extent_values_are_those_of_the_geometry_not_of_the_
     assert model["geometry"]["size"] == [100.0, 60.0] and model["with_annotations"]["size"] == [100.0, 85.0]
 
 
+def hole_drawing(tmp_path):
+    part = tuple(RD.line(a, b, "OUTLINE") for a, b in [((0, 0), (100, 0)), ((100, 0), (100, 50)), ((100, 50), (0, 50)), ((0, 50), (0, 0))])
+    ordinates = (
+        RD.dimension(64 + 6, pts={10: (0, 0), 13: (10, 10), 14: (10, -8)}),
+        RD.dimension(64 + 6, pts={10: (0, 0), 13: (90, 10), 14: (90, -8)}),
+        RD.dimension(6, pts={10: (0, 0), 13: (10, 10), 14: (-8, 10)}),
+        RD.dimension(6, pts={10: (0, 0), 13: (50, 25), 14: (-8, 25)}),
+        RD.dimension(6, pts={10: (0, 0), 13: (10, 40), 14: (-8, 40)}),
+    )
+    notes = (RD.text("4× Ø6.6 THRU", (110, 10), 3.5, "DIM"), RD.text("Ø5 DEEP 8", (110, 25), 3.5, "DIM"), RD.text("PLATE", (10, -20), 5, "TITLE"), RD.text("GENERAL NOTES", (10, -30), 3.5, "TEXT"))
+    return dxf_file(tmp_path, RD.document(RD.V2000, insunits=4, entities=(*part, *ordinates, *notes)), encoding="cp1252")  # R2000 is read by its code page; Ø and × are in cp1252
+
+
+def test_the_summary_groups_ordinates_by_axis_and_names_the_hole_callouts(tmp_path):
+    r = call(hole_drawing(tmp_path))
+    summary = r.data["summary"]
+    assert "Ordinates (5): x 10, 90; y 10, 25, 40." in summary
+    assert "Hole callouts (2, found by their wording in the texts): 4× Ø6.6 THRU; Ø5 DEEP 8." in summary
+    assert "ordinate 10 mm" not in summary  # the flat list of ordinate values is gone
+    assert r.data["hole_callouts"] == {"inferred": True, "total": 2, "items": [{"text": "4× Ø6.6 THRU", "at": [110.0, 10.0]}, {"text": "Ø5 DEEP 8", "at": [110.0, 25.0]}]}
+    items = r.data["dimensions"]["items"]
+    assert [(i["kind"], i["ordinate_axis"]) for i in items] == [("ordinate", "x"), ("ordinate", "x"), ("ordinate", "y"), ("ordinate", "y"), ("ordinate", "y")]
+
+
+def test_a_drawing_without_hole_texts_or_ordinates_says_nothing_about_them(tmp_path):
+    r = call(inch_drawing(tmp_path))
+    assert "Ordinates" not in r.data["summary"] and "Hole callouts" not in r.data["summary"]
+    assert r.data["hole_callouts"] == {"inferred": True, "total": 0, "items": []}
+
+
+@pytest.mark.parametrize(
+    ("text", "is_callout"),
+    [("Ø10 THRU", True), ("4× Ø6.6 THRU", True), ("Ø5 DEEP 12", True), ("Ø10 H7 THRU", True), ("6X ⌀ 8", True), ("M6x1 THRU", True), ("THRU ALL", True), ("%%c10", False), ("MATERIAL AL6061", False), ("THROUGH BOLT", False), ("DEEPER", False), ("1:2", False), ("Ø", False)],
+)
+def test_which_texts_count_as_hole_callouts(text, is_callout):
+    from eng_toolkit.domains.drawing import shaping
+
+    assert shaping.is_hole_callout(text) is is_callout
+
+
 def test_a_drawing_of_only_text_has_no_extent_values_and_says_so(tmp_path):
     r = call(dxf_file(tmp_path, RD.document(RD.V2000, insunits=4, entities=(RD.text("NOTE", (10, 20)), RD.text("MORE", (30, 60))))))
     assert "extent_width" not in r.values and "no geometry" in r.data["summary"]

@@ -582,6 +582,7 @@ class DimContext:
         return {
             "handle": str(d.handle),
             "kind": kind,
+            "ordinate_axis": ("x" if D.is_ordinate_x(code) else "y") if kind == "ordinate" else None,
             "layer": d.layer,
             "space": space,
             "dimstyle": style_name,
