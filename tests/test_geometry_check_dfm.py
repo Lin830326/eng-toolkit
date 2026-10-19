@@ -399,6 +399,10 @@ def test_an_unknown_process_says_it_is_unknown(models):
         ("[1, 2]", "input.invalid"),
         ("{not json", "input.invalid"),
         ('{"min_bend_radius_ratio": 1.5}', "input.invalid"),  # a sheet_metal limit given to cnc_milling
+        ('{"min_wall": "1e300 m"}', "input.out_of_range"),
+        ('{"tool_radius": "100.001 m"}', "input.out_of_range"),
+        ('{"max_hole_depth_ratio": 1e7}', "input.out_of_range"),
+        ('{"min_access_directions": 7}', "input.out_of_range"),
     ],
 )
 def test_bad_limits_are_refused_with_a_reason(models, raw, family):
@@ -406,6 +410,11 @@ def test_bad_limits_are_refused_with_a_reason(models, raw, family):
     assert r.ok is False and r.error.message
     if family:
         assert r.error.family == family
+
+
+def test_limits_at_the_ceiling_are_accepted(models):
+    r = run(models["wall"], limits='{"min_wall": "100 m", "max_hole_depth_ratio": 1000000, "min_access_directions": 6}')
+    assert r.ok, r.error
 
 
 def test_bad_tool_axis_and_max_findings_are_refused(models):

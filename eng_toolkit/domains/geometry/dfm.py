@@ -44,6 +44,9 @@ TOLERANCE_MM = 1e-6  # lengths closer than this are equal: used for "exactly the
 PARALLEL = 1e-6  # |sin| of the angle below which two directions count as parallel
 FULL_TURN = 2.0 * math.pi - 1e-6
 MAX_FACES = 2500  # measured: 167 s at 2006 faces, and the time grows faster than linearly
+LIMIT_MAX_LENGTH_MM = 1e5  # a limit above 100 m is not a manufacturing limit; refusing it also keeps the arithmetic finite
+LIMIT_MAX_RATIO = 1e6
+LIMIT_MAX_COUNT = 6  # there are six axis directions
 WALL_SEARCH_FACTOR = 5.0  # walls are searched up to this multiple of the minimum-wall limit
 
 # key -> (kind, default, description); kind "length" takes a string with a unit, "ratio" and "count" a plain number
@@ -111,6 +114,15 @@ def _bad(message: str, **details: Any) -> ToolFailure:
     return ToolFailure("input.invalid", message, details)
 
 
+def _within(key: str, value: float, ceiling: float, unit: str) -> None:
+    if value > ceiling:
+        raise ToolFailure(
+            "input.out_of_range",
+            f"limits.{key}: {value:g}{(' ' + unit) if unit else ''} is above the largest value accepted ({ceiling:g}{(' ' + unit) if unit else ''})",
+            {"param": f"limits.{key}", "maximum": ceiling},
+        )
+
+
 def parse_limits(process: str, raw: str) -> dict[str, float]:
     """The limits for ``process``: defaults overridden by the JSON object ``raw``.  Lengths come back in mm."""
     table = LIMIT_DEFAULTS[process]
@@ -139,6 +151,7 @@ def parse_limits(process: str, raw: str) -> dict[str, float]:
                     raise UnitsError("units.bare_number", f"limits.{key}: give a length with a unit, e.g. \"1 mm\"", {"param": f"limits.{key}"})
                 quantity = require_positive(parse_quantity(value, name=f"limits.{key}", dimension="length"), name=f"limits.{key}")
                 out[key] = float(quantity.to("millimeter").magnitude)
+                _within(key, out[key], LIMIT_MAX_LENGTH_MM, "mm")
             else:
                 if isinstance(value, bool) or not isinstance(value, (int, float, str)):
                     raise _bad(f"limits.{key}: must be a number", param=f"limits.{key}")
@@ -146,7 +159,8 @@ def parse_limits(process: str, raw: str) -> dict[str, float]:
                 if not math.isfinite(number) or number <= 0.0:
                     raise _bad(f"limits.{key}: must be a positive number, got {value!r}", param=f"limits.{key}")
                 out[key] = number
-        except UnitsError:
+                _within(key, number, LIMIT_MAX_COUNT if kind == "count" else LIMIT_MAX_RATIO, "")
+        except (UnitsError, ToolFailure):
             raise
         except ValueError as exc:
             raise _bad(f"limits.{key}: {value!r} is not a number", param=f"limits.{key}") from exc
