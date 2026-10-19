@@ -60,7 +60,7 @@ def test_a_dimlfac_that_converts_inches_to_millimetres_is_called_out(tmp_path):
 def test_an_arc_with_a_flipped_extrusion_is_mirrored_in_the_extents(tmp_path):
     arc = R.entity("ARC", 8, "0", 10, 10, 20, 0, 30, 0, 40, 5, 50, 0, 51, 90, 210, 0, 220, 0, 230, -1, version=R.V12)
     r = read(tmp_path, R.document(R.V12, entities=(arc,)))
-    box = r["extents"]["model"]
+    box = r["extents"]["model"]["geometry"]
     assert box["min"][0] == pytest.approx(-15.0, abs=1e-6) and box["max"][0] == pytest.approx(-10.0, abs=1e-6)
 
 
@@ -77,7 +77,7 @@ def test_polyface_face_records_do_not_pull_the_extents_to_the_origin(tmp_path):
     ents.append(R.entity("VERTEX", 8, "0", 10, 0, 20, 0, 30, 0, 70, 128, 71, 1, 72, 2, 73, 3, version=R.V12))
     ents.append(R.entity("SEQEND", 8, "0", version=R.V12))
     r = read(tmp_path, R.document(R.V12, entities=tuple(ents)))
-    assert r["extents"]["model"]["min"] == pytest.approx([100.0, 100.0])
+    assert r["extents"]["model"]["geometry"]["min"] == pytest.approx([100.0, 100.0])
 
 
 def test_non_finite_coordinates_are_ignored_with_a_warning_and_the_result_is_strict_json(tmp_path):
@@ -85,7 +85,7 @@ def test_non_finite_coordinates_are_ignored_with_a_warning_and_the_result_is_str
     inf = R.entity("LINE", 8, "A", 10, 0, 20, 0, 30, 0, 11, "1e999", 21, 0, 31, 0, version=R.V12)
     r = read(tmp_path, R.document(R.V12, entities=(bad, inf, R.line((0, 0), (10, 0), "A", R.V12))))
     json.dumps(r, allow_nan=False)
-    assert r["extents"]["model"]["max"][0] == pytest.approx(10.0)
+    assert r["extents"]["model"]["geometry"]["max"][0] == pytest.approx(10.0)
     assert any("non-finite" in w for w in r["warnings"])
 
 

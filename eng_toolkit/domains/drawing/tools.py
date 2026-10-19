@@ -292,9 +292,10 @@ def _read_values(full: dict[str, Any]) -> tuple[dict[str, QuantityOut], str]:
             "text_count": _count(full["texts_total"]),
         }
         model = full["extents"].get("model")
-        if model and model["size_mm"]:
-            values["extent_width"] = QuantityOut(quantity=model["size_mm"][0], unit="millimeter")
-            values["extent_height"] = QuantityOut(quantity=model["size_mm"][1], unit="millimeter")
+        geometry = model and model["geometry"]
+        if geometry and geometry["size_mm"]:  # the geometry, not the dimensions and text drawn around it
+            values["extent_width"] = QuantityOut(quantity=geometry["size_mm"][0], unit="millimeter")
+            values["extent_height"] = QuantityOut(quantity=geometry["size_mm"][1], unit="millimeter")
         return values, "entity_count"
     values = {
         "page_count": _count(full["pdf"]["pages_total"]),

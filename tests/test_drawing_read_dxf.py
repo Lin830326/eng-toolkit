@@ -46,7 +46,7 @@ def test_an_inch_drawing_says_inch_and_gives_the_millimetre_values(tmp_path):
     text = R.document(R.V2000, insunits=1, entities=(R.line((0, 0), (10, 0), "A"), R.line((0, 0), (0, 4), "A")))
     r = read(tmp_path, text)
     assert r["units"]["name"] == "inch" and r["units"]["mm_per_unit"] == 25.4 and r["units"]["source"] == "$INSUNITS"
-    ext = r["extents"]["model"]
+    ext = r["extents"]["model"]["geometry"]
     assert ext["size"] == pytest.approx([10.0, 4.0])
     assert ext["size_mm"] == pytest.approx([254.0, 101.6])
     layer = by_name(r["layers"], "A")
@@ -66,7 +66,7 @@ def test_no_units_in_the_file_means_no_millimetre_values_and_a_warning(tmp_path)
     r = read(tmp_path, simple(R.V12))  # R12 has no $INSUNITS
     u = r["units"]
     assert u["insunits"] is None and u["mm_per_unit"] is None and u["name"] == "unitless"
-    assert r["extents"]["model"]["size_mm"] is None
+    assert r["extents"]["model"]["geometry"]["size_mm"] is None
     assert by_name(r["layers"], "A")["length_mm"] is None
     assert any("unit" in w.lower() and "not assum" in w.lower() for w in r["warnings"])
 
@@ -76,7 +76,7 @@ def test_a_header_that_does_not_mention_units_is_unitless_whatever_the_library_w
     for version in (R.V2000, R.V2018):
         r = read(tmp_path, R.document(version, entities=(R.line((0, 0), (10, 0), "A", version),)), name=f"{version}.dxf")
         assert r["units"]["insunits"] is None and r["units"]["mm_per_unit"] is None and r["units"]["name"] == "unitless", version
-        assert r["extents"]["model"]["size_mm"] is None
+        assert r["extents"]["model"]["geometry"]["size_mm"] is None
 
 
 def test_a_file_with_no_header_section_at_all_is_unitless(tmp_path):
@@ -179,11 +179,46 @@ def test_layer_flags_color_and_linetype_are_read_and_undeclared_layers_are_marke
     assert ghost["declared"] is False and ghost["entities"] == 1
 
 
-def test_extents_are_those_of_the_geometry_and_text_is_a_point(tmp_path):
+def test_extents_are_reported_for_the_geometry_alone_and_with_the_annotations(tmp_path):
     ents = (R.line((-5, 2), (10, 2)), R.circle((0, 0), 3), R.text("far", (100, 50)))
     r = read(tmp_path, R.document(R.V2000, insunits=4, entities=ents))
     e = r["extents"]["model"]
-    assert e["min"] == pytest.approx([-5.0, -3.0]) and e["max"] == pytest.approx([100.0, 50.0])
+    assert e["geometry"]["min"] == pytest.approx([-5.0, -3.0]) and e["geometry"]["max"] == pytest.approx([10.0, 3.0])
+    assert e["with_annotations"]["min"] == pytest.approx([-5.0, -3.0]) and e["with_annotations"]["max"] == pytest.approx([100.0, 50.0])  # text is a point
+    assert "min" not in e and "size_mm" not in e  # no ambiguous top-level box
+
+
+def test_a_dimension_and_a_text_line_do_not_make_the_part_bigger(tmp_path):
+    """A 100 x 60 part with one dimension 25 above it and a line of text: the part is 100 x 60, the sheet content 100 x 85."""
+    part = tuple(R.line(a, b, "OUTLINE") for a, b in [((0, 0), (100, 0)), ((100, 0), (100, 60)), ((100, 60), (0, 60)), ((0, 60), (0, 0))])
+    dim = R.dimension(0, pts={10: (50, 85), 13: (0, 60), 14: (100, 60)}, rotation=0)
+    r = read(tmp_path, R.document(R.V2000, insunits=4, entities=(*part, dim, R.text("PART", (10, 85)))))
+    e = r["extents"]["model"]
+    assert e["geometry"]["size"] == pytest.approx([100.0, 60.0]) and e["geometry"]["size_mm"] == pytest.approx([100.0, 60.0])
+    assert e["with_annotations"]["size"] == pytest.approx([100.0, 85.0])
+    assert e["with_annotations"]["max"] == pytest.approx([100.0, 85.0])
+
+
+def test_annotation_only_content_has_no_geometry_extents(tmp_path):
+    r = read(tmp_path, R.document(R.V2000, insunits=4, entities=(R.text("NOTE", (10, 20)), R.mtext("MORE", (30, 40)))))
+    e = r["extents"]["model"]
+    assert e["geometry"] is None and e["with_annotations"]["max"] == pytest.approx([30.0, 40.0])
+
+
+def test_a_block_of_lines_is_geometry_and_a_block_of_text_is_an_annotation(tmp_path):
+    blocks = (R.block("PLATE", R.line((0, 0), (50, 0)), R.line((0, 0), (0, 20))), R.block("NOTE", R.text("hello", (0, 0)), R.text("far", (0, 200))))
+    ents = (R.insert("PLATE", (100, 100)), R.insert("NOTE", (300, 300)))
+    r = read(tmp_path, R.document(R.V2000, insunits=4, blocks=blocks, entities=ents))
+    e = r["extents"]["model"]
+    assert e["geometry"]["min"] == pytest.approx([100.0, 100.0]) and e["geometry"]["max"] == pytest.approx([150.0, 120.0])
+    assert e["with_annotations"]["max"] == pytest.approx([300.0, 500.0])
+
+
+def test_a_block_that_mixes_lines_and_text_counts_only_its_lines_as_geometry(tmp_path):
+    blocks = (R.block("MIX", R.line((0, 0), (10, 0)), R.text("label", (0, 50))),)
+    r = read(tmp_path, R.document(R.V2000, insunits=4, blocks=blocks, entities=(R.insert("MIX", (5, 5)),)))
+    e = r["extents"]["model"]
+    assert e["geometry"]["max"] == pytest.approx([15.0, 5.0]) and e["with_annotations"]["max"] == pytest.approx([15.0, 55.0])
 
 
 def test_paper_space_entities_are_counted_apart_from_model_space(tmp_path):
@@ -192,7 +227,7 @@ def test_paper_space_entities_are_counted_apart_from_model_space(tmp_path):
     r = read(tmp_path, R.document(R.V2000, insunits=4, entities=(R.line((0, 0), (10, 0), "M"), paper)))
     assert r["entities"]["model"] == 1 and r["entities"]["paper"] == 1
     assert {layout["space"] for layout in r["layouts"]} >= {"model", "paper"}
-    assert r["extents"]["paper"]["size"] == pytest.approx([5.0, 0.0])
+    assert r["extents"]["paper"]["geometry"]["size"] == pytest.approx([5.0, 0.0])
 
 
 # --------------------------------------------------------------------------- dimensions
@@ -455,7 +490,7 @@ def test_blocks_that_insert_each_other_are_reported_and_do_not_loop(tmp_path):
     r = read(tmp_path, R.document(R.V2000, insunits=4, blocks=blocks, entities=(R.insert("A", (100, 100)),)))
     assert r["blocks"]["cycles"] and set(r["blocks"]["cycles"][0]) >= {"A", "B"}
     assert any("refers back to itself" in w for w in r["warnings"])
-    assert r["extents"]["model"]["max"][0] >= 110.0  # the part that can be drawn is still measured
+    assert r["extents"]["model"]["geometry"]["max"][0] >= 110.0  # the part that can be drawn is still measured
 
 
 def test_a_block_that_inserts_itself(tmp_path):
@@ -480,17 +515,17 @@ def test_a_billion_laughs_of_blocks_is_measured_in_linear_time(tmp_path):
     started = time.time()
     r = read(tmp_path, R.document(R.V2000, insunits=4, blocks=blocks, entities=(R.insert("B0", (0, 0)),)))
     assert time.time() - started < 10
-    assert r["extents"]["model"]["max"][0] == pytest.approx(9 * n + 1)
+    assert r["extents"]["model"]["geometry"]["max"][0] == pytest.approx(9 * n + 1)
 
 
 def test_a_huge_insert_array_is_counted_not_expanded_and_its_corners_are_in_the_extents(tmp_path):
     blocks = (R.block("U", R.line((0, 0), (1, 0))),)
     r = read(tmp_path, R.document(R.V2000, insunits=4, blocks=blocks, entities=(R.insert("U", (0, 0), columns=3, col_spacing=10.0),)))
-    assert r["extents"]["model"]["max"][0] == pytest.approx(21.0)
+    assert r["extents"]["model"]["geometry"]["max"][0] == pytest.approx(21.0)
     started = time.time()
     r = read(tmp_path, R.document(R.V2000, insunits=4, blocks=blocks, entities=(R.insert("U", (0, 0), columns=1_000_000_000, rows=1_000_000_000, col_spacing=10.0, row_spacing=10.0),)), name="b.dxf")
     assert time.time() - started < 10
-    assert r["extents"]["model"]["max"][0] > 1e9
+    assert r["extents"]["model"]["geometry"]["max"][0] > 1e9
 
 
 def test_an_external_reference_is_listed_and_never_followed(tmp_path):

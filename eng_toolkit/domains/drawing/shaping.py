@@ -100,10 +100,18 @@ def dxf_summary(full: dict[str, Any]) -> str:
     parts.append(f"Model space has {_n(layout['model'], 'entity', 'entities')}" + (f" and paper space {layout['paper']}" if layout["paper"] else "") + f" on {_n(used, 'layer')}.")
     model = full["extents"].get("model")
     if model:
-        w, h = model["size"]
-        text = f"Model extents {_num(w)} x {_num(h)} {_plural_unit(units['name']) if units['mm_per_unit'] else 'drawing units'}"
-        if model["size_mm"] and units["mm_per_unit"] != 1.0:
-            text += f" = {_num(model['size_mm'][0])} x {_num(model['size_mm'][1])} mm"
+        unit_text = _plural_unit(units["name"]) if units["mm_per_unit"] else "drawing units"
+        if model["geometry"]:
+            w, h = model["geometry"]["size"]
+            text = f"Model geometry extents {_num(w)} x {_num(h)} {unit_text}"
+            if model["geometry"]["size_mm"] and units["mm_per_unit"] != 1.0:
+                text += f" = {_num(model['geometry']['size_mm'][0])} x {_num(model['geometry']['size_mm'][1])} mm"
+            if model["with_annotations"]["size"] != model["geometry"]["size"]:
+                aw, ah = model["with_annotations"]["size"]
+                text += f" ({_num(aw)} x {_num(ah)} with dimensions and text)"
+        else:
+            aw, ah = model["with_annotations"]["size"]
+            text = f"Model space holds no geometry, only dimensions and text spanning {_num(aw)} x {_num(ah)} {unit_text}"
         parts.append(text + ".")
     if full["recognised_as"]:
         parts.append(f"Made by {full['recognised_as']}.")
@@ -158,7 +166,7 @@ def _shape_dxf(full: dict[str, Any], rich: bool, n: int) -> dict[str, Any]:
         title["empty_labels"] = tb["empty_labels"]
     extents: dict[str, Any] = {}
     for space, e in full["extents"].items():
-        extents[space] = None if e is None else {k: e[k] for k in ("min", "max", "size", "size_mm")} | ({} if e["complete"] else {"complete": False})
+        extents[space] = None if e is None else {key: e[key] for key in ("geometry", "with_annotations")} | ({} if e["complete"] else {"complete": False})
     blocks = full["blocks"]
     by_type = dict(sorted(full["entities"]["by_type"].items(), key=lambda kv: -kv[1])[:n])
     data: dict[str, Any] = {

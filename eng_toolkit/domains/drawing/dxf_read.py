@@ -41,6 +41,7 @@ RELEASES = {
     "AC1032": "R2018",
 }
 LENGTH_TYPES = ("LINE", "ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "POLYLINE")
+ANNOTATION_TYPES = ("TEXT", "MTEXT", "DIMENSION", "MULTILEADER", "TOLERANCE", "LEADER", "ATTDEF", "ATTRIB")  # what says something about the part but is not the part
 GEOMETRY_TYPES = ("LINE", "ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE", "INSERT", "SOLID", "TRACE", "3DFACE", "POINT", "LEADER", "HATCH")
 VIEW_SKIP_LAYER = re.compile(r"^(FRAME|BORDER|TITLE|TTL|TB|DIM|DIMS|DIMENSION|DIMENSIONS|TEXT|NOTES?|ANNO\w*|DEFPOINTS|CENTER|CENTRE)", re.I)
 MAX_AUDIT_MESSAGES = 8
@@ -340,8 +341,9 @@ class Blocks:
     """Block geometry as convex hulls of points, computed once per block, so a block that contains ten copies of the next
     one, twenty deep, costs twenty hulls and not ten to the twentieth visits."""
 
-    def __init__(self, doc, limits: Rd.Limits, warnings: list[str]):
+    def __init__(self, doc, limits: Rd.Limits, warnings: list[str], geometry_only: bool = False):
         self.doc, self.limits, self.warnings = doc, limits, warnings
+        self.geometry_only = geometry_only  # skip annotations (text, dimensions, leaders), also inside blocks
         self.hulls: dict[str, list[P.Pt]] = {}
         self.cycles: list[list[str]] = []
         self.spent = 0
@@ -404,6 +406,8 @@ class Blocks:
 
     def entity_points(self, e, path: tuple[str, ...]) -> list[P.Pt]:
         kind = e.dxftype()
+        if self.geometry_only and kind in ANNOTATION_TYPES:
+            return []
         if kind == "INSERT":
             return self.insert_points(e, path)
         if kind == "DIMENSION":
@@ -670,6 +674,7 @@ def read(path: str, limits_dict: dict[str, int] | None = None) -> dict[str, Any]
     mm_per_unit = units["mm_per_unit"]
 
     blocks = Blocks(doc, limits, warnings)
+    geo_blocks = Blocks(doc, limits, [], geometry_only=True)  # the same walk without annotations; it reports nothing of its own
     ctx = DimContext(doc, header, units, warnings)
 
     layer_rows: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -698,7 +703,8 @@ def read(path: str, limits_dict: dict[str, int] | None = None) -> dict[str, Any]
     images: list[dict[str, str]] = []
     insert_count = 0
     totals = {"texts": 0, "dimensions": 0, "with_attributes": 0}
-    box: dict[str, P.Box | None] = {"model": None, "paper": None}
+    box: dict[str, P.Box | None] = {"model": None, "paper": None}  # geometry and annotations
+    geo_box: dict[str, P.Box | None] = {"model": None, "paper": None}  # geometry only
     pieces: list[tuple[P.Box, str]] = []  # (box, layer) of geometry in model space, for view clustering
     cap = limits.max_list_items
 
@@ -714,10 +720,14 @@ def read(path: str, limits_dict: dict[str, int] | None = None) -> dict[str, Any]
             if row is None:
                 row = layer_rows[layer_name] = {"name": layer_name, "entities": 0, "length": 0.0, "color": None, "linetype": None, "on": None, "frozen": None, "locked": None, "declared": False}
             row["entities"] += 1
+            geo_pts: list[P.Pt] | None = None
             try:
                 if kind == "INSERT":
                     insert_count += 1
                     pts = blocks.insert_points(e, ())
+                    counted = (_notes.nonfinite, _notes.oblique)
+                    geo_pts = geo_blocks.insert_points(e, ())
+                    _notes.nonfinite, _notes.oblique = counted  # the second walk must not count the same entities again
                     attribs = [(_short(a.dxf.tag, 80), _clean(a.dxf.text)) for a in e.attribs][:MAX_ATTRIBS]
                     if attribs:
                         totals["with_attributes"] += 1
@@ -771,8 +781,11 @@ def read(path: str, limits_dict: dict[str, int] | None = None) -> dict[str, Any]
             except Exception as exc:  # noqa: BLE001 - one broken entity must not lose the drawing
                 pts = []
                 warnings.append(f"{kind} {e.dxf.get('handle', '?')} could not be read ({type(exc).__name__}) and was skipped")
+            if geo_pts is None:
+                geo_pts = [] if kind in ANNOTATION_TYPES else pts
             piece = P.box_of(pts)
             box[space] = P.union(box[space], piece)
+            geo_box[space] = P.union(geo_box[space], P.box_of(geo_pts))
             if piece and space == "model" and kind in GEOMETRY_TYPES:
                 pieces.append((piece, layer_name))
         space_counts[space] += count
@@ -805,20 +818,28 @@ def read(path: str, limits_dict: dict[str, int] | None = None) -> dict[str, Any]
     if _notes.oblique:
         warnings.append(f"{_notes.oblique} entities lie in a plane other than XY (an extrusion direction that is neither the Z axis nor its mirror): their extents are approximate")
 
-    extents: dict[str, Any] = {}
-    for space in ("model", "paper"):
-        b = box[space]
+    def extent(b: P.Box | None) -> dict[str, Any] | None:
         if b is None:
-            extents[space] = None
-            continue
+            return None
         size_xy = [b[2] - b[0], b[3] - b[1]]
-        extents[space] = {
+        return {
             "min": [Rd.round_float(b[0]), Rd.round_float(b[1])],
             "max": [Rd.round_float(b[2]), Rd.round_float(b[3])],
             "size": [Rd.round_float(v) for v in size_xy],
             "size_mm": [Rd.mm(v, mm_per_unit) for v in size_xy] if mm_per_unit else None,
+        }
+
+    extents: dict[str, Any] = {}
+    for space in ("model", "paper"):
+        if box[space] is None:
+            extents[space] = None
+            continue
+        extents[space] = {
+            "geometry": extent(geo_box[space]),
+            "with_annotations": extent(box[space]),
             "complete": not (blocks.out_of_budget or blocks.truncated_depth or bool(blocks.cycles)),
-            "method": "geometry points (arcs and circles sampled every 15 degrees plus axis extremes; text is its insertion point; hatches, images and viewports are not included)",
+            "method": "points of the entities (arcs and circles sampled every 15 degrees plus axis extremes; hatches, images and viewports are not included); "
+            "geometry leaves out text, dimensions, leaders and callouts (also inside blocks), with_annotations adds them: a text is its insertion point, a dimension its definition points",
         }
 
     layers_out = []

@@ -110,6 +110,22 @@ def test_the_full_content_is_an_artifact_and_the_data_points_to_it(tmp_path):
     assert any(a.format == "json" and Path(a.path).name == "drawing_read.json" for a in r.artifacts)
 
 
+def test_the_summary_and_the_extent_values_are_those_of_the_geometry_not_of_the_dimension_and_text(tmp_path):
+    part = tuple(RD.line(a, b, "OUTLINE") for a, b in [((0, 0), (100, 0)), ((100, 0), (100, 60)), ((100, 60), (0, 60)), ((0, 60), (0, 0))])
+    dim = RD.dimension(0, pts={10: (50, 85), 13: (0, 60), 14: (100, 60)}, rotation=0)
+    r = call(dxf_file(tmp_path, RD.document(RD.V2000, insunits=4, entities=(*part, dim, RD.text("PART", (10, 85))))))
+    assert (r.values["extent_width"].quantity, r.values["extent_height"].quantity) == (100.0, 60.0)
+    assert "geometry extents 100 x 60" in r.data["summary"] and "100 x 85 with dimensions and text" in r.data["summary"]
+    model = r.data["extents"]["model"]
+    assert model["geometry"]["size"] == [100.0, 60.0] and model["with_annotations"]["size"] == [100.0, 85.0]
+
+
+def test_a_drawing_of_only_text_has_no_extent_values_and_says_so(tmp_path):
+    r = call(dxf_file(tmp_path, RD.document(RD.V2000, insunits=4, entities=(RD.text("NOTE", (10, 20)), RD.text("MORE", (30, 60))))))
+    assert "extent_width" not in r.values and "no geometry" in r.data["summary"]
+    assert r.data["extents"]["model"]["geometry"] is None
+
+
 def test_unit_less_drawings_are_loud_about_it(tmp_path):
     r = call(dxf_file(tmp_path, RD.document(RD.V12, entities=(RD.line((0, 0), (10, 0), "A", RD.V12),))))
     assert r.data["units"]["mm_per_unit"] is None and "UNKNOWN" in r.data["summary"]
@@ -375,7 +391,7 @@ def test_layers_and_their_lengths_agree_with_an_independent_reader(made):
 def test_the_sheet_is_a_millimetre_drawing_and_its_extents_fit_the_a4_frame(made):
     r, _ = read_back(made["1:1"])
     assert r.data["units"]["name"] == "millimeter" and r.data["units"]["mm_per_unit"] == 1.0
-    width, height = r.data["extents"]["model"]["size_mm"]
+    width, height = r.data["extents"]["model"]["geometry"]["size_mm"]
     assert 150 < width <= 297 and 100 < height <= 210
 
 
