@@ -352,6 +352,29 @@ class _Vector:
 # --------------------------------------------------------------------------- pages
 
 
+def _font_size(char) -> float:
+    """The size the character is drawn at, in points: the Tf size times the scale of the text and current matrices.
+
+    pdfminer gives ``size`` as the height of the glyph's axis-aligned box, which is that size only for upright text; for
+    turned text it is the glyph's advance (every letter of a rotated line a different size).  The box of a glyph is the
+    advance ``adv`` by the font size ``fs`` mapped through the matrix ``(a b c d)``, so its width is ``|a| adv + |c| fs`` and
+    its height ``|b| adv + |d| fs``; ``fs`` comes from whichever of the two the font-size side dominates, and the drawn size
+    is ``fs`` times the length of the matrix's vertical vector ``(c, d)``.
+    """
+    matrix = getattr(char, "matrix", None)
+    adv = getattr(char, "adv", None)
+    if matrix is None or adv is None or char.size is None:
+        return float(char.size)
+    a, b, c, d = (float(v) for v in matrix[:4])
+    if abs(d) >= abs(c) and abs(d) > 1e-9:
+        font_size = (char.height - abs(b) * adv) / abs(d)
+    elif abs(c) > 1e-9:
+        font_size = (char.width - abs(a) * adv) / abs(c)
+    else:
+        return float(char.size)
+    return abs(font_size) * math.hypot(c, d)
+
+
 def _page_content(layout, scale: float, max_lines: int) -> tuple[dict[str, Any], _Vector, int]:
     from pdfminer.layout import LTChar, LTCurve, LTFigure, LTImage, LTRect, LTTextLine
 
@@ -371,7 +394,7 @@ def _page_content(layout, scale: float, max_lines: int) -> tuple[dict[str, Any],
                     line_total += 1
                     if len(lines) < max_lines:
                         x0, y0, x1, y1 = item.bbox
-                        size = statistics.median(c.size for c in members) if members else 0.0
+                        size = statistics.median(_font_size(c) for c in members) if members else 0.0
                         lines.append({"text": text, "bbox_mm": [round(v * scale, 3) for v in (x0, y0, x1, y1)], "size_pt": round(float(size), 2)})
             elif isinstance(item, LTCurve):
                 vector.add(item, isinstance(item, LTRect))

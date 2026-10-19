@@ -77,6 +77,30 @@ def test_known_strings_come_back_with_their_positions_in_millimetres(tmp_path):
     assert y1 > lines["MATERIAL AL6061"]["bbox_mm"][3]  # origin at the bottom: the line at 700 pt is above the one at 650 pt
 
 
+def sizes(tmp_path, content: str) -> list[float]:
+    page = R.document([(content.encode(), R.A4, 0)])
+    return [line["size_pt"] for line in read(tmp_path, page)["pages"][0]["text"]["lines"]]
+
+
+@pytest.mark.parametrize(
+    ("content", "size"),
+    [
+        ("BT /F1 12 Tf 72 600 Td (PLAIN) Tj ET", 12.0),
+        ("BT /F1 1 Tf 12 0 0 12 72 600 Tm (TM) Tj ET", 12.0),  # Tf size x text matrix scale
+        ("q 12 0 0 12 0 0 cm BT /F1 1 Tf 6 50 Td (CM) Tj ET Q", 12.0),  # Tf size x current transformation matrix
+        ("q 2 0 0 2 0 0 cm BT /F1 3 Tf 2 0 0 2 10 100 Tm (BOTH) Tj ET Q", 12.0),  # 3 x 2 x 2
+        ("BT /F1 12 Tf 50 Tz 72 600 Td (HSCALE) Tj ET", 12.0),  # horizontal scaling is not the size
+        ("BT /F1 1 Tf 12 0 0 6 72 600 Tm (FLAT) Tj ET", 6.0),  # the size is the height of the em box
+        ("BT /F1 1 Tf 0 12 -12 0 300 100 Tm (ROTATED) Tj ET", 12.0),  # turned 90 degrees: not the width of each glyph
+        ("BT /F1 1 Tf 10.3923 6 -6 10.3923 100 100 Tm (THIRTY) Tj ET", 12.0),  # turned 30 degrees
+        ("BT /F1 2 Tf 0 -9 9 0 300 700 Tm (DOWN) Tj ET", 18.0),  # turned 270 degrees
+    ],
+)
+def test_the_font_size_is_the_font_size_times_the_text_and_current_matrices(tmp_path, content, size):
+    found = sizes(tmp_path, content)
+    assert found and all(value == pytest.approx(size, abs=0.05) for value in found), found
+
+
 def test_lines_come_in_reading_order_top_to_bottom_then_left_to_right(tmp_path):
     content = b"BT /F1 12 Tf 300 400 Td (RIGHT) Tj ET BT /F1 12 Tf 72 400 Td (LEFT) Tj ET BT /F1 12 Tf 72 700 Td (TOP) Tj ET BT /F1 12 Tf 72 100 Td (BOTTOM) Tj ET"
     r = read(tmp_path, R.document([(content, R.A4, 0)]))
