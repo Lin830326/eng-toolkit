@@ -142,7 +142,9 @@ def _view_of(group: HoleGroup, projections: Sequence[Projection]) -> Projection 
     candidates = [(p, c) for p in projections if (c := _looks_along(p, group.axis)) is not None]
     if not candidates:
         return None
-    seen = [p for p, c in candidates if c > 0.0]  # the hole is entered from the side the eye is on
+    if group.thru:
+        return candidates[0][0]  # the same circle from either side
+    seen = [p for p, c in candidates if c > 0.0]  # a blind hole is entered from the side the eye is on
     return (seen or [p for p, _ in candidates])[0]
 
 

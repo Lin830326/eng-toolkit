@@ -30,6 +30,7 @@ Layout, with the numbers (``conventions.py`` holds them):
 
 from __future__ import annotations
 
+import math
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ from typing import Literal
 
 from eng_toolkit.brep import VIEW_FRAMES, Projection
 from eng_toolkit.domains.drawing import conventions as C
+from eng_toolkit.domains.drawing.callouts import HoleGroup, ViewHolePlan, format_mm
 from eng_toolkit.errors import ToolFailure
 
 Vec2 = tuple[float, float]
@@ -49,7 +51,7 @@ SCALES: tuple[Scale, ...] = ((1, 1), (1, 2), (1, 5), (1, 10), (1, 20), (1, 50), 
 REDUCTIONS: tuple[Scale, ...] = SCALES[:7]
 ENLARGEMENTS: tuple[Scale, ...] = ((10, 1), (5, 1), (2, 1))
 METHODS: tuple[str, ...] = ("third_angle", "first_angle")
-DIMENSION_MODES: tuple[str, ...] = ("auto", "overall", "none")
+DIMENSION_MODES: tuple[str, ...] = ("auto", "overall", "none")  # auto: overall and the holes
 ENLARGE_BELOW = 0.25
 AXIS_TOLERANCE = 1e-6
 
@@ -109,7 +111,7 @@ def parse_dimensions(text: str) -> str:
     value = text.strip().lower()
     if value not in DIMENSION_MODES:
         raise _invalid("dimensions", f"{text!r} is not a dimension mode; use one of {list(DIMENSION_MODES)}", allowed=list(DIMENSION_MODES))
-    return "overall" if value == "auto" else value
+    return value
 
 
 def fold_spaces(value: str) -> str:
@@ -202,6 +204,28 @@ class PlacedDim:
 
 
 @dataclass(frozen=True)
+class PlacedOrdinate:
+    view: str
+    axis: Literal["x", "y"]  # x: measures the horizontal distance from the datum, the text is below the view
+    origin: Vec2  # sheet mm: the datum corner of the view
+    feature: Vec2  # sheet mm: where the extension line starts (a hole centre, or the datum)
+    end: Vec2  # sheet mm: where it ends, in the dimension row nearest the view
+    value_mm: float  # true size
+    text: str
+
+
+@dataclass(frozen=True)
+class PlacedCallout:
+    view: str
+    group: HoleGroup
+    text: str
+    center: Vec2  # sheet mm: centre of the first hole of the group
+    leader: tuple[Vec2, Vec2]  # sheet mm: from the edge of that hole to the text
+    text_at: Vec2  # sheet mm: left end of the baseline
+    height: float
+
+
+@dataclass(frozen=True)
 class Drawing:
     sheet: str
     size_mm: Vec2
@@ -210,8 +234,10 @@ class Drawing:
     views: tuple[PlacedView, ...]
     dims: tuple[PlacedDim, ...]
     lines: tuple[SheetLine, ...]  # frame and title block
-    texts: tuple[SheetText, ...]  # title block and notes
+    texts: tuple[SheetText, ...]  # title block, notes and callouts
     warnings: tuple[str, ...]
+    ordinates: tuple[PlacedOrdinate, ...] = ()
+    callouts: tuple[PlacedCallout, ...] = ()
 
     @property
     def scale_value(self) -> float:
@@ -228,12 +254,6 @@ class Drawing:
 
 
 # --------------------------------------------------------------------------- dimensions
-
-
-def format_mm(value: float) -> str:
-    """A length the way the dimension style prints it: two decimals at most, no trailing zeros."""
-    text = f"{value:.2f}".rstrip("0").rstrip(".")
-    return "0" if text in ("", "-0") else text
 
 
 @dataclass(frozen=True)
@@ -295,7 +315,7 @@ class _Block:
     bottom: dict[str, float]
 
 
-def _block(names: Sequence[str], cells: dict[str, tuple[int, int]], projections: dict[str, Projection], rows: dict[str, tuple[int, int]], scale: Scale) -> _Block:
+def _block(names: Sequence[str], cells: dict[str, tuple[int, int]], projections: dict[str, Projection], rows: dict[str, tuple[int, int]], scale: Scale, right: dict[str, float]) -> _Block:
     s = scale[0] / scale[1]
     size = {n: ((projections[n].bbox_max[0] - projections[n].bbox_min[0]) * s, (projections[n].bbox_max[1] - projections[n].bbox_min[1]) * s) for n in names}
     columns = sorted({cells[n][0] for n in names})
@@ -304,11 +324,12 @@ def _block(names: Sequence[str], cells: dict[str, tuple[int, int]], projections:
     margin_bottom = {r: max(C.DIM_ROW_MM * rows[n][0] for n in names if cells[n][1] == r) for r in lines}
     width_of = {c: max(size[n][0] for n in names if cells[n][0] == c) for c in columns}
     height_of = {r: max(size[n][1] for n in names if cells[n][1] == r) for r in lines}
+    margin_right = {c: max(right.get(n, 0.0) for n in names if cells[n][0] == c) for c in columns}  # room for callout text
     x, column_left = 0.0, {}
     for c in columns:
         x += margin_left[c]
         column_left[c] = x
-        x += width_of[c] + C.VIEW_GAP_MM
+        x += width_of[c] + margin_right[c] + C.VIEW_GAP_MM
     y, row_bottom = 0.0, {}
     for r in lines:
         y += margin_bottom[r]
@@ -445,8 +466,13 @@ def compose(
     scale: Scale | Literal["auto"] = "auto",
     dimensions: str = "overall",
     title: TitleBlock = TitleBlock(),
+    holes: Sequence[ViewHolePlan] = (),
 ) -> Drawing:
     """Place the views on a sheet, plan their dimensions and write the title block.
+
+    ``holes`` (from :func:`eng_toolkit.domains.drawing.callouts.plan`) adds the hole callouts, which take a margin to the
+    right of their view, and the ordinates, which take the dimension row nearest the view below it (x) and to its left (y);
+    the overall dimensions move out by one row.
 
     ``projections`` in the order the caller asked for them; ``sheet`` and ``scale`` as returned by
     :func:`parse_sheet` and :func:`parse_scale`.  ``drawing.layout_failed`` when no sheet and scale fit.
@@ -455,11 +481,20 @@ def compose(
     by_name = {p.view: p for p in projections}
     cells = grid_cells(names, method)
     plans = plan_dimensions(projections, dimensions)
-    rows = {n: (sum(d.orientation == "horizontal" for d in plans if d.view == n), sum(d.orientation == "vertical" for d in plans if d.view == n)) for n in names}
+    hole_by_view = {h.view: h for h in holes if h.view in by_name}
+    ordinate_rows = {n: (int(any(o.axis == "x" for o in h.ordinates)), int(any(o.axis == "y" for o in h.ordinates))) for n, h in hole_by_view.items()}
+    rows = {
+        n: (
+            sum(d.orientation == "horizontal" for d in plans if d.view == n) + ordinate_rows.get(n, (0, 0))[0],
+            sum(d.orientation == "vertical" for d in plans if d.view == n) + ordinate_rows.get(n, (0, 0))[1],
+        )
+        for n in names
+    }
+    right = {n: _callout_margin(h) for n, h in hole_by_view.items() if h.callouts}
     notes = len(title.notes)
 
     def block_at(s: Scale) -> _Block:
-        return _block(names, cells, by_name, rows, s)
+        return _block(names, cells, by_name, rows, s, right)
 
     def fit(sh: str, s: Scale) -> Vec2 | None:
         return _place(block_at(s), sh, notes)
@@ -482,8 +517,10 @@ def compose(
         placed.append(PlacedView(n, p, origin, s, extent))
     view_by_name = {v.name: v for v in placed}
 
+    ordinates = _place_ordinates(hole_by_view, view_by_name)
+    callouts, callout_texts, callout_warnings = _place_callouts(hole_by_view, view_by_name, s)
     dims: list[PlacedDim] = []
-    used = {n: [0, 0] for n in names}
+    used = {n: list(ordinate_rows.get(n, (0, 0))) for n in names}  # the ordinates are in the rows nearest the view
     for plan in plans:
         (x0, y0), (x1, y1) = view_by_name[plan.view].box
         if plan.orientation == "horizontal":
@@ -497,7 +534,83 @@ def compose(
         dims.append(PlacedDim("linear", plan.view, plan.orientation, p1, p2, base, plan.value, format_mm(plan.value), f"bbox:{plan.axis}"))
 
     lines, texts, warnings = _furniture(sheet_name, scale_chosen, method, title)
-    return Drawing(sheet_name, SHEETS[sheet_name], scale_chosen, method, tuple(placed), tuple(dims), tuple(lines), tuple(texts), tuple(warnings))
+    warnings += callout_warnings + _ordinate_warnings(ordinates)
+    return Drawing(
+        sheet_name, SHEETS[sheet_name], scale_chosen, method, tuple(placed), tuple(dims), tuple(lines), tuple(texts + callout_texts), tuple(warnings), tuple(ordinates), tuple(callouts)
+    )
+
+
+# --------------------------------------------------------------------------- hole callouts and ordinates
+
+
+def _callout_margin(plan: ViewHolePlan) -> float:
+    """Width to the right of a view that its callouts need: the gap, the longest text and some air."""
+    return C.CALLOUT_GAP_MM + max(text_em(c.group.text) for c in plan.callouts) * C.CALLOUT_TEXT_HEIGHT_MM + C.CALLOUT_PAD_MM
+
+
+def _place_ordinates(hole_by_view: dict[str, ViewHolePlan], view_by_name: dict[str, PlacedView]) -> list[PlacedOrdinate]:
+    out: list[PlacedOrdinate] = []
+    for name, plan in hole_by_view.items():
+        view = view_by_name[name]
+        (x0, y0), _ = view.box
+        for o in plan.ordinates:
+            feature = view.to_sheet(o.anchor)
+            index = 0 if o.axis == "x" else 1
+            end = (feature[0], round(y0 - C.DIM_ROW_MM, 6)) if o.axis == "x" else (round(x0 - C.DIM_ROW_MM, 6), feature[1])
+            value = round(abs(o.value - plan.datum[index]), 6)
+            out.append(PlacedOrdinate(name, o.axis, view.to_sheet(plan.datum), feature, end, value, format_mm(value)))
+    return out
+
+
+def _place_callouts(hole_by_view: dict[str, ViewHolePlan], view_by_name: dict[str, PlacedView], scale: float) -> tuple[list[PlacedCallout], list[SheetText], list[str]]:
+    """Callout texts in a column to the right of the view, each as high as its hole unless that would touch the one above."""
+    placed: list[PlacedCallout] = []
+    texts: list[SheetText] = []
+    warnings: list[str] = []
+    height = C.CALLOUT_TEXT_HEIGHT_MM
+    for name, plan in hole_by_view.items():
+        view = view_by_name[name]
+        (_, _), (x1, _) = view.box
+        centres = sorted(((view.to_sheet(c.center), c) for c in plan.callouts), key=lambda item: (-item[0][1], item[1].group.hole_ids))
+        x_text, previous = round(x1 + C.CALLOUT_GAP_MM, 6), None
+        for centre, callout in centres:
+            y = centre[1] if previous is None else min(centre[1], previous - C.CALLOUT_PITCH_MM)
+            previous = y
+            target = (round(x_text - 1.0, 6), round(y, 6))
+            dx, dy = target[0] - centre[0], target[1] - centre[1]
+            length = math.hypot(dx, dy)
+            radius = callout.group.diameter_mm / 2.0 * scale
+            start = centre if length <= radius else (round(centre[0] + radius * dx / length, 6), round(centre[1] + radius * dy / length, 6))
+            at = (x_text, round(y - height / 2.0, 6))
+            text = callout.group.text
+            placed.append(PlacedCallout(name, callout.group, text, centre, (start, target), at, height))
+            texts.append(SheetText(text, at, height, C.DIM.name))
+            box = (x_text, at[1], x_text + text_em(text) * height, at[1] + height)
+            for other in view_by_name.values():
+                if other.name != name and _overlap(box, other.box):
+                    warnings.append(f"the callout {text!r} of the {name} view runs into the {other.name} view; use a smaller scale or fewer views")
+    return placed, texts, warnings
+
+
+def _overlap(box: tuple[float, float, float, float], other: tuple[Vec2, Vec2]) -> bool:
+    (ox0, oy0), (ox1, oy1) = other
+    return box[0] < ox1 and ox0 < box[2] and box[1] < oy1 and oy0 < box[3]
+
+
+def _ordinate_warnings(ordinates: list[PlacedOrdinate]) -> list[str]:
+    """Ordinate texts that would print on top of each other (the texts are not moved)."""
+    warnings: list[str] = []
+    text_height = float(C.DIMSTYLE_VALUES["dimtxt"])  # type: ignore[arg-type]
+    for view in dict.fromkeys(o.view for o in ordinates):
+        for axis in ("x", "y"):
+            row = sorted((o for o in ordinates if o.view == view and o.axis == axis), key=lambda o: o.end[0] if axis == "x" else o.end[1])
+            for a, b in zip(row, row[1:]):
+                pitch = abs((b.end[0] - a.end[0]) if axis == "x" else (b.end[1] - a.end[1]))
+                needed = (text_em(a.text) + text_em(b.text)) * text_height / 2.0 + 1.0 if axis == "x" else text_height + 1.0
+                if pitch < needed:
+                    warnings.append(f"{view} view: the {axis} ordinates {a.text} and {b.text} are {pitch:.1f} mm apart and their texts overlap; use a larger scale or a larger sheet")
+                    break
+    return warnings
 
 
 def _choose(sheets: list[str], fixed_scale: Scale | None, block_at, fit) -> tuple[str, Scale, Vec2] | None:
@@ -547,7 +660,9 @@ __all__ = [
     "SCALES",
     "SHEETS",
     "Drawing",
+    "PlacedCallout",
     "PlacedDim",
+    "PlacedOrdinate",
     "PlacedView",
     "SheetLine",
     "SheetText",

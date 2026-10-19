@@ -69,10 +69,9 @@ def _vector(value: Any, pointer: str) -> tuple[float, float, float]:
 def _word(value: Any, pointer: str) -> str:
     if not isinstance(value, str):
         raise _bad(pointer, f"expected a string, got {value!r}")
-    text = " ".join(value.split())
-    if len(text) > MAX_WORD or not text.isprintable():
-        raise _bad(pointer, f"at most {MAX_WORD} printable characters on one line")
-    return text
+    if len(value) > MAX_WORD or not value.isprintable():
+        raise _bad(pointer, f"at most {MAX_WORD} printable characters on one line (no control characters or line breaks)")
+    return value.strip()
 
 
 def parse(raw: bytes) -> Intent:

@@ -187,6 +187,19 @@ def _build(ezdxf, drawing: Drawing):
             dxfattribs={"layer": C.DIM.name},
         )
         entity.render()
+    for o in drawing.ordinates:
+        add = msp.add_ordinate_x_dim if o.axis == "x" else msp.add_ordinate_y_dim
+        entity = add(
+            o.feature,
+            (round(o.end[0] - o.feature[0], 6), round(o.end[1] - o.feature[1], 6)),
+            origin=o.origin,
+            dimstyle=C.DIMSTYLE,
+            override={"dimlfac": drawing.dimlfac},
+            dxfattribs={"layer": C.DIM.name},
+        )
+        entity.render()
+    for callout in drawing.callouts:
+        msp.add_leader(list(callout.leader), dimstyle=C.DIMSTYLE, dxfattribs={"layer": C.DIM.name})
     for text in drawing.texts:
         attribs = {"layer": text.layer, "style": styles.get(text.text, C.TEXT_STYLE)}
         if text.width_factor != 1.0:

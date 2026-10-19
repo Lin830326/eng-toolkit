@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -19,7 +20,8 @@ from pydantic import Field
 
 from eng_toolkit import __version__, brep
 from eng_toolkit.contract import QuantityOut, ToolResult
-from eng_toolkit.domains.drawing import dxf, reading, shaping
+from eng_toolkit.domains.drawing import callouts as K
+from eng_toolkit.domains.drawing import dxf, features, reading, shaping
 from eng_toolkit.domains.drawing import sheet as S
 from eng_toolkit.errors import EngineUnavailable, ToolFailure
 from eng_toolkit.isolated import MEMORY_MB, TIMEOUT_S, run_isolated
@@ -31,7 +33,11 @@ ENGINE_READ = "eng_toolkit.drawing.read"
 TOOL_NAMES: tuple[str, ...] = ("make_views", "read")
 FORMATS: tuple[str, ...] = ("dxf", "pdf")
 LATER_FORMATS: tuple[str, ...] = ("svg", "png")
-COVERAGE = "dimensions: overall size only; hole callouts, centre lines, ordinates, SVG/PNG: later slices"
+COVERAGE = (
+    "dimensions: overall size, hole callouts and hole ordinates, all measured from the geometry (fit and thread only from a bound features file); "
+    "not: tolerances, counterbores, countersinks, centre lines, features on inclined faces"
+)
+INVENTORY_FACE_LIMIT = 3000  # a model with more faces gets no hole callouts: the hole search would take too long
 DETERMINISM = (
     "The same model and arguments give the same bytes in drawing.dxf and drawing.pdf, in any process: ezdxf's fixed "
     "metadata option is set while writing, and the CLASS records of the DXF, whose order would depend on PYTHONHASHSEED, "
@@ -67,6 +73,75 @@ def _parse_formats(text: str) -> list[str]:
     return [fmt for fmt in FORMATS if fmt == "dxf" or fmt in wanted]
 
 
+@dataclass
+class _Holes:
+    plan: K.Plan | None = None
+    warnings: list[str] = field(default_factory=list)
+    features: dict[str, Any] = field(default_factory=lambda: {"given": False, "status": "not given"})
+
+
+def _plan_holes(job: JobHandle, solid: brep.Solid, projections: list[brep.Projection], features_path: str) -> _Holes:
+    """The holes of the model (from the geometry), the declared intent that belongs to this exact file, and the callout plan."""
+    out = _Holes()
+    model_hash = job.input_files[-1].sha256
+    intent = None
+    if features_path.strip():
+        file = job.input_file(features_path, param="features_path", extensions=(".json",), max_bytes=features.MAX_BYTES)
+        intent = features.parse(file.read_bytes())
+        out.features = {
+            "given": True,
+            "path": job.input_files[-1].path,
+            "step_sha256_in_file": intent.step_sha256,
+            "model_sha256": model_hash,
+            "declared_holes": len(intent.holes),
+            "matched_holes": 0,
+        }
+        if intent.step_sha256 != model_hash:
+            out.features["status"] = "hash_mismatch"
+            out.warnings.append(
+                f"features_path: the features file belongs to a model with sha256 {intent.step_sha256[:12]}..., not to this one "
+                f"({model_hash[:12]}...): no fit or thread is printed, the callouts come from the geometry alone"
+            )
+            intent = None
+        else:
+            out.features["status"] = "bound"
+    if solid.faces > INVENTORY_FACE_LIMIT:
+        out.warnings.append(f"The model has {solid.faces} faces, more than the {INVENTORY_FACE_LIMIT} the hole search handles: no hole callouts or ordinates")
+        return out
+    holes = brep.inventory(solid).holes
+    bound = features.bind(intent.holes, holes) if intent else {}
+    if intent:
+        out.features["matched_holes"] = len(bound)
+        if len(bound) < len(intent.holes):
+            out.warnings.append(
+                f"features_path: {len(intent.holes) - len(bound)} of the {len(intent.holes)} declared holes are not in the model "
+                "(another diameter, direction, depth or position) and add no fit or thread"
+            )
+    if not holes and solid.solids == 0:
+        out.warnings.append("No holes can be found in a model without a closed solid, so there are no hole callouts or ordinates")
+    out.plan = K.plan(K.group_holes(holes, bound), projections)
+    out.warnings += out.plan.warnings
+    return out
+
+
+def _callout_row(c: S.PlacedCallout) -> dict[str, Any]:
+    g = c.group
+    return {
+        "text": c.text,
+        "view": c.view,
+        "count": g.count,
+        "diameter_mm": g.diameter_mm,
+        "thru": g.thru,
+        "depth_mm": g.depth_mm,
+        "axis": list(g.axis),
+        "hole_ids": list(g.hole_ids),
+        "entry_points_mm": [list(e) for e in g.entries],
+        "fit": g.fit,
+        "thread": g.thread,
+        "from_features_file": g.intent,
+    }
+
+
 MAKE_VIEWS_DESCRIPTION = (
     "Make an engineering drawing of a 3D model (.step .stp .iges .igs .brep): orthographic views with hidden lines "
     "removed exactly, on an ISO 5457 sheet with frame and title block, one overall dimension per model axis (true size at "
@@ -89,7 +164,7 @@ def make_views(
     sheet: Annotated[str, Field(description=f"auto or one of {', '.join(S.SHEETS)} (ISO 5457, landscape)")] = "auto",
     scale: Annotated[str, Field(description=f"auto or an ISO 5455 scale: {', '.join(S.scale_text(s) for s in S.SCALES)}")] = "auto",
     hidden_lines: Annotated[bool, Field(description="Draw the hidden edges as dashed lines")] = True,
-    dimensions: Annotated[str, Field(description="auto (= overall), overall (each axis once) or none")] = "auto",
+    dimensions: Annotated[str, Field(description="auto (overall size plus hole callouts and ordinates), overall (each axis once) or none")] = "auto",
     title: Annotated[str, Field(description="Title block title, at most 80 characters; any language")] = "",
     part_number: Annotated[str, Field(description="Title block part number, at most 40 characters")] = "",
     material: Annotated[str, Field(description="Title block material, at most 40 characters")] = "",
@@ -97,6 +172,7 @@ def make_views(
     general_tolerance: Annotated[str, Field(description="Printed as text only, e.g. 'ISO 2768-m'; at most 80 characters")] = "",
     notes: Annotated[str, Field(description="Notes separated by ';', at most 6 of at most 100 characters; printed above the title block")] = "",
     formats: Annotated[str, Field(description="Comma list of dxf, pdf. The DXF is always written. svg and png come later")] = "dxf,pdf",
+    features_path: Annotated[str, Field(description="features.json written by geometry_make_part: adds the fit (H7) and thread of its holes to the callouts when it belongs to this exact model file")] = "",
 ) -> ToolResult:
     inputs = {
         "model_path": model_path,
@@ -113,6 +189,7 @@ def make_views(
         "general_tolerance": general_tolerance,
         "notes": notes,
         "formats": formats,
+        "features_path": features_path,
     }
 
     def compute(job: JobHandle) -> Computed:
@@ -135,7 +212,14 @@ def make_views(
         if solid.faces == 0:
             raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
         projections = [brep.project(solid, name, hidden=hidden_lines) for name in names]
-        drawing = S.compose(projections, method=method, sheet=sheet_arg, scale=scale_arg, dimensions=mode, title=block)
+        hole_data = _Holes()
+        if mode == "auto":
+            hole_data = _plan_holes(job, solid, projections, features_path)
+        elif features_path.strip():
+            hole_data.warnings.append(f"features_path was not read: dimensions={mode!r} draws no hole callouts, which is all the file is used for")
+        drawing = S.compose(
+            projections, method=method, sheet=sheet_arg, scale=scale_arg, dimensions=mode, title=block, holes=hole_data.plan.views if hole_data.plan else ()
+        )
 
         artifacts = [job.write_bytes("drawing.dxf", dxf.write_dxf(drawing), fmt="dxf")]
         if "pdf" in wanted:
@@ -171,6 +255,7 @@ def make_views(
                     f"{view.name} view: the exact projection could not be cross-checked against a polygonal one, so "
                     "hidden-line errors near fillets and hole rims are possible; check this view against the model"
                 )
+        warnings += hole_data.warnings
         warnings += dxf.text_warnings(drawing)
         warnings += [f"Layout: {w}" for w in drawing.warnings]
         if "pdf" in wanted:
@@ -179,7 +264,8 @@ def make_views(
         values = {
             "scale": QuantityOut(quantity=drawing.scale_value, unit="dimensionless"),
             "view_count": QuantityOut(quantity=float(len(drawing.views)), unit="dimensionless"),
-            "dimension_count": QuantityOut(quantity=float(len(drawing.dims)), unit="dimensionless"),
+            "dimension_count": QuantityOut(quantity=float(len(drawing.dims) + len(drawing.ordinates)), unit="dimensionless"),
+            "callout_count": QuantityOut(quantity=float(len(drawing.callouts)), unit="dimensionless"),
             "sheet_width": QuantityOut(quantity=drawing.size_mm[0], unit="millimeter"),
             "sheet_height": QuantityOut(quantity=drawing.size_mm[1], unit="millimeter"),
         }
@@ -207,6 +293,9 @@ def make_views(
                 {"kind": d.kind, "view": d.view, "orientation": d.orientation, "value_mm": d.value_mm, "text": d.text, "source": d.source}
                 for d in drawing.dims
             ],
+            "callouts": [_callout_row(c) for c in drawing.callouts],
+            "ordinates": [{"view": o.view, "axis": o.axis, "value_mm": o.value_mm, "text": o.text} for o in drawing.ordinates],
+            "features": hole_data.features,
             "layout_warnings": list(drawing.warnings),
             "coverage": COVERAGE,
             "determinism": DETERMINISM,
@@ -222,9 +311,10 @@ def make_views(
         compute=compute,
         engines=("cadquery-ocp-novtk", "ezdxf", "numpy"),
         standing_warnings=(
-            "Dimensions are derived from the bounding box of the projected geometry: overall size only. The drawing is "
-            "unreviewed and not a complete manufacturing drawing (no tolerances, fits, surface finish, hole callouts or "
-            "centre lines); check it against the model before anyone builds from it.",
+            "Overall dimensions come from the bounding box of the projected geometry; hole callouts and ordinates come from the "
+            "geometry's own hole search (a fit or thread only from a features file bound to this model by hash). The drawing is "
+            "unreviewed and not a complete manufacturing drawing (no tolerances, surface finish or centre lines; counterbores "
+            "and countersinks are not recognised); check it against the model before anyone builds from it.",
         ),
     )
 

@@ -79,6 +79,10 @@ DIMSTYLE_VALUES: dict[str, object] = {
     "dimtxsty": TEXT_STYLE,
 }
 DIM_ROW_MM = 8.0  # distance of the first dimension line from the view, and between rows
+CALLOUT_TEXT_HEIGHT_MM = 3.5  # hole callouts, to the right of the view that shows the holes
+CALLOUT_GAP_MM = 6.0  # from the right edge of the view to the text
+CALLOUT_PAD_MM = 2.0
+CALLOUT_PITCH_MM = 6.0  # between the baselines of two callouts of one view
 
 # --------------------------------------------------------------------------- sheet (ISO 5457, landscape)
 

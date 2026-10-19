@@ -102,7 +102,13 @@ def probe(models):
 
 @pytest.fixture(scope="module")
 def half(models):
-    return run(models["probe"], scale="1:2")
+    return run(models["probe"], scale="1:2", dimensions="overall")
+
+
+@pytest.fixture(scope="module")
+def overall(models):
+    """The probe part with the overall dimensions only: the layout of tests/test_drawing_sheet.py without hole callouts."""
+    return run(models["probe"], dimensions="overall")
 
 
 # --------------------------------------------------------------------------- the result
@@ -113,16 +119,18 @@ def test_defaults_choose_a4_at_one_to_one_and_report_the_numbers(probe):
     assert r.ok, r.error
     assert r.provenance.engine == "eng_toolkit.drawing.make_views"
     assert r.value == r.values["scale"] and r.value.unit == "dimensionless" and r.value.quantity == 1.0
-    assert r.values["view_count"].quantity == 3 and r.values["dimension_count"].quantity == 3
+    assert r.values["view_count"].quantity == 3 and r.values["dimension_count"].quantity == 7  # 3 overall + 4 ordinates
+    assert r.values["callout_count"].quantity == 1
     assert (r.values["sheet_width"].quantity, r.values["sheet_height"].quantity) == (297.0, 210.0)
     assert r.values["sheet_width"].unit == "millimeter"
     assert r.data["sheet"] == {"name": "A4", "size_mm": [297.0, 210.0], "scale_text": "1:1", "projection": "third_angle"}
     assert r.data["formats"] == ["dxf", "pdf"]
-    assert r.data["coverage"] == "dimensions: overall size only; hole callouts, centre lines, ordinates, SVG/PNG: later slices"
+    assert "hole callouts and hole ordinates" in r.data["coverage"] and "centre lines" in r.data["coverage"]
     assert r.data["determinism"]
 
 
-def test_the_views_are_reported_with_their_numbers(probe):
+def test_the_views_are_reported_with_their_numbers(overall):
+    probe = overall
     assert [v["name"] for v in probe.data["views"]] == ["front", "top", "right"]
     front, top, right = (view(probe, n) for n in ("front", "top", "right"))
     assert front["extent_mm"] == pytest.approx([100.0, 20.0], abs=1e-3)
@@ -238,7 +246,7 @@ def sizes_from_geometry_measure(model) -> list[float]:
 
 @pytest.mark.parametrize("scale", ["auto", "1:2", "2:1"])
 def test_dimensions_read_the_sizes_geometry_measure_reports(models, scale):
-    r = run(models["probe"], scale=scale)
+    r = run(models["probe"], scale=scale, dimensions="overall")
     assert r.ok, r.error
     expected = sizes_from_geometry_measure(models["probe"])
     assert expected == pytest.approx([20.0, 50.0, 100.0], abs=1e-6)
@@ -431,7 +439,7 @@ def test_percent_codes_in_user_text_are_escaped_so_they_stay_literal(models):
     assert "2. 5% off" in raw  # a lone % needs no escape
     back = read_texts(r)
     assert "%%c10 %%d %%p" in back and f"1. {LITERAL}" in back and "2. 5% off" in back
-    assert not any(c in "".join(back) for c in "Ø°±")
+    assert not any(c in text for text in back for c in "°±")  # no code was turned into a symbol (the Ø of the hole callout is not from a code)
 
 
 def test_a_real_code_is_still_a_code_for_the_reader_so_the_round_trip_tells_them_apart(models, tmp_path):

@@ -354,6 +354,7 @@ def made(tmp_path_factory):
     make = getattr(make_views, "fn", make_views)
 
     def run(**kw):
+        kw.setdefault("dimensions", "overall")  # these checks are about the overall dimensions; the hole callouts have their own round trip (test_drawing_callouts_tool.py)
         r = make(model_path=str(model), title="PROBE", part_number="P-1001", material="AL6061", revision="B", **kw)
         assert r.ok, r.error
         return r

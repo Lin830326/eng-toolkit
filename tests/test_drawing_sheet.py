@@ -369,7 +369,7 @@ def test_known_choices_are_accepted():
     assert S.parse_sheet("a3") == "A3" and S.parse_sheet("AUTO") == "auto"
     assert S.parse_scale("1:2") == (1, 2) and S.parse_scale("10:1") == (10, 1) and S.parse_scale("Auto") == "auto"
     assert S.parse_method("First_Angle") == "first_angle"
-    assert S.parse_dimensions("auto") == "overall" and S.parse_dimensions("none") == "none"
+    assert S.parse_dimensions("auto") == "auto" and S.parse_dimensions("overall") == "overall" and S.parse_dimensions("none") == "none"
 
 
 def test_free_text_is_limited_printable_and_may_be_non_ascii():
@@ -385,3 +385,94 @@ def test_notes_are_split_on_semicolons_and_limited():
     assert failure(lambda: S.parse_notes(";".join("n" * 10 for _ in range(7)))).details["limit"] == 6
     assert failure(lambda: S.parse_notes("n" * 101)).details["limit"] == 100
     assert len(S.parse_notes(";".join("n" * 100 for _ in range(6)))) == 6
+
+
+# --------------------------------------------------------------------------- hole callouts and ordinates (slice S6)
+
+
+def hole_plan(names=("front", "top", "right"), at=(25.0, 25.0, 20.0)):
+    from eng_toolkit.brep import HoleInfo
+    from eng_toolkit.domains.drawing import callouts as K
+
+    hole = HoleInfo(id="H1", face_ids=(1,), diameter_mm=10.0, axis=(0.0, 0.0, -1.0), entry_mm=at, depth_mm=20.0, thru=True)
+    return K.plan(K.group_holes([hole]), views(names)).views
+
+
+def test_a_hole_callout_takes_a_margin_to_the_right_of_its_view_and_the_ordinates_two_rows():
+    """Probe part with the Ø10 hole at (25, 25), callout "Ø10 THRU" (8 characters x 0.62 x 3.5 mm = 17.36 mm of text).
+
+    margin to the right of the top view's column: gap 6 + 17.36 + air 2 = 25.36.  Column 0: 16 mm to its left (the top view
+    has the Y dimension and the y ordinates), 100 mm, 25.36, gap 15; column 1: 50 mm  ->  16 + 100 + 25.36 + 15 + 50 = 206.36.
+    Rows: front row 8 (X dimension) + 20, gap 15, top row 8 (x ordinates) + 50  ->  8 + 20 + 15 + 8 + 50 = 101.
+    Corner ((25 + 282 - 206.36) / 2, (55 + 195 - 101) / 2) = (50.32, 74.5).
+    """
+    d = compose(holes=hole_plan())
+    v = by_name(d)
+    assert (d.sheet, d.scale) == ("A4", (1, 1))
+    assert v["front"].origin == pytest.approx((50.32 + 16.0, 74.5 + 8.0), abs=1e-4)
+    assert v["top"].origin == pytest.approx((50.32 + 16.0, 74.5 + 8.0 + 20.0 + 15.0 + 8.0), abs=1e-4)
+    assert v["right"].origin == pytest.approx((50.32 + 16.0 + 100.0 + 25.36 + 15.0, 74.5 + 8.0), abs=1e-4)
+
+
+def test_the_ordinates_sit_in_the_rows_nearest_the_view_and_the_overall_dimension_moves_out():
+    d = compose(holes=hole_plan())
+    (x0, y0), _ = by_name(d)["top"].box
+    assert (x0, y0) == pytest.approx((66.32, 125.5), abs=1e-4)
+    xs = sorted((o.value_mm, o.feature, o.end) for o in d.ordinates if o.axis == "x")
+    assert [(value, f, e) for value, f, e in xs] == [
+        (0.0, pytest.approx((x0, y0), abs=1e-4), pytest.approx((x0, y0 - 8.0), abs=1e-4)),
+        (25.0, pytest.approx((x0 + 25.0, y0 + 25.0), abs=1e-4), pytest.approx((x0 + 25.0, y0 - 8.0), abs=1e-4)),
+    ]
+    ys = sorted((o.value_mm, o.feature, o.end) for o in d.ordinates if o.axis == "y")
+    assert [(value, f, e) for value, f, e in ys] == [
+        (0.0, pytest.approx((x0, y0), abs=1e-4), pytest.approx((x0 - 8.0, y0), abs=1e-4)),
+        (25.0, pytest.approx((x0 + 25.0, y0 + 25.0), abs=1e-4), pytest.approx((x0 - 8.0, y0 + 25.0), abs=1e-4)),
+    ]
+    assert all(o.origin == pytest.approx((x0, y0), abs=1e-4) for o in d.ordinates)
+    (y_dim,) = [dim for dim in d.dims if dim.source == "bbox:y"]
+    assert y_dim.base[0] == pytest.approx(x0 - 16.0, abs=1e-4)  # the second column to the left of the top view
+    (x_dim,) = [dim for dim in d.dims if dim.source == "bbox:x"]
+    assert x_dim.view == "front" and x_dim.base[1] == pytest.approx(by_name(d)["front"].box[0][1] - 8.0, abs=1e-4)  # the front view has no ordinates
+
+
+def test_the_callout_text_starts_6_mm_right_of_the_view_at_the_height_of_its_hole():
+    d = compose(holes=hole_plan())
+    (x0, y0), (x1, _) = by_name(d)["top"].box
+    (c,) = d.callouts
+    centre = (x0 + 25.0, y0 + 25.0)
+    assert (c.view, c.text, c.height) == ("top", "Ø10 THRU", 3.5)
+    assert c.center == pytest.approx(centre, abs=1e-4)
+    assert c.text_at == pytest.approx((x1 + 6.0, centre[1] - 1.75), abs=1e-4)
+    start, end = c.leader
+    assert end == pytest.approx((x1 + 5.0, centre[1]), abs=1e-4) and start == pytest.approx((centre[0] + 5.0, centre[1]), abs=1e-4)  # from the edge of the R5 circle
+    assert [t.text for t in d.texts if t.layer == "DIM"] == ["Ø10 THRU"]
+
+
+def test_two_callouts_of_one_view_are_stacked_six_millimetres_apart():
+    from eng_toolkit.brep import HoleInfo
+    from eng_toolkit.domains.drawing import callouts as K
+
+    holes = [
+        HoleInfo(id="H1", face_ids=(1,), diameter_mm=6.0, axis=(0.0, 0.0, -1.0), entry_mm=(20.0, 40.0, 20.0), depth_mm=20.0, thru=True),
+        HoleInfo(id="H2", face_ids=(2,), diameter_mm=8.0, axis=(0.0, 0.0, -1.0), entry_mm=(60.0, 42.0, 20.0), depth_mm=20.0, thru=True),
+    ]
+    d = compose(holes=K.plan(K.group_holes(holes), views(("front", "top", "right"))).views)
+    first, second = sorted(d.callouts, key=lambda c: -c.text_at[1])
+    assert (first.text, second.text) == ("Ø8 THRU", "Ø6 THRU")  # the higher hole (y = 42) first
+    assert first.text_at[1] == pytest.approx(first.center[1] - 1.75, abs=1e-4)
+    assert second.leader[1][1] == pytest.approx(first.leader[1][1] - 6.0, abs=1e-4)  # 2 mm lower than its hole would be: pushed down to keep 6 mm
+
+
+def test_the_views_without_holes_are_laid_out_as_before():
+    plain = compose()
+    with_empty_plan = compose(holes=())
+    assert plain == with_empty_plan and plain.ordinates == () and plain.callouts == ()
+
+
+def test_ordinates_too_close_together_are_warned_not_moved():
+    from eng_toolkit.brep import HoleInfo
+    from eng_toolkit.domains.drawing import callouts as K
+
+    holes = [HoleInfo(id=f"H{i}", face_ids=(i,), diameter_mm=1.0, axis=(0.0, 0.0, -1.0), entry_mm=(30.0 + 2.0 * i, 25.0, 20.0), depth_mm=20.0, thru=True) for i in range(1, 4)]
+    d = compose(holes=K.plan(K.group_holes(holes), views(("front", "top", "right"))).views)
+    assert any("x ordinates" in w and "overlap" in w for w in d.warnings)
