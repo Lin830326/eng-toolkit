@@ -76,7 +76,7 @@ def run_tool(
             artifacts=artifacts,
             provenance=_provenance(engine, version, inputs, handle, engines),
             warnings=[],
-            error=ToolError(family=exc.family, message=exc.message, details=exc.details),
+            error=ToolError(family=exc.family, message=handle.restore_paths(exc.message), details=handle.restore_paths(exc.details)),
         )
     except Exception as exc:  # noqa: BLE001 - engine failures must still honour the contract
         result = ToolResult(
@@ -86,7 +86,7 @@ def run_tool(
             warnings=[],
             error=ToolError(
                 family="engine.failure",
-                message=f"{type(exc).__name__}: {exc}",
+                message=handle.restore_paths(f"{type(exc).__name__}: {exc}"),
                 details={"traceback": traceback.format_exc(limit=5)},
             ),
         )
@@ -155,6 +155,7 @@ class JobHandle:
     def __init__(self, job):
         self._job = job
         self.input_files: list[FileRef] = []
+        self._copies: dict[str, str] = {}  # the copy a tool reads -> the path the caller named
 
     @property
     def job_id(self) -> str:
@@ -220,7 +221,25 @@ class JobHandle:
         finally:
             os.close(fd)
         self.input_files.append(FileRef(path=real, bytes=copied, sha256=digest))
+        self._copies[str(copy)] = str(path)
         return copy
+
+    def restore_paths(self, value: Any) -> Any:
+        """``value`` with every mention of an input's job-directory copy replaced by the path the caller named.
+
+        A tool reads the copy made by :meth:`input_file`, so its own errors name the copy; the caller never saw that path
+        and cannot map it to their file.  Strings are rewritten in plain and in repr (doubled backslash) form, lists and
+        dicts recursively; anything else is returned unchanged.
+        """
+        if isinstance(value, str):
+            for copy, original in sorted(self._copies.items(), key=lambda item: -len(item[0])):
+                value = value.replace(copy, original).replace(copy.replace("\\", "\\\\"), original.replace("\\", "\\\\"))
+            return value
+        if isinstance(value, list):
+            return [self.restore_paths(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self.restore_paths(item) for key, item in value.items()}
+        return value
 
     def write_json(self, filename: str, obj: Any) -> Artifact:
         return self._job.write_json(filename, obj)
