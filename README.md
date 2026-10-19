@@ -98,7 +98,7 @@ claude mcp add --scope user eng-toolkit -- uv run --directory "C:\path\to\eng-to
 claude mcp add --scope user eng-toolkit -- uv run --extra scan --directory "C:\path\to\eng-toolkit" eng-toolkit
 ```
 
-（其他客戶端的 `args` 同理，在 `run` 後加 `"--extra", "scan"`。）或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可；它不帶 scan extra，要用掃描檢查請改成上面的指令）。接上後 `/mcp` 應看到 `eng-toolkit` 與十二個工具（要用 `geometry_measure`、`geometry_make_part` 則註冊指令至少帶 `--extra cad`，要用 `drawing_make_views`、`drawing_read` 帶 `--extra drawing`）。
+（其他客戶端的 `args` 同理，在 `run` 後加 `"--extra", "scan"`。）或用本 repo 附的專案層級 `.mcp.json`（在 repo 內開 Claude Code 即可；它不帶 scan extra，要用掃描檢查請改成上面的指令）。接上後 `/mcp` 應看到 `eng-toolkit` 與各領域的工具（`toolkit_list_tools` 列出全部）（要用 `geometry_measure`、`geometry_make_part` 則註冊指令至少帶 `--extra cad`，要用 `drawing_make_views`、`drawing_read` 帶 `--extra drawing`）。
 
 **Cursor**（`~/.cursor/mcp.json` 或專案 `.cursor/mcp.json`）
 
@@ -405,7 +405,7 @@ uv run pytest -v
 uv run eng-toolkit doctor
 ```
 
-新增領域：在 `eng_toolkit/domains/<name>/` 建一個 FastMCP 子 server 與 `DOMAIN = DomainInfo(...)`，在 `eng_toolkit/domains/__init__.py::all_domains` 註冊，把用到的引擎加進 `licenses.KNOWN`。每個工具用 `runner.run_tool` 包裝，輸入過 `units.parse_quantity`，就自動符合契約、落檔與來源紀錄。
+新增領域：在 `eng_toolkit/domains/<name>/` 建一個 FastMCP 子 server 與 `DOMAIN = DomainInfo(...)`；領域與引擎都是**被發現的**，不用改任何共用清單：套件下有 `DOMAIN` 就會掛上閘道，領域自己的 `engines.py` 寫 `ENGINES = (Engine(...), ...)` 就會進授權登記表。清單見 [docs/adding-a-domain.md](docs/adding-a-domain.md)。每個工具用 `runner.run_tool` 包裝，輸入過 `units.parse_quantity`，就自動符合契約、落檔與來源紀錄。
 
 ## 設計紀錄
 

@@ -68,6 +68,16 @@ async def test_toolkit_doctor_returns_contract_and_is_healthy():
     assert r.data["units"]["pint_ok"] is True
 
 
+def tiers(domain: dict) -> dict:
+    return {e["dist"]: e["tier"] for e in domain["engines"]}
+
+
+def assert_has(actual: dict, expected: dict) -> None:
+    """Every expected engine is still registered with its tier; a domain may add engines without touching this test."""
+    missing = {k: v for k, v in expected.items() if actual.get(k) != v}
+    assert not missing, missing
+
+
 @pytest.mark.asyncio
 async def test_toolkit_list_tools_lists_domains_and_engines():
     async with Client(gateway) as client:
@@ -75,46 +85,46 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
     assert r.ok
     assert EXPECTED_TOOLS <= set(r.data["tools"])
     calc = next(d for d in r.data["domains"] if d["name"] == "calc")
-    assert set(calc["tools"]) == {"calc_cylinder_force", "calc_pipe_pressure_drop"}
+    assert {"calc_cylinder_force", "calc_pipe_pressure_drop"} <= set(calc["tools"])
     engines = {e["dist"]: e for e in calc["engines"]}
     assert engines["fluids"]["installed"] and engines["fluids"]["version"]
     assert engines["fluids"]["tier"] == "permissive"
     assert engines["pint"]["tier"] == "permissive"
     metrology = next(d for d in r.data["domains"] if d["name"] == "metrology")
-    assert set(metrology["tools"]) == {
+    assert {
         "metrology_fit_limits",
         "metrology_stackup_1d",
         "metrology_fit_search",
         "metrology_check_scan",
-    }
-    assert {e["dist"]: e["tier"] for e in metrology["engines"]} == {
+    } <= set(metrology["tools"])
+    assert_has(tiers(metrology), {
         "pint": "permissive",
         "numpy": "permissive",
         "open3d": "permissive",
         "cadquery-ocp-novtk": "lgpl-dynamic",
-    }
+    })
     ocp = next(e for e in metrology["engines"] if e["dist"] == "cadquery-ocp-novtk")
     assert ocp["optional"] is True
     assert "OCCT" in ocp["bundled_license"]
     geometry = next(d for d in r.data["domains"] if d["name"] == "geometry")
-    assert set(geometry["tools"]) == {"geometry_measure", "geometry_make_part"}
-    assert {e["dist"]: e["tier"] for e in geometry["engines"]} == {
+    assert {"geometry_measure", "geometry_make_part"} <= set(geometry["tools"])
+    assert_has(tiers(geometry), {
         "pint": "permissive",
         "numpy": "permissive",
         "cadquery-ocp-novtk": "lgpl-dynamic",
-    }
+    })
     ocp = next(e for e in geometry["engines"] if e["dist"] == "cadquery-ocp-novtk")
     assert ocp["optional"] is True
     assert "OCCT" in ocp["bundled_license"]
     drawing = next(d for d in r.data["domains"] if d["name"] == "drawing")
-    assert set(drawing["tools"]) == {"drawing_make_views", "drawing_read"}
-    assert {e["dist"]: e["tier"] for e in drawing["engines"]} == {
+    assert {"drawing_make_views", "drawing_read"} <= set(drawing["tools"])
+    assert_has(tiers(drawing), {
         "pint": "permissive",
         "numpy": "permissive",
         "cadquery-ocp-novtk": "lgpl-dynamic",
         "ezdxf": "permissive",
         "pdfminer.six": "permissive",
-    }
+    })
     ezdxf = next(e for e in drawing["engines"] if e["dist"] == "ezdxf")
     assert ezdxf["optional"] is True and ezdxf["declared_license"] == "MIT"
 
@@ -275,15 +285,28 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_TOOLS = 12  # 2 gateway + 2 calc + 4 metrology + 2 geometry + 2 drawing
+# The budget is per domain, so adding a domain (or a tool inside one) edits no shared number: every domain may expose a few coarse
+# tools, the gateway itself two.  A long flat list is what small local models are bad at.
+MAX_TOOLS_PER_DOMAIN = 6
+GATEWAY_TOOLS = 2
 
 
 @pytest.mark.asyncio
 async def test_tool_schemas_are_small_model_friendly():
     """Few coarse tools; every input is a basic JSON type with a description (no unions/objects)."""
+    from collections import Counter
+
+    from eng_toolkit.domains import all_domains
+
     async with Client(gateway) as client:
         tools = await client.list_tools()
-    assert len(tools) <= MAX_TOOLS, [t.name for t in tools]
+    names = [d.name for d in all_domains()]
+    per_domain = Counter(t.name.split("_", 1)[0] for t in tools)
+    for domain, count in per_domain.items():
+        limit = GATEWAY_TOOLS if domain == "toolkit" else MAX_TOOLS_PER_DOMAIN
+        assert count <= limit, (domain, count, [t.name for t in tools if t.name.startswith(domain + "_")])
+    assert set(per_domain) <= {"toolkit", *names}, per_domain
+    assert len(tools) <= GATEWAY_TOOLS + MAX_TOOLS_PER_DOMAIN * len(names), [t.name for t in tools]
     for tool in tools:
         assert tool.description and len(tool.description) > 20, tool.name
         schema = tool.input_schema if hasattr(tool, "input_schema") else tool.inputSchema
