@@ -406,6 +406,7 @@ uv run eng-toolkit doctor
 * [docs/geometry-drawing/design.md](docs/geometry-drawing/design.md)：`geometry` 與 `drawing` 領域的合成設計（目前實作了 `geometry_measure`、`geometry_make_part`、`drawing_make_views` 的第一部分與 `drawing_read`）：兩份候選設計與跨評審結論、切片交付計畫、待專案負責人決定的問題。
 * [docs/geometry-drawing/drawing-determinism.md](docs/geometry-drawing/drawing-determinism.md)：`drawing_make_views` 的 DXF 與 PDF 為何、如何做到跨行程位元組相同：實測哪裡不同、採用的修法與成本。
 * [docs/geometry-drawing/drawing-read.md](docs/geometry-drawing/drawing-read.md)：`drawing_read` 的設計決策（輸出與大小控制、DXF 與 PDF 引擎的選擇與授權、子行程隔離、HTTP 下的讀檔白名單、單位與 DIMLFAC 規則、標題欄推斷）、驗證方法與小模型（Haiku）可用性檢查結果。
+* [docs/geometry-drawing/drawing-fixes.md](docs/geometry-drawing/drawing-fixes.md)：獨立驗證後修的七個小問題（只存曲面的 IGES 接縫、全形空白、`%%` 跳脫、PDF 字級與預設線寬、外框分開報告、`ENG_TOOLKIT_READ_DIRS` 空值）：實測、決定與被否決的做法。
 * [docs/geometry-drawing/make-part-eval.md](docs/geometry-drawing/make-part-eval.md)：`geometry_make_part` 的小模型評測（基準為 Claude Haiku，由專案負責人決定）：18 題的解析解、與 build123d 的對照結果、據此新增 `sphere` 與 `cone`、結果的限制，以及如何重跑。
 
 ## 路線圖（摘要）
