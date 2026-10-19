@@ -211,6 +211,10 @@ Checked and solid, from the same review: 15 of 15 forced timeouts with no leftov
 * The allow-list is not a full sandbox: the allowed directories themselves are trusted, and `ENG_TOOLKIT_READ_DIRS` set to an empty string means "the workspace only" (changed from "unrestricted", which failed open; only an unset variable is unrestricted).
 * Found by the coordinator, not changed: PDF font sizes are not multiplied by the text matrix (a scaled text shows its unscaled size); the default PDF line width is reported as 0; the extents include dimension lines and text positions, so they are larger than the part.
 
+## Changes made for drawings with hole callouts (slice S6)
+
+The Haiku check in [drawing-callouts.md](drawing-callouts.md) found that the summary of a drawing with hole callouts left the model guessing. `dimensions[].ordinate_axis` (`x`/`y`, from group 70 bit 64) is new, the summary groups ordinates by axis and says that 0 is the datum, hole-like texts (a diameter sign and a digit, `THRU`, `DEEP`, `M6x1`) are listed with the number of holes each names, and `data.hole_callouts` lists them with positions and says they are inferred. Known gaps: the wording rule can flag a note such as `Ø100 FLANGE`; an x and a y ordinate are not paired into a hole position when there are several holes; text turned 90 degrees in a PDF comes back as one line per character in reverse order (found by the coordinator's verification of the fixes slice; the font size is right, the grouping is pdfminer's).
+
 ## How to verify independently
 
 ```bash

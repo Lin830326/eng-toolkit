@@ -4,7 +4,7 @@
 
 > ⚠️ 所有輸出皆標示 `review_status: "unreviewed"`。本工具箱的結果是**未經工程核可**的估算，必須由合格工程師複核後才能用於設計或採購。
 
-目前有四個領域：`calc`（油壓計算）、`metrology`（ISO 286 配合查詢與反查、一維公差堆疊、掃描點雲對 STEP 模型的偏差檢查）與 `geometry`（STEP／IGES／BREP 模型的精確量測：體積、面積、質量、面與孔清單、距離角度厚度查詢；以及由 JSON 規格建出零件並輸出 STEP／GLB／STL／BREP，不執行任何程式碼），以及 `drawing`（由 3D 模型產生含隱藏線、ISO 圖框與標題欄、外形尺寸的三視圖，輸出可重現的 DXF 與向量 PDF）。2D 圖檔讀取／EDA／模擬等領域尚未開始。
+目前有四個領域：`calc`（油壓計算）、`metrology`（ISO 286 配合查詢與反查、一維公差堆疊、掃描點雲對 STEP 模型的偏差檢查）與 `geometry`（STEP／IGES／BREP 模型的精確量測：體積、面積、質量、面與孔清單、距離角度厚度查詢；以及由 JSON 規格建出零件並輸出 STEP／GLB／STL／BREP，不執行任何程式碼），以及 `drawing`（由 3D 模型產生含隱藏線、ISO 圖框與標題欄、外形尺寸、孔標註與座標尺寸的三視圖，輸出可重現的 DXF、向量 PDF、SVG 與 PNG；讀 DXF 與 PDF 圖檔）。2D 圖檔讀取／EDA／模擬等領域尚未開始。
 
 ---
 
@@ -29,7 +29,7 @@ Claude Code / 任何 MCP 客戶端
 │   │        geometry_measure  (OCP, 選用 cad extra)  │
 │   │        geometry_make_part (JSON 規格 → STEP, OCP)│
 │   ├── mount(namespace="drawing") ► drawing 子 server   │
-│   │        drawing_make_views (OCP + ezdxf, 選用 drawing extra)│
+│   │        drawing_make_views (OCP + ezdxf, 選用 drawing extra; PNG 另需 png extra)│
 │   │        drawing_read  (ezdxf + pdfminer.six, 選用 drawing extra)│
 │   └── (未來) eda_* ...                            │
 ├────────────────────────────────────────────────┤
@@ -54,19 +54,19 @@ cd eng-toolkit
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-腳本會：安裝 uv → `uv sync --all-groups --extra scan --extra drawing` 依 `uv.lock` 建立 `.venv`（含掃描檢查用的 Open3D 與 OpenCASCADE，以及出圖用的 ezdxf） → 執行 `toolkit_doctor` → 印出註冊到 Claude Code 的指令。
+腳本會：安裝 uv → `uv sync --all-groups --extra scan --extra drawing --extra png` 依 `uv.lock` 建立 `.venv`（含掃描檢查用的 Open3D 與 OpenCASCADE，以及出圖用的 ezdxf 與 PNG 用的 pypdfium2） → 執行 `toolkit_doctor` → 印出註冊到 Claude Code 的指令。
 
 手動安裝（已有 uv）：
 
 ```bash
-uv sync --all-groups --extra scan --extra drawing
+uv sync --all-groups --extra scan --extra drawing --extra png
 uv run eng-toolkit doctor        # 健康檢查；exit 0 = 全部通過
 uv run pytest                    # 測試
 ```
 
 `metrology_check_scan` 用的 Open3D 與 `cadquery-ocp-novtk` 合計約 340 MB、匯入也慢，所以放在選用的 `scan` extra，不在核心依賴也不在 `dev` 群組：預設的 `uv sync` 與 `uv run eng-toolkit` 不會安裝它們，要用這個工具（或跑它的測試）請加 `--extra scan`，開發環境用上面的 `uv sync --all-groups --extra scan`。沒裝時工具仍會列出，呼叫會回 `engine.unavailable` 並附安裝指令，`toolkit_doctor` 也只標示 `not-installed (optional)`，不算失敗；`metrology_check_scan` 的測試會因缺少引擎而跳過並提示 `uv sync --extra scan`。
 
-OpenCASCADE 另有獨立的 `cad` extra（`uv sync --extra cad`，只裝 `cadquery-ocp-novtk`）：它是所有 3D 幾何程式碼（`eng_toolkit/brep/`）唯一的引擎，`geometry_measure` 只需要它；`scan` extra 等於 `cad` 加 Open3D。沒裝時 `geometry_measure` 同樣會列出，呼叫回 `engine.unavailable` 並附 `uv sync --extra cad`，它的測試會因缺少引擎而跳過。出圖另有 `drawing` extra（`uv sync --extra drawing`，等於 `cad` 加 `ezdxf`，MIT 授權；連帶的 fonttools、pyparsing 也是 MIT）：`drawing_make_views` 需要它，沒裝時工具照常列出、呼叫回 `engine.unavailable` 並附 `uv sync --extra drawing`。**不要安裝 `ezdxf[draw]`**：它會帶進 PyMuPDF（AGPL），`toolkit_doctor` 會把已安裝的 `pymupdf` 當成授權政策失敗；本工具箱的 PDF 由自己的後端（約 150 行）寫出。`drawing_read` 讀 PDF 用 pdfminer.six（MIT，在 `drawing` extra）；測試用的獨立 PDF 讀取器 `pdfplumber`（MIT，連帶 `pypdfium2`）只在 `dev` 群組。各引擎屬於哪個 extra 記在 `licenses.KNOWN`（`Engine.extra`），`engine.unavailable` 的安裝指令由它產生，`tests/test_extras_registry.py` 會檢查它與 `pyproject.toml` 一致。
+OpenCASCADE 另有獨立的 `cad` extra（`uv sync --extra cad`，只裝 `cadquery-ocp-novtk`）：它是所有 3D 幾何程式碼（`eng_toolkit/brep/`）唯一的引擎，`geometry_measure` 只需要它；`scan` extra 等於 `cad` 加 Open3D。沒裝時 `geometry_measure` 同樣會列出，呼叫回 `engine.unavailable` 並附 `uv sync --extra cad`，它的測試會因缺少引擎而跳過。出圖另有 `drawing` extra（`uv sync --extra drawing`，等於 `cad` 加 `ezdxf`，MIT 授權；連帶的 fonttools、pyparsing 也是 MIT）：`drawing_make_views` 需要它，沒裝時工具照常列出、呼叫回 `engine.unavailable` 並附 `uv sync --extra drawing`。**不要安裝 `ezdxf[draw]`**：它會帶進 PyMuPDF（AGPL），`toolkit_doctor` 會把已安裝的 `pymupdf` 當成授權政策失敗；本工具箱的 PDF 由自己的後端（約 150 行）寫出。`drawing_make_views` 的 PNG 另需 `png` extra（`uv sync --extra png`，等於 `drawing` 加 `pypdfium2`，BSD-3-Clause 或 Apache-2.0；wheel 內含 PDFium 與它的函式庫，全是寬鬆授權，沒有 GPL 或 AGPL，清單在 `licenses.KNOWN`）：只用來把**本工具剛寫出的 PDF** 轉成圖片，不解析任何呼叫者給的檔案；沒裝時要求 `png` 會回 `engine.unavailable` 並附 `uv sync --extra png`，其餘格式不受影響。`drawing_read` 讀 PDF 用 pdfminer.six（MIT，在 `drawing` extra）；測試用的獨立 PDF 讀取器 `pdfplumber`（MIT，連帶 `pypdfium2`）只在 `dev` 群組。各引擎屬於哪個 extra 記在 `licenses.KNOWN`（`Engine.extra`），`engine.unavailable` 的安裝指令由它產生，`tests/test_extras_registry.py` 會檢查它與 `pyproject.toml` 一致。
 
 ---
 
@@ -278,24 +278,30 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 限制：規格 64 kB、200 個 feature、全規格孔位置共 1000、運算式 200 字元。v1 沒有螺紋幾何、放樣、掃掠、陣列、鏡射、薄殼、傾斜拉伸與匯入既有 STEP；結果同樣是未經工程核可的模型。
 
 ### `drawing_make_views`
-由 3D 模型（`.step` `.stp` `.iges` `.igs` `.brep`）產生工程圖：正投影視圖、以 OpenCASCADE 精確移除隱藏線（隱藏線以虛線畫出）、ISO 5457 橫向圖紙（A4 到 A0）含圖框與 ISO 7200 標題欄、每個模型軸各標一次的外形尺寸（ISO 129「同一尺寸只標一次」）、你給的備註。輸出 `drawing.dxf`（R2018、單位 mm，是來源檔）與 `drawing.pdf`（向量、真實比例、一頁）。需要選用的 `drawing` extra（`uv sync --extra drawing`）。輸入（全為字串、布林）：`model_path`、`views`（逗號分隔，自 `front back top bottom left right iso`，最多 7 個、不可重複，預設 `front,top,right`）、`projection`（`third_angle` 預設，或 `first_angle`）、`sheet`（`auto` 或 `A4` `A3` `A2` `A1` `A0`）、`scale`（`auto` 或 `1:1` `1:2` `1:5` `1:10` `1:20` `1:50` `1:100` `2:1` `5:1` `10:1`）、`hidden_lines`（預設 true）、`dimensions`（`auto` 目前等於 `overall`，或 `none`）、`title`（80 字）、`part_number`（40）、`material`（40）、`revision`（8，預設 `A`）、`general_tolerance`（80，只印文字）、`notes`（以 `;` 分隔，最多 6 則、每則 100 字，印在標題欄上方）、`formats`（`dxf`、`pdf`；DXF 一律輸出；`svg`、`png` 之後的版本才有，現在回 `input.invalid`）。文字可用中文等非 ASCII 字元，不可含控制字元、Tab 與換行。全形空白（U+3000）、不換行空白（U+00A0）與其他空白分隔字元（Unicode 類別 Zs）會被接受並一律寫成一般空白（U+0020），結果有警告說明：許多 CAD 字型沒有這些字元的字形，PDF 後端也無法得知缺字的字寬，一般空白在每個檢視器都一樣。文字中的 `%%c`、`%%d`、`%%p`（以及 `%%u`、`%%nnn`）在 DXF 單行文字裡是控制碼，檢視器會畫成直徑、度數、正負號；你輸入的字面文字會被跳脫（連續兩個以上的 `%`，每個寫成 `%%%`；單獨的 `%` 不用），所以顯示的就是你輸入的字。`drawing_read` 讀回時會把真正的控制碼轉成符號（`%%c10` 讀出 `Ø10`），而跳脫過的字面文字讀出原樣（`%%c10`），所以兩者讀回來分得出來；測試以 `drawing_read` 讀回 `drawing_make_views` 的 DXF 驗證，並確認 PDF 畫的是字面字元而不是符號。
+由 3D 模型（`.step` `.stp` `.iges` `.igs` `.brep`）產生工程圖：正投影視圖、以 OpenCASCADE 精確移除隱藏線（隱藏線以虛線畫出）、ISO 5457 橫向圖紙（A4 到 A0）含圖框與 ISO 7200 標題欄、每個模型軸各標一次的外形尺寸（ISO 129「同一尺寸只標一次」）、孔標註與孔位的座標尺寸（由幾何求出，見下）、你給的備註。輸出 `drawing.dxf`（R2018、單位 mm，是來源檔）與 `drawing.pdf`（向量、真實比例、一頁），`formats` 可再加 `drawing.svg`（向量，本工具箱自己的寫出器）與 `drawing.png`（把 PDF 轉成 8 位元灰階圖片）。需要選用的 `drawing` extra（`uv sync --extra drawing`）；PNG 另需 `png` extra（`uv sync --extra png`）。輸入（全為字串、布林）：`model_path`、`views`（逗號分隔，自 `front back top bottom left right iso`，最多 7 個、不可重複，預設 `front,top,right`）、`projection`（`third_angle` 預設，或 `first_angle`）、`sheet`（`auto` 或 `A4` `A3` `A2` `A1` `A0`）、`scale`（`auto` 或 `1:1` `1:2` `1:5` `1:10` `1:20` `1:50` `1:100` `2:1` `5:1` `10:1`）、`hidden_lines`（預設 true）、`dimensions`（`auto`：外形尺寸加孔標註與座標尺寸；`overall`：只有外形尺寸；`none`）、`title`（80 字）、`part_number`（40）、`material`（40）、`revision`（8，預設 `A`）、`general_tolerance`（80，只印文字）、`notes`（以 `;` 分隔，最多 6 則、每則 100 字，印在標題欄上方）、`formats`（`dxf`、`pdf`、`svg`、`png` 的逗號清單；DXF 一律輸出；只要 `png` 時不寫 `drawing.pdf` 檔，PNG 在記憶體裡由 PDF 轉成）、`features_path`（`geometry_make_part` 寫出的 `features.json`，見下）。文字可用中文等非 ASCII 字元，不可含控制字元、Tab 與換行。全形空白（U+3000）、不換行空白（U+00A0）與其他空白分隔字元（Unicode 類別 Zs）會被接受並一律寫成一般空白（U+0020），結果有警告說明：許多 CAD 字型沒有這些字元的字形，PDF 後端也無法得知缺字的字寬，一般空白在每個檢視器都一樣。文字中的 `%%c`、`%%d`、`%%p`（以及 `%%u`、`%%nnn`）在 DXF 單行文字裡是控制碼，檢視器會畫成直徑、度數、正負號；你輸入的字面文字會被跳脫（連續兩個以上的 `%`，每個寫成 `%%%`；單獨的 `%` 不用），所以顯示的就是你輸入的字。`drawing_read` 讀回時會把真正的控制碼轉成符號（`%%c10` 讀出 `Ø10`），而跳脫過的字面文字讀出原樣（`%%c10`），所以兩者讀回來分得出來；測試以 `drawing_read` 讀回 `drawing_make_views` 的 DXF 驗證，並確認 PDF 畫的是字面字元而不是符號。
 
-**版面。** 第三角法（預設）：上視圖在前視圖上方、右視圖在其右、左視圖在其左、下視圖在下方、後視圖在右視圖右側；第一角法左右上下對調。等角視圖放在上排最右欄上方的空位。視圖間距 15 mm，再加該視圖尺寸列所在那一側每列 8 mm（水平尺寸在視圖下方、垂直尺寸在左側）。`sheet="auto"` 與 `scale="auto"`：先取最大的標準比例（依序 1:1、1:2、1:5、1:10、1:20、1:50、1:100），再取放得下的最小圖紙；視圖加間距與尺寸列在 1:1 時不到 A4 圖框面積四分之一的零件會放大到 10:1、5:1、2:1 中放得下的最大者。只固定圖紙或只固定比例時，只搜尋另一個。放不下回 `drawing.layout_failed`，`details.fits_at_scale` 與 `details.fits_on_sheet` 指出放得下的比例或圖紙。
+**版面。** 第三角法（預設）：上視圖在前視圖上方、右視圖在其右、左視圖在其左、下視圖在下方、後視圖在右視圖右側；第一角法左右上下對調。等角視圖放在上排最右欄上方的空位。視圖間距 15 mm，再加該視圖尺寸列所在那一側每列 8 mm（水平尺寸在視圖下方、垂直尺寸在左側）；有孔標註的視圖，右側另留一塊放標註文字的空間（6 mm 加最長文字寬再加 2 mm），有座標尺寸的視圖多占一列在下方、一列在左側，離視圖最近，外形尺寸往外移一列。`sheet="auto"` 與 `scale="auto"`：先取最大的標準比例（依序 1:1、1:2、1:5、1:10、1:20、1:50、1:100），再取放得下的最小圖紙；視圖加間距與尺寸列在 1:1 時不到 A4 圖框面積四分之一的零件會放大到 10:1、5:1、2:1 中放得下的最大者。只固定圖紙或只固定比例時，只搜尋另一個。放不下回 `drawing.layout_failed`，`details.fits_at_scale` 與 `details.fits_on_sheet` 指出放得下的比例或圖紙。
 
-**尺寸。** 真正的 `DIMENSION` 實體，`DIMLFAC = 1/比例`，所以任何比例下顯示的都是真實尺寸（1:2 的圖上 50 mm 長的線顯示 100）；樣式 `ENG_ISO`（字高 3.5、箭頭 3）與公制線型 `HIDDEN_MM`、`CENTER_MM` 是本工具箱自己的，因為 ezdxf 預設樣式在 mm 圖上只是一個點。數值是投影可見幾何外框的大小。
+**尺寸。** 真正的 `DIMENSION` 實體，`DIMLFAC = 1/比例`，所以任何比例下顯示的都是真實尺寸（1:2 的圖上 50 mm 長的線顯示 100）；樣式 `ENG_ISO`（字高 3.5、箭頭 3）與公制線型 `HIDDEN_MM`、`CENTER_MM` 是本工具箱自己的，因為 ezdxf 預設樣式在 mm 圖上只是一個點。外形尺寸的數值是投影可見幾何外框的大小。
+
+**孔標註與座標尺寸（`dimensions="auto"`）。** 孔由 `geometry_measure` 同一套孔搜尋（`brep.inventory`）從幾何找出，不信任任何檔案裡的數字。孔依直徑、方向、貫穿或深度（盲孔的方向也算）分組，每組一則標註：`Ø10 THRU`、`4× Ø6.6 THRU`、`Ø5 DEEP 8`（Arial 沒有深度與沉頭符號，所以用文字 `DEEP`）。標註畫在第一個「沿孔軸方向看」的視圖（貫穿孔取要求順序中第一個，盲孔優先取看得到孔入口的視圖），用一條 `LEADER` 從孔邊指到右側的文字，一組只指一個孔（最靠近文字的那個，引線不穿過同組的其他孔）。孔位用真正的座標 `DIMENSION`（ordinate）：以該視圖幾何的左下角為基準，標 0 與每個不同的孔座標一次，`DIMLFAC = 1/比例`，任何比例下讀到的都是真實座標。限制：每個視圖最多 6 組標註，每個軸最多 16 個座標，超過的列在警告裡、不畫；沒有視圖沿孔軸方向看時，警告會說要加哪個視圖（鉛直孔要 `top`）；文字互相重疊只警告不移動；超過 3000 個面的模型不找孔；只存曲面的模型（圓柱是旋轉曲面）找不到孔，警告會說。沉頭孔、埋頭孔與斜面上的特徵不標。
+
+**`features_path` 與雜湊綁定。** `geometry_make_part` 寫出的 `<名稱>.features.json` 記錄螺紋與配合（`H7`、`M6x1-6H`），因為這兩樣在模型裡只是文字、幾何只有名義直徑。檔案裡的 `step_sha256` 必須等於本次畫的模型檔的 sha256，配合與螺紋才會印出（`Ø10 H7 THRU`、`Ø5 M6x1-6H THRU`）；不符就警告並**不印任何配合**（標註仍來自幾何），`data.features.status` 為 `bound`、`hash_mismatch` 或 `not given`。宣告的孔要與模型的孔直徑、方向、貫穿或深度、中心線都對上才算（多出來的宣告孔有警告）。尺寸一律來自幾何，檔案只提供這兩個字。檔案內容是資料：格式錯誤回 `input.invalid`（`details.pointer` 是 JSON 指標），要印的字串必須是可印字元、至多 24 字、不含換行；`dimensions` 不是 `auto` 時不讀這個檔（有警告）。
+
+**SVG 與 PNG。** SVG 由本工具箱自己的後端從同一份記錄寫出（單位 mm、`viewBox` 同圖紙、`<path>` 元素，沒有腳本、樣式或外部參照；文字同 PDF 是字形輪廓），測試用標準庫的 XML 解析器讀它、拿各線寬與虛實的長度對 pdfminer.six 從 PDF 讀到的長度（相對誤差 0.2% 內），並用 Chromium 實際畫過一次。PNG 是 PDF 由 PDFium（pypdfium2）轉成 150 dpi 的 8 位元灰階圖（長邊最多 4000 像素，A0 約 85 dpi），由本模組用標準庫編成沒有附加區塊（時間、文字、gamma）的 PNG。**確定性範圍：** 同一台機器、同一個 PDFium 建置，任何 `PYTHONHASHSEED` 下位元組相同（測試 12 個種子加未設定）；跨機器不保證（PDFium 的反鋸齒與 zlib 版本不同，像素或位元組可能不同），警告會這樣說。
 
 ```
 drawing_make_views(model_path=".../bracket.step", title="BRACKET")
 ```
-→ 對 `geometry_make_part` 的範例零件（100 × 50 × 20 mm，Ø10 貫穿孔在 (25, 25)，四條外緣豎邊 R2）：`scale = 1`（A4，297 × 210 mm）、三個尺寸 `100`、`20`、`50`；上視圖可見線總長 284 + 14π = 327.9823 mm（4 條線、4 段弧、1 個圓）；前視圖與右視圖的隱藏線各 40.0000 mm（孔的兩條輪廓線）。
+→ 對 `geometry_make_part` 的範例零件（100 × 50 × 20 mm，Ø10 貫穿孔在 (25, 25)，四條外緣豎邊 R2）：`scale = 1`（A4，297 × 210 mm）、三個尺寸 `100`、`20`、`50`，上視圖有標註 `Ø10 THRU`（給 `features_path` 且雜湊相符時是 `Ø10 H7 THRU`）與座標尺寸 x 0、25 和 y 0、25；上視圖可見線總長 284 + 14π = 327.9823 mm（4 條線、4 段弧、1 個圓）；前視圖與右視圖的隱藏線各 40.0000 mm（孔的兩條輪廓線）。
 
-`values`：`scale`（無因次，1.0 = 1:1，0.5 = 1:2）、`view_count`、`dimension_count`、`sheet_width`、`sheet_height`（mm）。`data`：`sheet`（`name`、`size_mm`、`scale_text`、`projection`）、`views`（每個視圖的 `name`、`origin_mm`（該視圖模型原點在圖紙上的位置，圖上座標 = origin + 比例 × 模型座標）、`extent_mm`、`visible_primitives`、`hidden_primitives`、`method`、`verified`、`dropped`）、`dimensions`（`kind`、`view`、`orientation`、`value_mm` 真實尺寸、`text`、`source` 如 `bbox:x`）、`layout_warnings`、`coverage`、`determinism`。視圖的 `method` 為 `polygonal`（面數超過上限，改用多邊形演算法）或 `exact_unverified`（精確結果無法與多邊形結果交叉驗證）時，各有專屬警告。
+`values`：`scale`（無因次，1.0 = 1:1，0.5 = 1:2）、`view_count`、`dimension_count`（`DIMENSION` 實體數：外形尺寸加座標尺寸）、`callout_count`、`sheet_width`、`sheet_height`（mm）。`data`：`sheet`（`name`、`size_mm`、`scale_text`、`projection`）、`views`（每個視圖的 `name`、`origin_mm`（該視圖模型原點在圖紙上的位置，圖上座標 = origin + 比例 × 模型座標）、`extent_mm`、`visible_primitives`、`hidden_primitives`、`method`、`verified`、`dropped`）、`dimensions`（外形尺寸：`kind`、`view`、`orientation`、`value_mm` 真實尺寸、`text`、`source` 如 `bbox:x`）、`callouts`（每則：`text`、`view`、`count`、`diameter_mm`、`thru`、`depth_mm`、`axis`、`hole_ids`、`entry_points_mm`、`fit`、`thread`、`from_features_file`）、`ordinates`（`view`、`axis`、`value_mm`、`text`）、`features`（`given`、`status`、檔內與模型的 sha256、宣告與對上的孔數）、`png`（有要 PNG 時：像素寬高、dpi）、`layout_warnings`、`coverage`、`determinism`。視圖的 `method` 為 `polygonal`（面數超過上限，改用多邊形演算法）或 `exact_unverified`（精確結果無法與多邊形結果交叉驗證）時，各有專屬警告。
 
 **只有曲面的模型。** 檔案裡沒有封閉實體時（例如只存曲面的 IGES，圓柱會被存成旋轉曲面），回傳警告「no closed solid」；投影前先把各面縫合（sewing，容差 0.001 mm）並標記接縫與相切邊，所以圓柱孔中心不會多出一條接縫虛線，隱藏線與同一零件的 STEP 版相同（測試以同一零件的 STEP 與只存曲面的 IGES 比對）。曲面沒有封閉時隱藏線仍可能不可靠，要對照模型。
 
-**確定性。** 同一模型與參數得到位元組完全相同的 DXF 與 PDF，跨行程（任何 `PYTHONHASHSEED`）也一樣：測試以 1 到 12 的種子與未設定各跑一次整個工具，比對 sha256。ezdxf 寫 CLASSES 區段的順序會隨 `PYTHONHASHSEED` 改變，工具在存檔前把它排序（細節與量測在 [docs/geometry-drawing/drawing-determinism.md](docs/geometry-drawing/drawing-determinism.md)）。PDF 由本工具箱自己的後端寫出（沒有日期、產生者字串，不壓縮，物件順序固定）；**PDF 沒有文字圖層**：文字是字形輪廓，無法搜尋或複製，DXF 才有文字。中文標題會使用機器上第一個有該字形的 CJK 字型（`conventions.FALLBACK_FONTS`）；沒有任何字型有的字元，會在警告中逐字列出，PDF 上顯示字型的缺字框。字型不同的機器，同一張圖的 PDF 位元組會不同。
+**確定性。** 同一模型與參數得到位元組完全相同的 DXF、PDF 與 SVG，跨行程（任何 `PYTHONHASHSEED`）也一樣；PNG 同一台機器相同、跨機器不保證（見上）：測試以 1 到 12 的種子與未設定各跑一次整個工具（四種格式），比對 sha256。ezdxf 寫 CLASSES 區段的順序會隨 `PYTHONHASHSEED` 改變，工具在存檔前把它排序（細節與量測在 [docs/geometry-drawing/drawing-determinism.md](docs/geometry-drawing/drawing-determinism.md)）。PDF 由本工具箱自己的後端寫出（沒有日期、產生者字串，不壓縮，物件順序固定）；**PDF 沒有文字圖層**：文字是字形輪廓，無法搜尋或複製，DXF 才有文字。中文標題會使用機器上第一個有該字形的 CJK 字型（`conventions.FALLBACK_FONTS`）；沒有任何字型有的字元，會在警告中逐字列出，PDF 上顯示字型的缺字框。字型不同的機器，同一張圖的 PDF 位元組會不同。
 
-**範圍與限制（`data.coverage`）。** 目前只標外形尺寸；孔標註、中心線、座標尺寸、SVG／PNG 之後的切片才有。標題欄一律印 `UNREVIEWED - generated by eng-toolkit, not engineering approved`。這不是完整的製造用圖：沒有公差、配合、表面粗糙度，尺寸來自外框而非設計意圖，必須對照模型複核。
+**範圍與限制（`data.coverage`）。** 標外形尺寸、孔標註與孔位座標尺寸；沒有中心線、公差、表面粗糙度，沉頭孔與埋頭孔不辨識、斜面上的特徵不標。外形尺寸來自外框，孔的直徑、數量、位置來自幾何，配合與螺紋只來自雜湊相符的 `features.json`。標題欄一律印 `UNREVIEWED - generated by eng-toolkit, not engineering approved`。這不是完整的製造用圖，必須對照模型複核。
 
 ### `drawing_read`
 讀別人做的圖：`.dxf`（R12 到 R2018、文字或二進位、舊式編碼與 CJK）與 `.pdf`，回傳結構化內容。需要選用的 `drawing` extra（`uv sync --extra drawing`：ezdxf 與 pdfminer.six，都是 MIT）。輸入（字串、整數）：`path`、`detail`（`summary` 預設，或 `full`：每個項目多帶欄位，不是多帶項目）、`max_items`（每個清單回傳幾筆，1 到 500，預設 25）。`.dwg` 不讀（回 `input.unsupported_format`，請先用自己安裝的 `dwg2dxf` 轉成 DXF）。
@@ -306,6 +312,8 @@ drawing_read(path=".../flange.dxf")
 → `data.summary` 是一段話（版本、單位、外框、標題欄、尺寸、視圖數），後面是同一份內容的結構化欄位，每個清單截到 `max_items` 並附 `total`；完整內容（清單最多各 20 000 筆）在 `data.full_json` 指的 `drawing_read.json`，不會塞進對話。預設回傳約 5 到 6 kB（slice 4 的圖）。`value` 是實體數（PDF 為頁數）；`values` 有 `layer_count`、`dimension_count`、`text_count`，單位已知時有 `extent_width`、`extent_height`（mm，**只算幾何**，不含尺寸與文字；沒有幾何時沒有這兩個值）；PDF 有 `page_width`、`page_height`、`vector_length`（mm）。
 
 **單位絕不假設。** `data.units` 由 `$INSUNITS` 給出名稱與換算成 mm 的倍數：英吋圖寫 `inch`、`25.4`，所有長度同時給圖面單位與 `_mm`。檔案沒寫單位（`$INSUNITS` 缺、不是整數或為 0；R12 與更舊的檔案沒有這個變數；單位表含 1 到 24 號，包括美制測量單位）；單位只讀檔案自己的檔頭文字，不用函式庫補的預設值時 `name` 是 `unitless`、`mm_per_unit` 與所有 `*_mm` 都是 `null`，摘要寫 `UNKNOWN`，並有警告；`$MEASUREMENT`（公制或英制）只當提示回報，不用來換算。
+
+**座標尺寸與孔標註。** 每個座標尺寸（ordinate）回報 `ordinate_axis`（`x` 或 `y`，由 group 70 的 64 位元），摘要把它們依軸合併成一句（`Ordinates (8): x 0, 10, 50, 90; y 0, 10, 25, 40 (coordinates from the datum corner of the view; 0 is the datum).`，不再是一串沒有軸的 `ordinate 10 mm`）。讀起來像孔標註的文字（直徑符號加數字、`THRU`、`DEEP`、螺紋 `M6x1`）單獨列出：`Hole callouts (2, found by their wording in the texts): 4× Ø6.6 THRU (4 holes); Ø5 DEEP 8 (1 hole).`，沒有數量前綴的直徑標註算一個孔；`data.hole_callouts` 列出文字與位置，並標明是依用字推測。圖上同時有標註與座標尺寸時，摘要說這些座標「probably」是那些孔的位置。
 
 **尺寸的值。** 不信 group 42，由定義點算出量測值（線性、對齊、直徑、半徑、兩線與三點角度、座標），再套 `DIMLFAC`：實體自己的 `DSTYLE` 擴充資料（`drawing_make_views` 就是這樣寫 `1/比例`）優先，其次是尺寸樣式表，再來是檔頭 `$DIMLFAC`（樣式不存在或沒設時），都沒有就是 1；負值只在圖紙空間生效。`DIMLFAC` 只縮放長度，不縮放角度。每個尺寸回報 `measured`（圖上量到的）、`dimlfac`、`dimlfac_source`、`value`（顯示的值）、`value_mm`、`text`（觀看者看到的：先看尺寸匿名塊裡的文字，沒有就用文字覆寫把 `<>` 換成值，再沒有就用 `DIMDEC`、`DIMZIN`、`DIMRND`、`DIMPOST` 格式化；直徑加 `Ø`、半徑加 `R`）、`text_override`；塊內文字與算出的值不一致時有警告。範例：100 mm 的量測、`DIMLFAC` 2，讀出 200；1:2 的 `drawing_make_views` 圖上量到 50 的尺寸讀出 100。
 
@@ -381,7 +389,7 @@ drawing_read(path=".../flange.dxf")
 
 目前核心依賴全為 permissive：fastmcp (Apache-2.0)、mcp (MIT)、pydantic (MIT)、pint (BSD-3-Clause)、fluids (MIT)、numpy (BSD-3-Clause)。`tests/test_licenses.py` 會在 CI 中斷言環境裡沒有任何 GPL／AGPL 套件。
 
-選用的 `cad` extra（`geometry_measure`、`metrology_check_scan`、`drawing_make_views` 共用）是 cadquery-ocp-novtk，`scan` extra 再加 open3d (MIT, permissive)，`drawing` extra 再加 ezdxf (MIT, permissive；連帶 fonttools、pyparsing 為 MIT，typing_extensions 為 PSF) 與 pdfminer.six (MIT, permissive；連帶 charset-normalizer 為 MIT，cryptography 為 Apache-2.0 或 BSD-3-Clause；純 Python，沒選用 pdfplumber 與 pypdfium2，前者只多一層包裝並帶進 Pillow 與原生 PDFium，後者是原生程式碼，解析不受信任的檔案時當掉會拖垮伺服器)。`licenses.KNOWN` 另有一列護欄 `pymupdf`（宣告 `forbidden`，AGPL）：它不是依賴，只是讓誤裝 `ezdxf[draw]` 時 doctor 判定失敗。cadquery-ocp-novtk 的 wrapper 是 Apache-2.0，但 wheel 內含 OpenCASCADE（LGPL-2.1 加 OCCT exception），所以在 `licenses.KNOWN` 誠實宣告為 `lgpl-dynamic`（動態連結、不修改、不內嵌進本 repo），並以 `bundled_license` 記下來源；`toolkit_doctor` 不會因 metadata 顯示 Apache 而誤報授權不符；這個「bundled 說明」只適用於 permissive wrapper 宣告為 `lgpl-dynamic`，任何已安裝、宣告為 `gpl-isolated` 或 `forbidden` 的引擎，doctor 一律判定失敗（`policy-violation`）。OCP wheel 另外還內含其他雙重授權的函式庫（回報有 FreeImage、LibRaw、FreeType、zstd，各有非 GPL 的授權選項）；再散布前應逐一確認。
+選用的 `png` extra 在 `drawing` 之上只多 pypdfium2（BSD-3-Clause 或 Apache-2.0；wheel 帶的 PDFium、abseil、llvm-libc、AGG、FreeType、ICU、lcms2、libjpeg-turbo、OpenJPEG、libpng、zlib 等授權文字逐一查過，全是寬鬆授權；它是原生程式碼，所以只渲染自己剛寫的 PDF，不碰不受信任的輸入）。選用的 `cad` extra（`geometry_measure`、`metrology_check_scan`、`drawing_make_views` 共用）是 cadquery-ocp-novtk，`scan` extra 再加 open3d (MIT, permissive)，`drawing` extra 再加 ezdxf (MIT, permissive；連帶 fonttools、pyparsing 為 MIT，typing_extensions 為 PSF) 與 pdfminer.six (MIT, permissive；連帶 charset-normalizer 為 MIT，cryptography 為 Apache-2.0 或 BSD-3-Clause；純 Python，沒選用 pdfplumber 與 pypdfium2，前者只多一層包裝並帶進 Pillow 與原生 PDFium，後者是原生程式碼，解析不受信任的檔案時當掉會拖垮伺服器)。`licenses.KNOWN` 另有一列護欄 `pymupdf`（宣告 `forbidden`，AGPL）：它不是依賴，只是讓誤裝 `ezdxf[draw]` 時 doctor 判定失敗。cadquery-ocp-novtk 的 wrapper 是 Apache-2.0，但 wheel 內含 OpenCASCADE（LGPL-2.1 加 OCCT exception），所以在 `licenses.KNOWN` 誠實宣告為 `lgpl-dynamic`（動態連結、不修改、不內嵌進本 repo），並以 `bundled_license` 記下來源；`toolkit_doctor` 不會因 metadata 顯示 Apache 而誤報授權不符；這個「bundled 說明」只適用於 permissive wrapper 宣告為 `lgpl-dynamic`，任何已安裝、宣告為 `gpl-isolated` 或 `forbidden` 的引擎，doctor 一律判定失敗（`policy-violation`）。OCP wheel 另外還內含其他雙重授權的函式庫（回報有 FreeImage、LibRaw、FreeType、zstd，各有非 GPL 的授權選項）；再散布前應逐一確認。
 
 ## Clean-room 聲明
 
@@ -406,6 +414,7 @@ uv run eng-toolkit doctor
 * [docs/geometry-drawing/design.md](docs/geometry-drawing/design.md)：`geometry` 與 `drawing` 領域的合成設計（目前實作了 `geometry_measure`、`geometry_make_part`、`drawing_make_views` 的第一部分與 `drawing_read`）：兩份候選設計與跨評審結論、切片交付計畫、待專案負責人決定的問題。
 * [docs/geometry-drawing/drawing-determinism.md](docs/geometry-drawing/drawing-determinism.md)：`drawing_make_views` 的 DXF 與 PDF 為何、如何做到跨行程位元組相同：實測哪裡不同、採用的修法與成本。
 * [docs/geometry-drawing/drawing-read.md](docs/geometry-drawing/drawing-read.md)：`drawing_read` 的設計決策（輸出與大小控制、DXF 與 PDF 引擎的選擇與授權、子行程隔離、HTTP 下的讀檔白名單、單位與 DIMLFAC 規則、標題欄推斷）、驗證方法與小模型（Haiku）可用性檢查結果。
+* [docs/geometry-drawing/drawing-callouts.md](docs/geometry-drawing/drawing-callouts.md)：S6（`drawing_make_views` 第二部分）的設計決策：孔分組與標註的規則、版面空間、座標尺寸、`features.json` 雜湊綁定與孔對應、SVG 自寫後端、PNG 的方法與授權查核與確定性範圍、與 `drawing_read` 的往返檢查、Haiku 可用性檢查（兩輪結果與據此改的摘要）、已知缺口。
 * [docs/geometry-drawing/drawing-fixes.md](docs/geometry-drawing/drawing-fixes.md)：獨立驗證後修的七個小問題（只存曲面的 IGES 接縫、全形空白、`%%` 跳脫、PDF 字級與預設線寬、外框分開報告、`ENG_TOOLKIT_READ_DIRS` 空值）：實測、決定與被否決的做法。
 * [docs/geometry-drawing/make-part-eval.md](docs/geometry-drawing/make-part-eval.md)：`geometry_make_part` 的小模型評測（基準為 Claude Haiku，由專案負責人決定）：18 題的解析解、與 build123d 的對照結果、據此新增 `sphere` 與 `cone`、結果的限制，以及如何重跑。
 

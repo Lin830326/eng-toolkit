@@ -22,6 +22,11 @@ Result with the fix: the whole tool, seeds 0 to 31 and unset, 33 runs: 1 distinc
 
 None measurable: the sort is over about 20 records. No child process was needed, so option (b) (a short-lived child with `PYTHONHASHSEED=0` for the writing step) was not built, and the owner decision "no worker process per call in v1" stands.
 
+## SVG and PNG (slice S6)
+
+* **SVG.** Written by our own backend from the same recorded drawing as the PDF, with fixed number formatting (at most three decimals) and no dates or generator string: the same bytes in every process; the S6 test runs seeds 1 to 12 and unset over DXF, PDF, SVG and PNG.
+* **PNG.** The PDF rendered by PDFium (pypdfium2, optional `png` extra) as 8-bit grey at 150 dpi or less, encoded by our own code without ancillary chunks. The same bytes on one machine and one PDFium build in any process (the PDF it starts from is seed independent); **not promised across machines**: PDFium's anti-aliasing and zlib's output can differ between builds, so the result's warning says so. PDFium is not thread safe, so one lock guards it (four concurrent renders give identical bytes).
+
 ## Other things the bytes depend on
 
 * The ezdxf version: `engine_versions` in the provenance records it.

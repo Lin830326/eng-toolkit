@@ -122,6 +122,8 @@ Parameters are unit strings with `$name` references, evaluated by the existing u
 
 **S5 as built** ([drawing-read.md](drawing-read.md)): `drawing_read` reads DXF and PDF in a child process with a hard time and memory limit (`eng_toolkit/isolated.py`), through `dxf_read.py` (a second ezdxf owner beside the writer `dxf.py`) and `pdf_read.py` (pdfminer.six). It answers the "file reads over HTTP" risk with the optional `ENG_TOOLKIT_READ_DIRS` allow-list, enforced for every tool in `JobHandle.input_file`. The gateway now lists twelve tools.
 
+**S6 as built** ([drawing-callouts.md](drawing-callouts.md)): `drawing_make_views` with `dimensions=auto` adds one callout per hole group (`Ø10 THRU`, `4× Ø6.6 THRU`, `Ø5 DEEP 8`) found from `brep.inventory`, ordinate dimensions for the hole positions, `features_path` (fit and thread only when the file's `step_sha256` equals the model's sha256), `formats` svg (own backend) and png (PDFium through the optional `png` extra). The S5 reader reads them back (`ordinate_axis`, ordinates grouped by axis, hole callouts by wording).
+
 Why S1 first: it makes the one-owner rule true while there is a single consumer and its safety net (984 lines of scan tests) already exists. The cross-judge confirmed it as the right first slice, and it kept the weld swap out of it.
 
 ## Risks the cross-judge added (neither candidate covered them)
