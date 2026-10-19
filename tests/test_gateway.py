@@ -275,15 +275,28 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_TOOLS = 12  # 2 gateway + 2 calc + 4 metrology + 2 geometry + 2 drawing
+# The budget is per domain, so adding a domain (or a tool inside one) edits no shared number: every domain may expose a few coarse
+# tools, the gateway itself two.  A long flat list is what small local models are bad at.
+MAX_TOOLS_PER_DOMAIN = 6
+GATEWAY_TOOLS = 2
 
 
 @pytest.mark.asyncio
 async def test_tool_schemas_are_small_model_friendly():
     """Few coarse tools; every input is a basic JSON type with a description (no unions/objects)."""
+    from collections import Counter
+
+    from eng_toolkit.domains import all_domains
+
     async with Client(gateway) as client:
         tools = await client.list_tools()
-    assert len(tools) <= MAX_TOOLS, [t.name for t in tools]
+    names = [d.name for d in all_domains()]
+    per_domain = Counter(t.name.split("_", 1)[0] for t in tools)
+    for domain, count in per_domain.items():
+        limit = GATEWAY_TOOLS if domain == "toolkit" else MAX_TOOLS_PER_DOMAIN
+        assert count <= limit, (domain, count, [t.name for t in tools if t.name.startswith(domain + "_")])
+    assert set(per_domain) <= {"toolkit", *names}, per_domain
+    assert len(tools) <= GATEWAY_TOOLS + MAX_TOOLS_PER_DOMAIN * len(names), [t.name for t in tools]
     for tool in tools:
         assert tool.description and len(tool.description) > 20, tool.name
         schema = tool.input_schema if hasattr(tool, "input_schema") else tool.inputSchema

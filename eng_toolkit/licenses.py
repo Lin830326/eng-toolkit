@@ -197,7 +197,43 @@ def scan_environment() -> list[dict[str, str]]:
     return rows
 
 
+def register_domain_engines() -> list[str]:
+    """Add the engines each domain declares to :data:`KNOWN`; return the distribution names added.
+
+    A domain declares its engines in its own ``engines.py`` as ``ENGINES = (Engine(...), ...)``, so adding a domain
+    edits no shared table.  The file is loaded by path, without importing the domain package (which would pull in the
+    domain's server and its engines, and could form an import cycle with this module).  Declaring an engine that
+    ``KNOWN`` already holds is fine when the declaration is identical; a different one is an error, because two
+    domains disagreeing about one distribution's license tier is exactly what this table exists to prevent.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    import eng_toolkit.domains as pkg  # light: its module level only defines the registry
+
+    added: list[str] = []
+    for base in pkg.__path__:
+        for engines_file in sorted(Path(base).glob("*/engines.py")):
+            name = engines_file.parent.name
+            spec = importlib.util.spec_from_file_location(f"_eng_toolkit_{name}_engines", engines_file)
+            if spec is None or spec.loader is None:  # pragma: no cover - a readable file always has a loader
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            for engine in getattr(module, "ENGINES", ()):
+                have = KNOWN.get(engine.dist)
+                if have is None:
+                    KNOWN[engine.dist] = engine
+                    added.append(engine.dist)
+                elif have != engine:
+                    raise ValueError(f"domain {name!r} declares {engine.dist!r} differently from the registered engine: {have} vs {engine}")
+    return added
+
+
+register_domain_engines()
+
 __all__ = [
+    "register_domain_engines",
     "KNOWN",
     "POLICY",
     "TIER_FORBIDDEN",
