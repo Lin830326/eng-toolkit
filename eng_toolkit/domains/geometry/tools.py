@@ -19,6 +19,7 @@ from pydantic import Field
 
 from eng_toolkit import __version__, brep
 from eng_toolkit.contract import QuantityOut, ToolResult
+from eng_toolkit.domains.geometry import convert as conversion
 from eng_toolkit.domains.geometry import dfm
 from eng_toolkit.domains.geometry import part as partspec
 from eng_toolkit.domains.geometry import queries as grammar
@@ -30,7 +31,8 @@ from eng_toolkit.units import UnitsError, parse_quantity, require_positive, ureg
 ENGINE_MEASURE = "eng_toolkit.geometry.measure"
 ENGINE_MAKE_PART = "eng_toolkit.geometry.make_part"
 ENGINE_CHECK_DFM = "eng_toolkit.geometry.check_dfm"
-TOOL_NAMES: tuple[str, ...] = ("measure", "make_part", "check_dfm")
+ENGINE_CONVERT = "eng_toolkit.geometry.convert"
+TOOL_NAMES: tuple[str, ...] = ("measure", "make_part", "check_dfm", "convert")
 MAX_INVENTORY_LIMIT = 500
 PART_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 PART_FORMATS: tuple[str, ...] = ("step", "glb", "stl", "brep")  # the order the files are written in
@@ -793,4 +795,46 @@ def make_part(
     )
 
 
-__all__ = ["TOOL_NAMES", "check_dfm", "make_part", "measure", "server"]
+CONVERT_DESCRIPTION = (
+    "Convert a 3D model file to another format and report what the conversion lost. Input: STEP/IGES/BREP (.step .stp .iges .igs "
+    ".brep, read in millimetres) or an STL mesh (.stl, binary or ASCII, read as millimetres). Output 'step', 'brep' (exact, from "
+    "STEP/IGES/BREP only), 'stl' (binary, millimetres) or 'glb' (glTF binary: metres and +Y up, the conversion is applied). STL as "
+    "input converts to 'stl' or 'glb' only: a mesh is not a solid and is never turned into STEP or BREP. The converted file is an "
+    "artifact with its sha256; the input is never modified. Mesh outputs tessellate the exact surfaces to triangles within "
+    "mesh_deflection. Returns volume_in, volume_out and volume_relative_change (read back from the written file; no volume for a "
+    "shell or an open mesh, then surface_area_out is the primary value), triangle_count for mesh outputs, and data.losses: "
+    "every loss in plain words (exact surfaces become triangles, units converted, GLB axes, names/colours/assembly dropped, "
+    f"float32 precision). Needs the optional cad engine for STEP/IGES/BREP input or output ({install_hint('cadquery-ocp-novtk')}); "
+    "STL to STL or GLB needs no engine."
+)
+
+
+@server.tool(name="convert", description=CONVERT_DESCRIPTION)
+def convert(
+    input_path: Annotated[str, Field(description="Path to the model: .step .stp .iges .igs .brep or .stl, at most 100 MB")],
+    output_format: Annotated[str, Field(description="'step', 'stl', 'glb' or 'brep'. An STL input can only go to 'stl' or 'glb'")],
+    mesh_deflection: Annotated[
+        str, Field(description="Chord error of the tessellation for stl/glb output of a STEP/IGES/BREP, 0.001 mm to 100 mm, e.g. '0.01 mm'")
+    ] = "0.01 mm",
+    name: Annotated[
+        str, Field(description="Stem of the output file and product name: 1 to 64 letters, digits, '_' or '-'. Empty = the input file's stem")
+    ] = "",
+) -> ToolResult:
+    inputs = {"input_path": input_path, "output_format": output_format, "mesh_deflection": mesh_deflection, "name": name}
+    return run_tool(
+        tool_name="geometry_convert",
+        engine=ENGINE_CONVERT,
+        version=__version__,
+        inputs=inputs,
+        compute=lambda job: conversion.convert(
+            job, input_path=input_path, output_format=output_format, mesh_deflection=mesh_deflection, name=name
+        ),
+        engines=("cadquery-ocp-novtk", "numpy"),
+        standing_warnings=(
+            "A converted file is an unreviewed copy: read data.losses for what it no longer holds. Check the converted file in the "
+            "system that will use it before relying on it; a qualified engineer must review anything built from it.",
+        ),
+    )
+
+
+__all__ = ["TOOL_NAMES", "check_dfm", "convert", "make_part", "measure", "server"]
