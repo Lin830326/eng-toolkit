@@ -91,7 +91,7 @@ def test_the_readers_import_without_the_mcp_stack():
 def test_the_domain_and_its_server_are_still_importable_from_the_package():
     from eng_toolkit.domains.drawing import DOMAIN, server
 
-    assert DOMAIN.name == "drawing" and DOMAIN.server is server and set(DOMAIN.tools) == {"make_views", "read"}
+    assert DOMAIN.name == "drawing" and DOMAIN.server is server and set(DOMAIN.tools) == {"make_views", "read", "convert"}
 
 
 def test_a_lone_surrogate_in_the_result_becomes_the_replacement_character_and_pairs_survive():
