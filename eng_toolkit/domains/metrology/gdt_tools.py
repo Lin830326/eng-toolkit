@@ -35,7 +35,23 @@ def _output_unit(output_unit: str) -> tuple[str, float]:
 
 
 def _signif(value: float) -> float:
+    if not math.isfinite(value):  # unreachable after the magnitude guards; a non-finite number would break the JSON result
+        raise ToolFailure("engine.failure", f"a result value is not finite ({value})", {"value": repr(value)})
     return float(f"{value:.9g}")
+
+
+def _scaled(raw: np.ndarray, factor: float, name: str) -> np.ndarray:
+    """``raw * factor`` (millimetres) after refusing magnitudes that cannot be meant."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        out = raw * factor
+    form.check_magnitude(out, name)
+    return out
+
+
+def _length_mm(raw: str, name: str) -> float:
+    value = float(parse_quantity(raw, name=name, dimension="length").to("millimeter").magnitude)
+    form.check_magnitude(value, name)
+    return value
 
 
 # --------------------------------------------------------------------------- form error
@@ -122,9 +138,11 @@ def form_error(
         _choice(feature, form.FEATURES, "feature")
         to_mm = _unit_to_mm(unit, "unit")
         tol_mm = _positive_mm(tolerance, "tolerance") if tolerance.strip() else None
+        if tol_mm is not None:
+            form.check_magnitude(tol_mm, "tolerance")
         out_unit, per_mm = _output_unit(output_unit)
         raw = _read_points(job, points, points_path, feature)
-        coords = raw * to_mm
+        coords = _scaled(raw, to_mm, "points")
         resolution = float(np.spacing(np.abs(coords).max()))
         distinct = form.unique_rows(coords)
         form.check_count(feature, len(distinct), len(coords))
@@ -255,7 +273,7 @@ def _modifier(raw: str) -> str:
 
 
 def _size_mm(raw: str, name: str) -> float:
-    return float(parse_quantity(raw, name=name, dimension="length").to("millimeter").magnitude)
+    return _length_mm(raw, name)
 
 
 @server.tool(
@@ -346,8 +364,8 @@ def position_tolerance(
         if tol_mm < 0:
             raise _invalid(f"tolerance must be >= 0, got {tolerance!r}", param="tolerance")
 
-        nom = pointio.parse_numbers(nominal, param="nominal", columns=(2, 3), names=_AXES) * to_mm
-        mea = pointio.parse_numbers(measured, param="measured", columns=(2, 3), names=_AXES) * to_mm
+        nom = _scaled(pointio.parse_numbers(nominal, param="nominal", columns=(2, 3), names=_AXES), to_mm, "nominal")
+        mea = _scaled(pointio.parse_numbers(measured, param="measured", columns=(2, 3), names=_AXES), to_mm, "measured")
         if len(nom) > 10_000:
             raise ToolFailure("input.too_large", f"{len(nom)} features; at most 10000 are evaluated", {"features": len(nom)})
         if nom.shape != mea.shape:
@@ -367,7 +385,7 @@ def position_tolerance(
                     f"bonus_modifier {modifier!r} needs feature_size, the actual size of each feature",
                     {"param": "feature_size"},
                 )
-            sizes = pointio.parse_numbers(feature_size, param="feature_size", columns=1) * to_mm
+            sizes = _scaled(pointio.parse_numbers(feature_size, param="feature_size", columns=1), to_mm, "feature_size")
             if len(sizes) != len(nom):
                 raise _invalid(
                     f"feature_size has {len(sizes)} values but there are {len(nom)} features; give one size per feature",

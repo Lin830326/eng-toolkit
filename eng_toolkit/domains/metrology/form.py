@@ -95,6 +95,23 @@ def check_count(feature: str, distinct: int, given: int) -> None:
         )
 
 
+MAX_ABS_MM = 1e9  # largest coordinate or length accepted, mm (1000 km); real parts stay below about 1e5 mm
+
+
+def check_magnitude(values: np.ndarray | float, name: str) -> None:
+    """Refuse values whose squares and cross products could overflow or drown the result in rounding."""
+    big = float(np.max(np.abs(values))) if np.size(values) else 0.0
+    if not np.isfinite(big) or big > MAX_ABS_MM:
+        raise fail(
+            "input.out_of_range",
+            f"{name} reaches {big:.3g} mm; the largest accepted magnitude is {MAX_ABS_MM:.0e} mm (1000 km). "
+            "Check the unit: values this large are almost always a unit mistake",
+            param=name,
+            largest_mm=big if np.isfinite(big) else None,
+            limit_mm=MAX_ABS_MM,
+        )
+
+
 def _unit(v: np.ndarray) -> np.ndarray:
     return v / np.linalg.norm(v)
 
@@ -223,6 +240,8 @@ def min_width_2d(points: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
 
 def straightness(points: np.ndarray) -> FormResult:
     """Straightness of a profile in a plane: the thinnest strip around the ``(n, 2)`` points (exact)."""
+    check_magnitude(points, "points")
+    check_count("straightness", len(points), len(points))
     centre = points.mean(axis=0)
     pc = points - centre
     width, direction, normal = min_width_2d(pc)
@@ -351,6 +370,8 @@ def _plane_kkt(pts: np.ndarray, n: np.ndarray, width: float, scale: float) -> bo
 
 def flatness(points: np.ndarray) -> FormResult:
     """Flatness of ``(n, 3)`` points: the thinnest slab between two parallel planes, measured perpendicular to the planes."""
+    check_magnitude(points, "points")
+    check_count("flatness", len(points), len(points))
     n_pts = len(points)
     centre = points.mean(axis=0)
     pc = points - centre
@@ -626,6 +647,8 @@ def _mz_circle(p: np.ndarray, scale: float, exhaustive: bool) -> tuple[float, np
 
 def circularity(points: np.ndarray) -> FormResult:
     """Circularity (roundness) of ``(n, 2)`` points: the thinnest annulus between two concentric circles."""
+    check_magnitude(points, "points")
+    check_count("circularity", len(points), len(points))
     centre = points.mean(axis=0)
     pc = points - centre
     _, s, _ = np.linalg.svd(pc, full_matrices=False)
@@ -731,6 +754,8 @@ def _compass(fun, x0: np.ndarray, step: float, min_step: float, stop_below: floa
 
 def cylindricity(points: np.ndarray) -> FormResult:
     """Cylindricity of ``(n, 3)`` points: the thinnest pair of coaxial cylinders found by an axis search (an upper bound)."""
+    check_magnitude(points, "points")
+    check_count("cylindricity", len(points), len(points))
     centre = points.mean(axis=0)
     pc = points - centre
     _, s, vt = np.linalg.svd(pc, full_matrices=False)
@@ -841,6 +866,8 @@ __all__ = [
     "MAX_POINTS",
     "MIN_POINTS",
     "check_count",
+    "check_magnitude",
+    "MAX_ABS_MM",
     "circularity",
     "convex_hull_2d",
     "cylindricity",

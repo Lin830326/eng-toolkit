@@ -85,11 +85,14 @@ Caps (`input.too_large`): flatness 100 000 distinct points, straightness 500 000
 |---|---|
 | unknown feature, unit with a number, ragged rows, wrong number of values per row, NaN / inf / text / bool value (row and column named), both or neither of `points` / `points_path` | `input.invalid` |
 | empty list | `input.missing` |
-| fewer distinct points than the feature needs (flatness 4, straightness 3, circularity 4, cylindricity 6; duplicates counted once and named) | `input.too_few_points` |
+| fewer distinct points than the feature needs (flatness 4, straightness 3, circularity 4 (three points always lie on one circle, so 3 is refused, not answered with 0), cylindricity 6; duplicates counted once and named; also enforced when the pure functions are called directly) | `input.too_few_points` |
 | collinear points; coplanar points for a cylinder; a cloud that is not a surface for flatness | `geometry.degenerate` |
 | over the caps | `input.too_large` |
+| any coordinate, size, limit or tolerance above 1e9 mm (1000 km) after the unit is applied, including values whose square would overflow a double | `input.out_of_range` |
 | unreadable path, wrong extension, path outside `ENG_TOOLKIT_READ_DIRS` | `input.file_not_found`, `input.unsupported_format`, `input.path_not_allowed` |
 | unit problems, negative position tolerance, bad modifier / kind, size count mismatch | `units.*`, `input.invalid`, `input.missing` |
+
+Magnitude guard: a coordinate of 1e200 squared is `inf`, which serialises as JSON `null` and makes an MCP client reject the whole result; flatness could even return a silent 0. Every length (points, nominal, measured, sizes, limits, tolerance) is checked after unit conversion, in the tools and again in the pure functions, so no result field can be `inf` or NaN (`_signif` also refuses a non-finite number). Realistic data (tests go to 1e6 mm) is unaffected; the guard is tested through the gateway client for 1e150, 1e200 and 1e308 for all four features and for position.
 
 The minimum counts are those where the reference shape can fit the points exactly (3 points define a plane, a circle; a cylinder has 5 parameters) so the form error would be 0 by construction. Warnings: duplicates dropped, sparse points (fewer than 4× the minimum) under-estimate the surface between them, value at the resolution of the coordinates, 3-D section not planar, the upper-bound statement for unproven zones, bonus beyond material limit, sizes outside limits, ignored arguments.
 
