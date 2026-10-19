@@ -14,6 +14,17 @@ Modelling (``make_*``, :func:`combine`, :func:`fillet`, :func:`chamfer`, :func:`
 polylines of one of the seven fixed views (:data:`VIEW_FRAMES`), hidden lines removed exactly.
 """
 
+from eng_toolkit.brep._dfm import (
+    CylinderFact,
+    EdgeFact,
+    FaceAccess,
+    FacingPair,
+    PairSearch,
+    cylinder_facts,
+    edge_facts,
+    face_access,
+    facing_pairs,
+)
 from eng_toolkit.brep._files import SOLID_EXTENSIONS, read_solid, triangulate
 from eng_toolkit.brep._mesh import WELD_EPS_MM, mesh_topology, weld
 from eng_toolkit.brep._model import (
@@ -70,12 +81,16 @@ __all__ = [
     "WELD_EPS_MM",
     "Arc2",
     "Circle2",
+    "CylinderFact",
+    "EdgeFact",
     "Ellipse2",
     "EdgeMatch",
     "EdgeSelector",
     "EngineUnavailable",
     "Entity",
+    "FaceAccess",
     "FaceInfo",
+    "FacingPair",
     "FaceRef",
     "HoleInfo",
     "HoleRef",
@@ -84,6 +99,7 @@ __all__ = [
     "MassProperties",
     "Mesh",
     "MeshTopology",
+    "PairSearch",
     "PointRef",
     "Poly2",
     "Polygon2",
@@ -100,7 +116,11 @@ __all__ = [
     "angle",
     "chamfer",
     "combine",
+    "cylinder_facts",
     "distance",
+    "edge_facts",
+    "face_access",
+    "facing_pairs",
     "fillet",
     "inventory",
     "lookup",

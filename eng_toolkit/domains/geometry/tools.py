@@ -19,6 +19,7 @@ from pydantic import Field
 
 from eng_toolkit import __version__, brep
 from eng_toolkit.contract import QuantityOut, ToolResult
+from eng_toolkit.domains.geometry import dfm
 from eng_toolkit.domains.geometry import part as partspec
 from eng_toolkit.domains.geometry import queries as grammar
 from eng_toolkit.errors import ToolFailure
@@ -28,7 +29,8 @@ from eng_toolkit.units import UnitsError, parse_quantity, require_positive, ureg
 
 ENGINE_MEASURE = "eng_toolkit.geometry.measure"
 ENGINE_MAKE_PART = "eng_toolkit.geometry.make_part"
-TOOL_NAMES: tuple[str, ...] = ("measure", "make_part")
+ENGINE_CHECK_DFM = "eng_toolkit.geometry.check_dfm"
+TOOL_NAMES: tuple[str, ...] = ("measure", "make_part", "check_dfm")
 MAX_INVENTORY_LIMIT = 500
 PART_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 PART_FORMATS: tuple[str, ...] = ("step", "glb", "stl", "brep")  # the order the files are written in
@@ -389,6 +391,237 @@ def measure(
     )
 
 
+def _finding_dict(finding: dfm.Finding, per_mm: float, unit: str) -> dict[str, Any]:
+    def number(value: float | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if finding.measured_unit == "mm":
+            return {"value": float(f"{value * per_mm:.12g}"), "unit": unit}
+        return {"value": float(f"{value:.12g}"), "unit": finding.measured_unit}
+
+    return {
+        "rule": finding.rule,
+        "severity": finding.severity,
+        "check": "exact" if finding.exact else "heuristic",
+        "message": finding.message,
+        "measured": number(finding.measured),
+        "limit": number(finding.limit),
+        "passes_when": finding.test or None,
+        "face_ids": finding.face_ids,
+        "edge_ids": finding.edge_ids,
+        "location_mm": None if finding.location_mm is None else _list(finding.location_mm),
+        "basis": finding.basis,
+        "details": finding.extra,
+    }
+
+
+DFM_CONVENTIONS: dict[str, str] = {
+    "face_ids": "same numbering as geometry_measure: valid for this file's bytes and this OpenCASCADE version only",
+    "edge_ids": "1-based index of the edge in OpenCASCADE's edge-to-face map: valid for this file's bytes and this OpenCASCADE version only",
+    "location_mm": "a point in model coordinates, millimetres: an edge midpoint, a point on the face, or a point in the material between two faces",
+    "check": (
+        "'exact' = the number is an exact B-rep quantity (a radius, a plane offset, an exact distance) and the rule applies it as "
+        "stated; 'heuristic' = it depends on a sampled test or on reading a shape as a feature, and may be wrong in either direction"
+    ),
+    "limits": (
+        "The default limits are this toolkit's own rules of thumb; they are not taken from any standard or handbook, and no finding "
+        "says a part conforms to one. Set limits to your shop's values"
+    ),
+    "severity": "error = an exact rule is violated; warn = a heuristic rule is violated; info = a measured fact, no limit applied",
+}
+
+CHECK_DFM_DESCRIPTION = (
+    "Design-for-manufacturing checks of a solid 3D CAD file (.step .stp .iges .igs .brep, millimetres) for one process: "
+    "'cnc_milling' (internal corner radius against the tool radius, thinnest wall, hole depth/diameter ratio, smallest hole, "
+    "planar faces no axis direction reaches) or 'sheet_metal' (uniform thickness, bend radius against thickness, hole-to-edge "
+    "distance). Other processes (turning, injection_molding, additive, ...) are not supported and are refused, not guessed. "
+    "Each finding has a rule id, severity (error, warn, info), the measured value and the limit, face and edge ids, a point "
+    "in model coordinates and whether the check is 'exact' or 'heuristic'; the result also counts findings by severity and "
+    "lists the checks that were NOT performed. 'limits' is an optional JSON object that overrides the defaults, e.g. "
+    '{"min_wall": "1 mm", "tool_radius": "2 mm"} for cnc_milling (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["cnc_milling"]) + "), or "
+    '{"min_bend_radius_ratio": 1.5} for sheet_metal (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["sheet_metal"]) + "). "
+    "The defaults are the toolkit's own rules of thumb, not a standard. A file without a closed solid is refused. "
+    f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')})."
+)
+
+
+@server.tool(name="check_dfm", description=CHECK_DFM_DESCRIPTION)
+def check_dfm(
+    model_path: Annotated[str, Field(description="Path to the model: .step .stp .iges .igs or .brep")],
+    process: Annotated[str, Field(description="'cnc_milling' or 'sheet_metal'; anything else is refused")] = "cnc_milling",
+    limits: Annotated[
+        str,
+        Field(
+            description=(
+                "Optional JSON object of limits overriding the defaults, lengths as strings with a unit: "
+                '{"min_wall": "1 mm", "tool_radius": "2 mm", "max_hole_depth_ratio": 8}. Unknown keys are refused. Empty = defaults'
+            )
+        ),
+    ] = "",
+    tool_axis: Annotated[
+        str, Field(description="cnc_milling: the spindle axis, one of +x -x +y -y +z -z; internal corners are judged along it")
+    ] = "+z",
+    max_findings: Annotated[
+        int, Field(description="Findings listed in data, 1 to 500. The summary counts and dfm_findings.json cover all of them")
+    ] = 100,
+    output_unit: Annotated[str, Field(description="Length unit of the measured values and limits, e.g. 'mm', 'inch'")] = "mm",
+) -> ToolResult:
+    inputs = {
+        "model_path": model_path,
+        "process": process,
+        "limits": limits,
+        "tool_axis": tool_axis,
+        "max_findings": max_findings,
+        "output_unit": output_unit,
+    }
+
+    def compute(job: JobHandle) -> Computed:
+        name = process.strip().lower()
+        if name not in dfm.PROCESSES:
+            raise dfm.unsupported_process(process)
+        unit_obj = parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units
+        unit = str(unit_obj)
+        per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
+        axis_name = tool_axis.strip().lower()
+        if axis_name not in dfm.AXES:
+            raise _invalid_param("tool_axis", f"{tool_axis!r} is not one of {list(dfm.AXES)}", allowed=list(dfm.AXES))
+        if not 1 <= max_findings <= MAX_INVENTORY_LIMIT:
+            raise _invalid_param("max_findings", f"must be between 1 and {MAX_INVENTORY_LIMIT}, got {max_findings}")
+        limit_mm = dfm.parse_limits(name, limits)
+        if Path(model_path).suffix.lower() == ".stl":
+            raise ToolFailure(
+                "input.unsupported_format",
+                "model_path: '.stl' mesh files are not supported; DFM needs an exact B-rep. "
+                f"Use one of {list(brep.SOLID_EXTENSIONS)}",
+                {"param": "model_path", "supported": list(brep.SOLID_EXTENSIONS)},
+            )
+        model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
+        solid = brep.read_solid(model_file, param="model_path")
+        file_hash = job.input_files[-1].sha256
+        if solid.faces == 0:
+            raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
+        if solid.solids == 0 or brep.mass_properties(solid).volume_mm3 is None:
+            raise ToolFailure(
+                "geometry.not_a_solid",
+                f"model_path holds {solid.faces} faces but no closed solid with positive volume (solids found: {solid.solids}); "
+                "manufacturability checks need material between faces, so a shell or loose surfaces are refused. "
+                "Export the part as a solid",
+                {"solids": solid.solids, "faces": solid.faces},
+            )
+        if solid.faces > dfm.MAX_FACES:
+            raise ToolFailure(
+                "input.too_large",
+                f"model_path has {solid.faces} faces; the limit is {dfm.MAX_FACES}",
+                {"faces": solid.faces, "limit": dfm.MAX_FACES},
+            )
+        inv = brep.inventory(solid)
+        report = dfm.run(name, solid, inv, limit_mm, axis_name)
+
+        warnings = list(report.warnings)
+        if solid.solids > 1:
+            warnings.append(
+                f"The file holds {solid.solids} solids: they are checked together as one body, so a wall between two separate "
+                "solids is not recognised as one, and a face id belongs to whichever solid holds it"
+            )
+        if solid.roots_transferred < solid.roots_in_file:
+            warnings.append(
+                f"Only {solid.roots_transferred} of {solid.roots_in_file} root entities of the file could be transferred: "
+                "the model is incomplete and only what was read was checked"
+            )
+        used = dfm.defaults_used(name, limits)
+        if used:
+            warnings.append(
+                "Default limits were used for " + ", ".join(used) + ": they are this toolkit's rules of thumb, not values from a "
+                "standard; pass 'limits' with your own"
+            )
+
+        rank = {severity: i for i, severity in enumerate(dfm.SEVERITIES)}
+        ordered = sorted(report.findings, key=lambda f: (rank[f.severity], f.rule))
+        counts = Counter(f.severity for f in ordered)
+        by_rule: dict[str, dict[str, int]] = {}
+        for f in ordered:
+            by_rule.setdefault(f.rule, {}).setdefault(f.severity, 0)
+            by_rule[f.rule][f.severity] += 1
+        all_findings = [_finding_dict(f, per_mm, unit) for f in ordered]
+        shown = all_findings[:max_findings]
+        if len(all_findings) > len(shown):
+            warnings.append(f"{len(all_findings)} findings, {len(shown)} listed in data; dfm_findings.json holds all of them")
+
+        limit_report: dict[str, Any] = {}
+        for key, (kind, _default, description) in dfm.LIMIT_DEFAULTS[name].items():
+            value = limit_mm[key]
+            limit_report[key] = {
+                "value": float(f"{value * per_mm:.12g}") if kind == "length" else value,
+                "unit": unit if kind == "length" else kind,
+                "source": "default" if key in used else "caller",
+                "meaning": description,
+            }
+        summary = {
+            "errors": counts["error"],
+            "warnings": counts["warn"],
+            "info": counts["info"],
+            "total": len(ordered),
+            "by_rule": by_rule,
+            "exact_findings": sum(1 for f in ordered if f.exact),
+            "heuristic_findings": sum(1 for f in ordered if not f.exact),
+        }
+        measurements = dict(report.measurements)
+        artifact = job.write_json(
+            "dfm_findings.json",
+            {
+                "process": name,
+                "face_ids_valid_for": file_hash,
+                "conventions": DFM_CONVENTIONS,
+                "limits": limit_report,
+                "summary": summary,
+                "findings": all_findings,
+                "measurements": measurements,
+                "checked": report.checked,
+                "not_performed": report.not_performed,
+            },
+        )
+        values: dict[str, QuantityOut] = {
+            "errors": QuantityOut(quantity=float(counts["error"]), unit="dimensionless"),
+            "warnings": QuantityOut(quantity=float(counts["warn"]), unit="dimensionless"),
+            "info": QuantityOut(quantity=float(counts["info"]), unit="dimensionless"),
+        }
+        for key in ("smallest_wall_mm", "thickness_mm"):
+            if measurements.get(key) is not None:
+                values[key.removesuffix("_mm")] = QuantityOut(quantity=float(f"{measurements[key] * per_mm:.12g}"), unit=unit)
+        data: dict[str, Any] = {
+            "process": name,
+            "supported_processes": list(dfm.PROCESSES),
+            "tool_axis": axis_name if name == "cnc_milling" else None,
+            "solids": solid.solids,
+            "faces_total": len(inv.faces),
+            "holes_total": len(inv.holes),
+            "limits": limit_report,
+            "summary": summary,
+            "findings": shown,
+            "findings_listed": len(shown),
+            "measurements": measurements,
+            "checked": report.checked,
+            "not_performed": report.not_performed,
+            "face_ids_valid_for": file_hash,
+            "conventions": DFM_CONVENTIONS,
+        }
+        return Computed(values=values, primary="errors", warnings=warnings, data=data, artifacts=[artifact])
+
+    return run_tool(
+        tool_name="geometry_check_dfm",
+        engine=ENGINE_CHECK_DFM,
+        version=__version__,
+        inputs=inputs,
+        compute=compute,
+        engines=("cadquery-ocp-novtk", "numpy"),
+        standing_warnings=(
+            "Manufacturability findings are rule-of-thumb checks on the geometry alone, with limits chosen by this toolkit or "
+            "the caller. Nothing here states conformance to a standard, and what is not listed under data.checked was not "
+            "checked (see data.not_performed). A clean result does not mean the part can be made; a qualified engineer must review it.",
+        ),
+    )
+
+
 MAKE_PART_DESCRIPTION = (
     "Build a 3D part from a declarative JSON spec (nothing is executed) and write STEP, optionally GLB, STL and BREP, "
     "with exact volume, surface area, bounding-box size and optional mass. Needs the optional cad engine "
@@ -560,4 +793,4 @@ def make_part(
     )
 
 
-__all__ = ["TOOL_NAMES", "make_part", "measure", "server"]
+__all__ = ["TOOL_NAMES", "check_dfm", "make_part", "measure", "server"]
