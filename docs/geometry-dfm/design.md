@@ -20,7 +20,7 @@ Supported processes: `cnc_milling` and `sheet_metal`. Any other value is refused
 | `eng_toolkit/brep/_dfm.py` | measuring only: `edge_facts`, `cylinder_facts`, `facing_pairs`, `face_access` |
 | `eng_toolkit/domains/geometry/dfm.py` | limits, rules, `Finding`, what was not performed |
 | `eng_toolkit/domains/geometry/tools.py` | the tool wrapper `check_dfm` (contract shaping, artifact `dfm_findings.json`) |
-| `tests/dfm_fixtures.py`, `tests/test_geometry_check_dfm.py` | fixtures built with OCP from the dimensions the tests expect; 51 tests |
+| `tests/dfm_fixtures.py`, `tests/test_geometry_check_dfm.py`, `tests/test_dfm_ray_index.py` | dimensioned OCP fixtures, rule and contract tests, and differential checks for rays, cylinder grouping, sampling, and distance pruning |
 
 ## Facts measured by `brep/_dfm.py`
 
@@ -85,7 +85,7 @@ Also tested: BREP input, two solids (warning, same wall), a planar shell (refuse
 
 ## Timing
 
-Measured on the development machine (Windows 11), one call each, nothing else heavy running. "Inventory" is the existing `brep.inventory` (hole detection), which `geometry_measure` also runs and which dominates for perforated plates.
+The original measurements below came from the author's Windows 11 development machine, one call each. "Inventory" is `brep.inventory`, including hole detection, which `geometry_measure` also runs. These historical numbers are separate from the before/after measurements below.
 
 | model | faces | whole call | of which inventory |
 |---|---|---|---|
@@ -97,7 +97,64 @@ Measured on the development machine (Windows 11), one call each, nothing else he
 | comb of 250 fins, `sheet_metal` | 1006 | 22.0 s | 0.3 s |
 | comb of 500 fins, `cnc_milling` | 2006 | 166.8 s | 0.8 s |
 
-Time grows faster than linearly (the ray tests and face classifications scale with the number of faces and with the number of wires on the big faces). There is no cancellation: a call that is slow stays slow. The hard cap is 2500 faces (`MAX_FACES`); times above 2000 faces are not measured. A model with more than 30 s of work should be mapped to `toolkit.job_status` when that exists (design.md, open risks).
+### Measurements after the speed changes
+
+Measured on 2026-10-20 on a **Windows 11 development machine (CPU not queried)**, with Python 3.12.12, `cadquery-ocp-novtk` 8.0.1.1.0, and NumPy 2.5.4. Calls ran sequentially, without pytest running at the same time. These are single-call measurements, not latency guarantees. Import times and other phases varied between runs.
+
+The fixtures are `dfm_fixtures.hole_grid` with pitch 5 mm and diameter 2 mm, and `dfm_fixtures.comb` with its defaults: pitch 3 mm, fin thickness 1.5 mm, fin height 10 mm, and a 5 mm base. The same persisted STEP bytes were used before and after each change. The script captured original findings before any production edit and refuses to overwrite a baseline. Whole-call times include file import, validation, inventory, rules, and artifact writes. Calls use default limits, `tool_axis=+z`, and `max_findings=500`.
+
+| STEP model | faces | whole call before | whole call after | inventory before | inventory after |
+|---|---|---|---|---|---|
+| 12 x 12 grid, `cnc_milling` | 150 | 1.13 s | 0.75 s | 0.21 s | 0.07 s |
+| 12 x 12 grid, `sheet_metal` | 150 | 1.18 s | 0.78 s | 0.20 s | 0.07 s |
+| 31 x 31 grid, `cnc_milling` | 967 | 20.27 s | 8.35 s | 10.86 s | 0.59 s |
+| 31 x 31 grid, `sheet_metal` | 967 | 19.81 s | 8.68 s | 7.31 s | 0.61 s |
+| 125-fin comb, `cnc_milling` | 506 | 2.68 s | 2.01 s | 0.05 s | 0.05 s |
+| 125-fin comb, `sheet_metal` | 506 | 2.06 s | 1.74 s | 0.05 s | 0.05 s |
+| 250-fin comb, `cnc_milling` | 1006 | 9.47 s | 5.12 s | 0.10 s | 0.09 s |
+| 250-fin comb, `sheet_metal` | 1006 | 5.44 s | 3.89 s | 0.09 s | 0.09 s |
+| 500-fin comb, `cnc_milling` | 2006 | 66.85 s | 18.16 s | 0.19 s | 0.20 s |
+| 500-fin comb, `sheet_metal` | 2006 | 21.56 s | 13.02 s | 0.20 s | 0.18 s |
+
+The measured 967- and 1006-face cases are below 10 s, and the 2006-face cases are below 30 s. The cap stays at 2500 faces; parts above 2006 faces remain unmeasured.
+
+Phase times in seconds follow. `Pairs` includes mesh construction and triangle sampling. `Distance` is the total time in exact hole-to-edge distance queries. Wrapper work and artifact writes account for the difference between these phases and the whole call.
+
+| STEP model | version | read | mass | inventory | edges | cylinders | pairs | access | distance |
+|---|---|---|---|---|---|---|---|---|---|
+| grid 31, CNC | before | 3.236 | 0.155 | 10.857 | 1.846 | 0.042 | 2.339 | 1.391 | 0 |
+| grid 31, CNC | after | 3.143 | 0.148 | 0.590 | 1.472 | 0.026 | 2.376 | 0.565 | 0 |
+| grid 31, sheet | before | 3.137 | 0.145 | 7.312 | 1.471 | 0.027 | 2.970 | 0 | 4.548 |
+| grid 31, sheet | after | 3.227 | 0.146 | 0.606 | 1.525 | 0.027 | 2.429 | 0 | 0.605 |
+| comb 500, CNC | before | 8.171 | 0.122 | 0.187 | 3.373 | 0.004 | 1.871 | 52.700 | 0 |
+| comb 500, CNC | after | 8.047 | 0.125 | 0.202 | 3.376 | 0.004 | 0.904 | 5.436 | 0 |
+
+The same comparison also covered persisted BREP files. Whole-call times before and after were 13.36 and 5.13 s for the 967-face CNC grid, 20.14 and 5.28 s for the sheet grid, 11.02 and 3.30 s for the 1006-face CNC comb, and 67.12 and 8.90 s for the 2006-face CNC comb. STEP import is now a large part of the cost, especially the roughly 8 s import of the largest comb. Import code was outside this change's scope.
+
+### Profile and changes
+
+`cProfile` and nested wall-clock timers ran before editing production code. On the 967-face BREP CNC grid, the instrumented inventory spent 4.73 s in `_hits` and 3.26 s in 461,280 `_Candidate.accepts` calls. Meshing took 2.35 s, and sample extraction took 2.37 s across the two measuring phases. On the 1006-face CNC comb, ray queries took 5.00 s of the 5.19 s access phase; face classifications took only 0.01 s. Intersector loading was about 0.02 s. This profile supported ray pruning and batched array operations rather than replacing the face classifier.
+
+The changes were measured separately, with a full findings comparison after each:
+
+* `_IndexedIntersector` builds conservative analytic face boxes once per measuring phase and tests ray segments against them with NumPy. It creates and reuses an OCCT intersector only for faces whose boxes the ray can meet. Boxes include topology tolerances and rounding slack. The original OCCT intersection tolerance and the global sorting and merging of raw hits remain unchanged.
+* Hole grouping filters distant axes with batched component bounds before calling the original `_Candidate.accepts`. Candidate order and the final grouping arithmetic remain unchanged. The filter still scans candidate arrays quadratically, but avoids hundreds of thousands of Python calls on grids.
+* Triangle cross products and centroids use batched array operations. Each triangle still uses the original scalar norm, followed by the original stable sort. This preserves equal-area sample order. Meshing settings, all 12 sample points, nudges, search ranges, and geometric tolerances remain unchanged.
+* The sheet hole-to-edge search skips exact distance queries when the bounding-box lower bound exceeds the reporting limit by more than 1e-6 mm. This slack exceeds the box-coordinate rounding error. Every distance that can produce a finding still uses `BRepExtrema`; nearest-face order and limit comparisons remain unchanged.
+
+With the same instrumentation after these changes, the CNC grid's inventory ray queries take 0.46 s and sample extraction takes 0.43 s. The distant-axis filter avoids all `_Candidate.accepts` calls on that disjoint grid. Native meshing still takes 2.74 s. The 1006-face CNC comb spends 1.74 s in ray queries, down from 5.00 s in the before profile.
+
+The temporary runner is `scratch_bench/bench_dfm.py`; comparison summaries are produced by `scratch_bench/report.py`. For example, `.venv\Scripts\python.exe scratch_bench\bench_dfm.py final --format step` reruns all STEP cases against the frozen baseline. Scratch files are retained for coordinator review and are not production dependencies.
+
+At each of the four optimization steps, canonical JSON comparisons matched all 20 benchmark calls, both processes for five models in both formats, and all 65 recorded fixture tool calls. Benchmark comparisons include complete `data.findings`, the untruncated findings artifact, and measurements. Fixture comparisons include complete `data.findings` and error families; generated workspace paths in errors are not stable across runs. A separate comparison against the saved original sampler matched every coordinate and sample order on 7,060 planar faces. The 23 additional tests cover exact ray distances, finite endpoints, trimmed holes, located curved faces, enlarged edge tolerances, grouping boundaries, sample ranking, and distance pruning. Existing fixture tests were not changed.
+
+The full suite passed before and after the changes with `.venv\Scripts\python.exe -m pytest -q --basetemp=scratch_bench/pytest_tmp -p no:cacheprovider`. `.venv\Scripts\python.exe -m eng_toolkit doctor` returned `ok: true` and exit 0 both times. Final logs are retained in `scratch_bench/final_pytest.log` and `scratch_bench/final_doctor.json`.
+
+### Cancellation and remaining limits
+
+There is still no public cancellation or time-budget parameter. Adding `max_seconds` requires editing the tool signature and compute wrapper in `eng_toolkit/domains/geometry/tools.py`, which was outside the permitted files. A small follow-up could create a monotonic deadline there, pass it into inventory and rule phases, and raise `ToolFailure("geometry.time_budget_exceeded", ..., {"phase": phase})` at phase and loop boundaries. A boundary check cannot interrupt an OCCT call already in progress.
+
+STEP import, native meshing, and edge facts still take time. Face access still uses one sample and exact native ray intersections, and its work can grow faster than linearly. These measurements cover constructed fixtures through 2006 faces, not arbitrary vendor files. Rules keep their original exact or heuristic classifications, and outputs remain `review_status: unreviewed`.
 
 ## What is not done
 

@@ -20,7 +20,7 @@ from eng_toolkit.brep._query import (
     _array,
     _faces,
     _hits,
-    _load_intersector,
+    _IndexedIntersector,
     _pnt,
     _r,
     _tuple,
@@ -270,12 +270,15 @@ class _Samples:
             location = TopLoc_Location()
             mesh = BRep_Tool.Triangulation_s(self._faces[face_id - 1], location)
             ranked: list[tuple[float, np.ndarray]] = []
-            if mesh is not None:
+            if mesh is not None and mesh.NbTriangles():
                 transform = location.Transformation()
-                nodes = [_array(mesh.Node(i).Transformed(transform)) for i in range(1, mesh.NbNodes() + 1)]
-                for i in range(1, mesh.NbTriangles() + 1):
-                    p, q, r = (nodes[k - 1] for k in mesh.Triangle(i).Get())
-                    ranked.append((0.5 * float(np.linalg.norm(np.cross(q - p, r - p))), (p + q + r) / 3.0))
+                nodes = np.array([_array(mesh.Node(i).Transformed(transform)) for i in range(1, mesh.NbNodes() + 1)])
+                triangles = np.array([mesh.Triangle(i).Get() for i in range(1, mesh.NbTriangles() + 1)]) - 1
+                p, q, r = (nodes[triangles[:, i]] for i in range(3))
+                cross = np.cross(q - p, r - p)
+                centres = (p + q + r) / 3.0
+                # Keep the scalar norm and stable sort: changing their rounding can reorder equal-area samples.
+                ranked = [(0.5 * float(np.linalg.norm(vector)), point) for vector, point in zip(cross, centres)]
             ranked.sort(key=lambda item: -item[0])
             self._cache[face_id] = [point for _, point in ranked]
         return self._cache[face_id][:limit]
@@ -310,7 +313,7 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
     diagonal = float(np.linalg.norm(hi - lo))
     nudge = max(1e-6 * diagonal, 1e-5)
     deflection = max(CHORD_FRACTION * diagonal, 1e-3)
-    intersector = _load_intersector(shape)
+    intersector = _IndexedIntersector(shape)
     samples = _Samples(shape, faces, deflection)
     pairs: list[FacingPair] = []
     tested = 0
@@ -434,7 +437,7 @@ def face_access(solid: Solid, inv: Inventory, directions: dict[str, Vec3], *, ki
     nudge = max(1e-5 * diagonal, 1e-5)
     deflection = max(CHORD_FRACTION * diagonal, 1e-3)
     reach = 2.0 * diagonal + 1.0
-    intersector = _load_intersector(shape)
+    intersector = _IndexedIntersector(shape)
     samples = _Samples(shape, faces, deflection)
     unit = {label: _unit(np.array(v, dtype=np.float64)) for label, v in directions.items()}
     found = []
