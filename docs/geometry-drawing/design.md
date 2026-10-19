@@ -98,7 +98,7 @@ eng_toolkit/
 tests/  test_engine_ownership.py (AST import rules, private-name rules) · test_extras_registry.py · hand-calculation tests per tool
 ```
 
-Extras: `cad` = OCP (~169 MB, lgpl-dynamic tier as already declared), `drawing` = ezdxf, pdfplumber, pypdfium2 (~70 MB), `scan` = `cad` + open3d. `scripts/install.ps1` installs every extra. Call chains stay at three files or fewer.
+Extras: `cad` = OCP (~169 MB, lgpl-dynamic tier as already declared), `drawing` = ezdxf and pdfminer.six (S5 chose pdfminer.six alone over pdfplumber and pypdfium2: [drawing-read.md](drawing-read.md)), `scan` = `cad` + open3d. `scripts/install.ps1` installs every extra. Call chains stay at three files or fewer.
 
 ### Part spec language (v1)
 
@@ -119,6 +119,8 @@ Parameters are unit strings with `$name` references, evaluated by the existing u
 | S8 | `geometry_convert` and `drawing_convert`. | STL volume 100000 and the cylinder chord bound 18.85 mm^3; GLB 0.1 m on +Y = 0.02; PDF line 283.465 pt; R12 losses listed. |
 | S9 | DWG: `ExternalTool`, `run_executable` with limits, doctor row, `drawing/dwg.py`. | a fake `dwg2dxf` tests success, non-zero exit, timeout and absence; the real binary test is skipped unless located. |
 | S10 | `make_part` round 2 and optional PMI read. | per-op hand calculations; AP242 60 mm dimension round trip. |
+
+**S5 as built** ([drawing-read.md](drawing-read.md)): `drawing_read` reads DXF and PDF in a child process with a hard time and memory limit (`eng_toolkit/isolated.py`), through `dxf_read.py` (a second ezdxf owner beside the writer `dxf.py`) and `pdf_read.py` (pdfminer.six). It answers the "file reads over HTTP" risk with the optional `ENG_TOOLKIT_READ_DIRS` allow-list, enforced for every tool in `JobHandle.input_file`. The gateway now lists twelve tools.
 
 Why S1 first: it makes the one-owner rule true while there is a single consumer and its safety net (984 lines of scan tests) already exists. The cross-judge confirmed it as the right first slice, and it kept the weld swap out of it.
 
