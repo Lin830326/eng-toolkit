@@ -133,7 +133,7 @@ def make_views(
         model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
         solid = brep.read_solid(model_file, param="model_path")
         if solid.faces == 0:
-            raise ToolFailure("input.invalid", f"model_path: no faces in {str(model_file)!r}", {"path": str(model_file)})
+            raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
         projections = [brep.project(solid, name, hidden=hidden_lines) for name in names]
         drawing = S.compose(projections, method=method, sheet=sheet_arg, scale=scale_arg, dimensions=mode, title=block)
 

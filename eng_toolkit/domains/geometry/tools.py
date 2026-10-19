@@ -250,7 +250,7 @@ def measure(
         model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
         solid = brep.read_solid(model_file, param="model_path")
         if solid.faces == 0:
-            raise ToolFailure("input.invalid", f"model_path: no faces in {str(model_file)!r}", {"path": str(model_file)})
+            raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
         props = brep.mass_properties(solid)
         inv = brep.inventory(solid)
         file_hash = job.input_files[-1].sha256

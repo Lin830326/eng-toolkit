@@ -111,7 +111,7 @@ Chosen: **documented, and an optional allow-list**. `ENG_TOOLKIT_READ_DIRS` (dir
 
 Alternatives: (a) a `--read-dir` command-line flag only: an environment variable reaches the gateway the same way for stdio and HTTP and is what the workspace root already uses. (b) always restrict to the workspace plus the current directory: breaks the common case of reading a drawing in `Documents`. (c) do nothing but document: the design's risk list asked for a gate or documentation; the gate is a few lines in a function that already exists.
 
-Known limit: the check and the open are two steps (time of check to time of use). The allow-list is a guard against an agent asking for the wrong file, not a sandbox against a local attacker who can swap files while the call runs.
+The check and the open used to be two steps (time of check to time of use): the coordinator session reproduced 5 leaks of an outside file in 78 reads while a directory inside the allowed one was swapped for a junction to the outside, because the parent checked the path and the child process then opened it again. `JobHandle.input_file` now opens the file **once** (`eng_toolkit/safefile.py`), asks the system for the real path of the *open file* (`GetFinalPathNameByHandleW`; `/proc/self/fd` on Linux; `F_GETPATH` on macOS; elsewhere `realpath` verified by `samestat`), compares that with the allow-list, and copies the bytes from the open file into `ws/<job-id>/input/<n>-<name>`, hashing them as they are copied. Every tool that goes through `input_file` (drawing_read, drawing_make_views, geometry_measure, metrology_check_scan) reads that copy; nowhere is the caller's path opened a second time. `provenance.input_files` keeps the real path of the original and the sha256 of the copied bytes, so the hash is the hash of what was processed. The lexical check before the open stays, only to keep the error order (a path outside the list is refused whether or not it exists). Measured with a thread that exchanges a real directory and a junction to the outside as fast as it can (about 1900 swaps in 4 s): the old logic leaked 411 of 4269 reads, the new one 0 (`tests/test_input_file_race.py`, plus the coordinator's `junction_test.py`: 61 reads, 0 leaks). Cost: every input file exists twice in the workspace. Not covered: the allowed directories themselves being swapped by an attacker, and an empty `ENG_TOOLKIT_READ_DIRS` meaning "unrestricted"; it is a guard against an agent asking for the wrong file, not a full sandbox.
 
 ### 6. Units and dimension values
 
@@ -194,6 +194,7 @@ A second agent, which had not seen the code, was given the files and the require
 | the entity cap was checked after the load (2 M points: 25 s) | cost | the records of the file are counted first (a regex over the bytes); far more than the cap is refused before ezdxf parses |
 | dimension block text rebuilt for every dimension (3000 dimensions x 3000 texts: 12.6 s) | cost | cached per block |
 | `input_file` hashed a 3 GB file before the size cap refused it | cost | `input_file(..., max_bytes=...)` refuses first, after the allow-list and existence checks |
+| a directory flipped to a junction between the allow-list check and the child process's open leaked the outside file (found by the coordinator, 5 of 78 reads) | TOCTOU | see decision 5: the file is opened once, its real path is checked on the open file and the bytes are copied |
 | `f"{2.5:.0f}"` is "2" (half-even), AutoCAD shows "3" | minor | not changed; computed text can differ in exact-half cases, the block text (what a viewer draws) wins when present |
 
 Checked and solid, from the same review: 15 of 15 forced timeouts with no leftover processes; the memory cap on a 1.5 GB flate bomb and a 3.4 M-vertex polyline; the allow-list against `..` in both slash styles, a junction, an 8.3 short name, `\\localhost\C$`, `\\?\`, a trailing space and a sibling directory with a shared prefix; block cycles, billion-laughs blocks, xref blocks, truncated and empty files, a PDF xref `/Prev` loop, a cyclic page tree, a form that draws itself; the two-line and three-point angles, ordinate and linear projection, DIMLFAC precedence, the unit table.
@@ -206,7 +207,8 @@ Checked and solid, from the same review: 15 of 15 forced timeouts with no leftov
 * The title block and the view count are guesses from positions, marked as such; an unusual layout can be paired wrongly, and a drawing whose views touch counts as one.
 * Text in a pre-R2007 DXF without `$DWGCODEPAGE` is decoded as cp1252 (the library default), so CJK text in such a file shows as mojibake; the reported `encoding_source` says "no $DWGCODEPAGE".
 * The memory cap exists on Windows and Linux; on macOS only the time limit applies, and the result says so.
-* The allow-list has a time-of-check to time-of-use window and is not a sandbox.
+* The allow-list is not a full sandbox: the allowed directories themselves are trusted, and `ENG_TOOLKIT_READ_DIRS` set to an empty string means "unrestricted" (a design choice to revisit).
+* Found by the coordinator, not changed: PDF font sizes are not multiplied by the text matrix (a scaled text shows its unscaled size); the default PDF line width is reported as 0; the extents include dimension lines and text positions, so they are larger than the part.
 * Not done in this slice (pre-existing, found earlier, not widened here): the cylinder-as-surface-of-revolution IGES extra dashed line in `drawing_make_views`; full-width and no-break spaces rejected in titles; `%%c`/`%%d` not escaped when writing.
 
 ## How to verify independently
@@ -223,6 +225,7 @@ Then try your own files: any DXF from another CAD program, an inch drawing (chec
 ## Tradeoffs accepted
 
 * A 1.2 s start-up per call in exchange for a hard time and memory limit on untrusted parsers.
+* A second copy of every input file in the workspace in exchange for tools that cannot be fooled by a path that changes after the check.
 * Text in a drawing is not interpreted beyond title-block pairing: no OCR, no GD&T, no scans.
 * The label-pair heuristic can pair a label with the wrong neighbour in an unusual title block, in exchange for naming every such field `inferred` with a confidence.
 * A generic extents walk that ignores clipping and text extent, and says so in `data.extents_note` (with `detail="full"`).

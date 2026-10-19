@@ -32,7 +32,8 @@ from eng_toolkit.contract import (
     inputs_hash,
 )
 from eng_toolkit.errors import ToolFailure
-from eng_toolkit.workspace import Workspace, sha256_file
+from eng_toolkit import safefile
+from eng_toolkit.workspace import Workspace
 
 ENV_READ_DIRS = "ENG_TOOLKIT_READ_DIRS"
 
@@ -160,10 +161,14 @@ class JobHandle:
     def input_file(
         self, raw: str, *, param: str, extensions: tuple[str, ...], max_bytes: int | None = None, too_large_family: str = "input.too_large"
     ) -> Path:
-        """Check a caller's path and record the file (path, size, sha256) in ``provenance.input_files``.
+        """Open a caller's file once and return the path of a copy of exactly those bytes, in this job's ``input/`` directory.
 
-        When ``ENG_TOOLKIT_READ_DIRS`` is set, only files below those directories (and below the workspace) are read:
-        see :func:`read_dirs`.  Nothing is recorded for a path that fails a check.
+        The file is opened one time; the checks that matter (``ENG_TOOLKIT_READ_DIRS``, the size cap) are made on the *open*
+        file, whose real location the system reports (see :mod:`eng_toolkit.safefile`), and the copy is hashed as it is
+        written.  A tool that reads the returned path therefore reads the bytes that were checked and recorded, whatever happens
+        to the caller's path afterwards (a directory swapped for a link to a place outside the allowed ones, say).
+        ``provenance.input_files`` records the real path of the original, its size and the sha256 of the bytes.  Nothing is
+        recorded for a path that fails a check.
         """
         path = Path(raw).expanduser()
         roots = read_dirs()
@@ -182,14 +187,38 @@ class JobHandle:
                 f"{param}: {path.suffix or '(no extension)'!r} is not supported; use one of {list(extensions)}",
                 {"param": param, "path": str(path), "supported": list(extensions)},
             )
-        if max_bytes is not None and path.stat().st_size > max_bytes:
-            raise ToolFailure(
-                too_large_family,
-                f"{param}: the file is {path.stat().st_size} bytes, over the {max_bytes} byte limit",
-                {"param": param, "bytes": path.stat().st_size, "limit_bytes": max_bytes},
+        gone = ToolFailure("input.file_not_found", f"{param}: no such file {str(path)!r}", {"param": param, "path": str(path)})
+        try:
+            fd = safefile.open_regular(path)
+        except OSError as exc:
+            raise gone from exc
+        try:
+            try:
+                real = safefile.final_path(fd, path)
+            except OSError as exc:
+                raise gone from exc
+            if roots is not None and not safefile.within(real, [*roots, self._job.dir.parent]):
+                raise ToolFailure(
+                    "input.path_not_allowed",
+                    f"{param}: this server only reads files below the directories named in {ENV_READ_DIRS} "
+                    f"({len(roots)} configured) and its workspace; the path is outside them",
+                    {"param": param, "allowed_directories": len(roots)},
+                )
+            size = os.fstat(fd).st_size
+            too_large = lambda n: ToolFailure(  # noqa: E731
+                too_large_family, f"{param}: the file is {n} bytes, over the {max_bytes} byte limit", {"param": param, "bytes": n, "limit_bytes": max_bytes}
             )
-        self.input_files.append(FileRef(path=str(path.resolve()), bytes=path.stat().st_size, sha256=sha256_file(path)))
-        return path
+            if max_bytes is not None and size > max_bytes:
+                raise too_large(size)
+            copy = self._job.dir / "input" / f"{len(self.input_files) + 1}-{path.name}"
+            try:
+                copied, digest = safefile.copy_from(fd, copy, max_bytes)
+            except safefile.TooLarge as exc:
+                raise too_large(exc.size) from exc
+        finally:
+            os.close(fd)
+        self.input_files.append(FileRef(path=real, bytes=copied, sha256=digest))
+        return copy
 
     def write_json(self, filename: str, obj: Any) -> Artifact:
         return self._job.write_json(filename, obj)
