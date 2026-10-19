@@ -36,8 +36,10 @@ Homepage = "https://github.com/Lin830326/eng-toolkit"
 #                                 (LGPL-2.1 + OCCT exception), used unmodified; the one 3D kernel (eng_toolkit.brep)
 #   scan (uv sync --extra scan) - the cad extra plus open3d (MIT), for metrology_check_scan
 #   drawing (uv sync --extra drawing) - the cad extra plus ezdxf (MIT; brings fonttools MIT, pyparsing MIT,
-#                                 typing_extensions PSF), for drawing_make_views.  Never install ezdxf[draw]:
-#                                 it pulls PyMuPDF (AGPL), which the doctor flags as a policy failure
+#                                 typing_extensions PSF) and pdfminer.six (MIT; brings charset-normalizer MIT and
+#                                 cryptography Apache-2.0 OR BSD-3-Clause), for drawing_make_views and drawing_read.
+#                                 Never install ezdxf[draw]: it pulls PyMuPDF (AGPL), which the doctor flags as a
+#                                 policy failure
 [project.optional-dependencies]
 cad = [
     "cadquery-ocp-novtk>=8.0.1.1.0",
@@ -49,6 +51,7 @@ scan = [
 drawing = [
     "eng-toolkit[cad]",
     "ezdxf>=1.4.5,<1.5",
+    "pdfminer.six>=20260107,<20270101",
 ]
 
 [dependency-groups]

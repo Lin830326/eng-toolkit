@@ -39,7 +39,7 @@ OPTIONAL = [engine for engine in KNOWN.values() if engine.optional and engine no
 
 
 def test_the_registry_has_optional_engines_to_check():
-    assert {e.dist for e in OPTIONAL} >= {"open3d", "cadquery-ocp-novtk", "ezdxf"}
+    assert {e.dist for e in OPTIONAL} >= {"open3d", "cadquery-ocp-novtk", "ezdxf", "pdfminer.six"}
 
 
 @pytest.mark.parametrize("engine", OPTIONAL, ids=lambda e: e.dist)
@@ -68,9 +68,9 @@ def test_scan_installs_both_engines_and_cad_only_the_kernel():
     assert dists_of("scan") == {"cadquery-ocp-novtk", "open3d"}
 
 
-def test_drawing_installs_ezdxf_on_top_of_the_kernel():
-    assert dists_of("drawing") == {"cadquery-ocp-novtk", "ezdxf"}
-    assert install_hint("ezdxf") == "uv sync --extra drawing"
+def test_drawing_installs_ezdxf_and_pdfminer_on_top_of_the_kernel():
+    assert dists_of("drawing") == {"cadquery-ocp-novtk", "ezdxf", "pdfminer-six"}
+    assert install_hint("ezdxf") == install_hint("pdfminer.six") == "uv sync --extra drawing"
 
 
 @pytest.mark.parametrize("guard", GUARDS, ids=lambda e: e.dist)

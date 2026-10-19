@@ -20,6 +20,7 @@ EXPECTED_TOOLS = {
     "geometry_measure",
     "geometry_make_part",
     "drawing_make_views",
+    "drawing_read",
 }
 
 
@@ -106,12 +107,13 @@ async def test_toolkit_list_tools_lists_domains_and_engines():
     assert ocp["optional"] is True
     assert "OCCT" in ocp["bundled_license"]
     drawing = next(d for d in r.data["domains"] if d["name"] == "drawing")
-    assert set(drawing["tools"]) == {"drawing_make_views"}
+    assert set(drawing["tools"]) == {"drawing_make_views", "drawing_read"}
     assert {e["dist"]: e["tier"] for e in drawing["engines"]} == {
         "pint": "permissive",
         "numpy": "permissive",
         "cadquery-ocp-novtk": "lgpl-dynamic",
         "ezdxf": "permissive",
+        "pdfminer.six": "permissive",
     }
     ezdxf = next(e for e in drawing["engines"] if e["dist"] == "ezdxf")
     assert ezdxf["optional"] is True and ezdxf["declared_license"] == "MIT"
@@ -213,6 +215,22 @@ def test_doctor_names_ezdxf_with_its_license(monkeypatch):
     assert r.ok
 
 
+def test_doctor_names_pdfminer_with_its_license(monkeypatch):
+    r = _doctor(monkeypatch, {"pdfminer.six": ("20260107", "MIT")})
+    row = _dep(r, "pdfminer.six")
+    assert (row["status"], row["declared_tier"], row["detected_tier"], row["optional"]) == ("ok", "permissive", "permissive", True)
+    assert r.ok
+
+
+def test_doctor_says_whether_file_reads_are_restricted(monkeypatch, tmp_path):
+    monkeypatch.delenv("ENG_TOOLKIT_READ_DIRS", raising=False)
+    open_ = _doctor(monkeypatch, {}).data["file_reads"]
+    assert open_["restricted"] is False and open_["directories"] is None and "http" in open_["note"]
+    monkeypatch.setenv("ENG_TOOLKIT_READ_DIRS", str(tmp_path))
+    closed = _doctor(monkeypatch, {}).data["file_reads"]
+    assert closed["restricted"] is True and closed["directories"] == 1 and closed["env"] == "ENG_TOOLKIT_READ_DIRS"
+
+
 @pytest.mark.asyncio
 async def test_calc_cylinder_force_over_mcp():
     async with Client(gateway) as client:
@@ -250,7 +268,7 @@ async def test_calc_pipe_pressure_drop_over_mcp():
 
 
 BASIC_JSON_TYPES = {"string", "number", "integer", "boolean"}
-MAX_TOOLS = 11  # 2 gateway + 2 calc + 4 metrology + 2 geometry + 1 drawing
+MAX_TOOLS = 12  # 2 gateway + 2 calc + 4 metrology + 2 geometry + 2 drawing
 
 
 @pytest.mark.asyncio

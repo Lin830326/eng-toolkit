@@ -1,4 +1,4 @@
-"""One owner per engine: OCP lives in eng_toolkit/brep, Open3D in metrology/scan.py, ezdxf in the drawing domain's dxf.py, and brep's internals stay inside brep."""
+"""One owner per engine: OCP lives in eng_toolkit/brep, Open3D in metrology/scan.py, ezdxf in the drawing domain's dxf.py (writes) and dxf_read.py (reads), pdfminer in its pdf_read.py, and brep's internals stay inside brep."""
 
 import ast
 from pathlib import Path
@@ -8,7 +8,8 @@ import pytest
 PACKAGE = Path(__file__).resolve().parents[1] / "eng_toolkit"
 OCP_OWNER = "brep/"
 OPEN3D_OWNER = "domains/metrology/scan.py"
-EZDXF_OWNER = "domains/drawing/dxf.py"
+EZDXF_OWNERS = ("domains/drawing/dxf.py", "domains/drawing/dxf_read.py")  # the writer and the reader of the one DXF library
+PDFMINER_OWNER = "domains/drawing/pdf_read.py"
 BREP = "eng_toolkit.brep"
 
 
@@ -44,8 +45,10 @@ def violations(source: str, relpath: str) -> list[str]:
                 found.append(f"{relpath}:{node.lineno} imports {name}; only eng_toolkit/brep may use OCP")
             if _is_module(name, "open3d") and relpath != OPEN3D_OWNER:
                 found.append(f"{relpath}:{node.lineno} imports {name}; only {OPEN3D_OWNER} may use Open3D")
-            if _is_module(name, "ezdxf") and relpath != EZDXF_OWNER:
-                found.append(f"{relpath}:{node.lineno} imports {name}; only {EZDXF_OWNER} may use ezdxf")
+            if _is_module(name, "ezdxf") and relpath not in EZDXF_OWNERS:
+                found.append(f"{relpath}:{node.lineno} imports {name}; only {' and '.join(EZDXF_OWNERS)} may use ezdxf")
+            if _is_module(name, "pdfminer") and relpath != PDFMINER_OWNER:
+                found.append(f"{relpath}:{node.lineno} imports {name}; only {PDFMINER_OWNER} may use pdfminer")
             if _is_module(name, BREP) and not inside_brep:
                 private = [part for part in name[len(BREP) :].split(".") if part.startswith("_")]
                 if private:
@@ -78,7 +81,8 @@ def test_the_owners_actually_use_their_engines():
     sources = dict(_modules())
     assert "OCP" in sources["brep/_files.py"]
     assert "open3d" in sources[OPEN3D_OWNER]
-    assert "ezdxf" in sources[EZDXF_OWNER]
+    assert all("ezdxf" in sources[owner] for owner in EZDXF_OWNERS)
+    assert "pdfminer" in sources[PDFMINER_OWNER]
 
 
 @pytest.mark.parametrize(
@@ -93,6 +97,11 @@ def test_the_owners_actually_use_their_engines():
         ("import open3d as o3d\n", "domains/geometry/tools.py"),
         ("from open3d import geometry\n", "brep/_files.py"),
         ("def f():\n    import open3d\n", "domains/metrology/tools.py"),
+        ("import ezdxf\n", "domains/drawing/tools.py"),
+        ("from ezdxf import recover\n", "domains/drawing/shaping.py"),
+        ("import pdfminer\n", "domains/drawing/dxf_read.py"),
+        ("from pdfminer.layout import LTChar\n", "domains/drawing/tools.py"),
+        ("def f():\n    import pdfminer.high_level\n", "runner.py"),
         ("from eng_toolkit.brep import _handle\n", "domains/geometry/tools.py"),
         ("from eng_toolkit.brep._files import read_solid\n", "domains/geometry/tools.py"),
         ("import eng_toolkit.brep._occ\n", "domains/geometry/tools.py"),
@@ -111,6 +120,9 @@ def test_the_checker_reports_a_forbidden_use(source, relpath):
         ("solid._handle\n", "brep/_files.py"),
         ("from eng_toolkit.brep._files import read_solid\n", "brep/__init__.py"),
         ("import open3d as o3d\n", "domains/metrology/scan.py"),
+        ("import ezdxf\n", "domains/drawing/dxf.py"),
+        ("import ezdxf\nfrom ezdxf import recover\n", "domains/drawing/dxf_read.py"),
+        ("from pdfminer.layout import LTChar\nimport pdfminer\n", "domains/drawing/pdf_read.py"),
         ("from eng_toolkit import brep\nbrep.read_solid\n", "domains/metrology/scan.py"),
         ("from eng_toolkit.brep import read_solid, Solid\n", "domains/geometry/tools.py"),
         ("import numpy\n", "domains/geometry/tools.py"),

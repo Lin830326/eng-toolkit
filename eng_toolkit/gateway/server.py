@@ -37,6 +37,7 @@ from eng_toolkit.licenses import (
     tier_explained_by_bundle,
     violates_policy,
 )
+from eng_toolkit.runner import ENV_READ_DIRS, read_dirs
 from eng_toolkit.workspace import Workspace
 
 ENGINE = "eng_toolkit.gateway"
@@ -255,6 +256,16 @@ def toolkit_doctor(
         "platform": platform.platform(),
         "dependencies": deps,
         "workspace": {"root": str(ws.root), "writable": ws_ok},
+        "file_reads": {
+            "restricted": read_dirs() is not None,
+            "directories": None if read_dirs() is None else len(read_dirs() or []),
+            "env": ENV_READ_DIRS,
+            "note": (
+                f"reads are limited to the {len(read_dirs() or [])} configured director(ies) and the workspace"
+                if read_dirs() is not None
+                else f"unrestricted: tools read any path this user can read; set {ENV_READ_DIRS} to limit them, always when serving over http"
+            ),
+        },
         "units": {"pint_ok": units_ok},
         "llm_free": {
             "calls_llm": False,

@@ -584,6 +584,7 @@ cad = [
 drawing = [
     { name = "cadquery-ocp-novtk" },
     { name = "ezdxf" },
+    { name = "pdfminer-six" },
 ]
 scan = [
     { name = "cadquery-ocp-novtk" },
@@ -608,6 +609,7 @@ requires-dist = [
     { name = "fluids", specifier = ">=1.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "open3d", marker = "extra == 'scan'", specifier = ">=0.20.0" },
+    { name = "pdfminer-six", marker = "extra == 'drawing'", specifier = ">=20260107,<20270101" },
     { name = "pint", specifier = ">=0.24" },
     { name = "pydantic", specifier = ">=2.7" },
 ]

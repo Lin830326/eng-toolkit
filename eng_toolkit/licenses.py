@@ -107,6 +107,15 @@ KNOWN: dict[str, Engine] = {
             optional=True,
             extra="drawing",
         ),
+        Engine(
+            "pdfminer.six",
+            "MIT",
+            TIER_PERMISSIVE,
+            "reads the text and vector content of a PDF (the one PDF module of the drawing domain; pure Python, brings charset-normalizer MIT and cryptography Apache-2.0 or BSD-3-Clause)",
+            ("drawing",),
+            optional=True,
+            extra="drawing",
+        ),
         # A guard, not a dependency: ezdxf[draw] pulls PyMuPDF for a PDF backend, and the doctor must flag it.
         Engine(
             "pymupdf",
