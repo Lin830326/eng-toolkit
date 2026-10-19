@@ -177,6 +177,70 @@ args = ["run", "--directory", "C:\\path\\to\\eng-toolkit", "eng-toolkit"]
 → `pressure_drop ≈ 0.128 bar ± 5%`、`velocity`、`reynolds`、`friction_factor_darcy`、`head_loss`。
 不含管件、彎頭、進出口與高程損失。
 
+### `calc_orifice_flow`
+孔口／節流閥流量 `Q = Cd·A·√(2Δp/ρ)`。`pressure_drop` 與 `flow_rate` 擇一給，另一個由公式算出。輸入：`diameter`、`density`、`discharge_coeff`（預設 0.62）、選填 `viscosity`（只用來算孔口雷諾數並在 Re < 10⁴ 時警告）、`flow_unit`、`pressure_unit`。
+
+```json
+{"diameter": "5 mm", "density": "870 kg/m^3", "pressure_drop": "100 bar"}
+```
+→ `flow_rate ≈ 110.75 L/min`、`orifice_velocity`、`orifice_area`。不含氣體可壓縮性、穴蝕、進流速度修正（Cd 由使用者給）。
+
+### `calc_pump_power`
+泵的液壓功率 `Q·Δp`、軸功率 `Q·Δp/η`（η 為**總效率**，0–1 的小數）、損失；給 `speed` 時另算軸扭矩。輸入：`flow_rate`、`pressure_rise`、`efficiency`、選填 `speed`、`power_unit`（預設 `kW`）。
+
+```json
+{"flow_rate": "60 L/min", "pressure_rise": "210 bar", "efficiency": 0.85, "speed": "1500 rpm"}
+```
+→ `shaft_power = 24.71 kW`、`hydraulic_power = 21.0 kW`、`shaft_torque ≈ 157.3 N·m`。
+
+### `calc_accumulator_precharge`
+氣囊／活塞式蓄壓器容量：氣體定律 `p·Vⁿ = 常數`（n = 1 等溫、1.4 絕熱），由要放出的油量與最低／最高工作壓力求氣體容積 V0 與預充壓力。輸入：`usable_volume`、`min_pressure`、`max_pressure`、`precharge_pressure`（空 = 0.9 × 最低壓力）、`exponent`、`pressures_are_gauge`（預設 true）、`volume_unit`。
+
+```json
+{"usable_volume": "5 L", "min_pressure": "100 bar", "max_pressure": "200 bar", "pressures_are_gauge": false, "precharge_pressure": "90 bar", "exponent": 1.0}
+```
+→ `gas_volume = 11.11 L`（V1 = 10 L、V2 = 5 L）。不含溫度變化與標準尺寸選型。
+
+### `calc_cylinder_speed`
+單桿油壓缸由流量求伸出／縮回速度 `v = Q/A`、行程時間，以及另一側回油流量（選回油管閥用）。輸入：`bore`、`flow_rate`、`rod`（空 = 無桿）、`stroke`、`speed_unit`（預設 `mm/s`）。
+
+```json
+{"bore": "100 mm", "rod": "50 mm", "flow_rate": "60 L/min", "stroke": "500 mm"}
+```
+→ `extend_speed = 127.3 mm/s`、`retract_speed = 169.8 mm/s`、`extend_time = 3.93 s`、回油 45／80 L/min。不含洩漏、油液壓縮性與加減速。
+
+### `mech_bolt_check`
+螺栓受拉檢核：應力面積 `A_s = π/4·(d − 0.9382P)²`、強度等級（`8.8` 等）的降伏強度、保證載重、扭矩↔預緊力 `T = K·F·d`、使用率。`torque` 與 `preload` 擇一給。輸入：`diameter`、`torque`／`preload`、`property_class`（預設 `8.8`）、`pitch`（空 = ISO 粗牙）、`nut_factor`（預設 0.2）、選填 `external_load`、`load_share`、`proof_strength`、`unit_system`。
+
+```json
+{"diameter": "10 mm", "torque": "40 N*m"}
+```
+→ `preload = 20 kN`、`proof_load ≈ 33.4 kN`、`utilization ≈ 0.60`。保證應力未給時以 0.9×降伏強度估計（警告中註明）；不含剪力、疲勞、扭轉應力。粗牙節距表見 [docs/calc-mech/metric-coarse-pitch-data.md](docs/calc-mech/metric-coarse-pitch-data.md)。
+
+### `mech_bearing_life`
+滾動軸承基本額定壽命 `L10 = (C/P)^p`（ISO 281 基本公式，球 p = 3、滾子 p = 10/3），換算小時；給 `required_life` 時反算所需 C。輸入：`dynamic_load_rating`、`equivalent_load`、`speed`、`bearing_type`（`ball`／`roller`）、選填 `required_life`。
+
+```json
+{"dynamic_load_rating": "30.7 kN", "equivalent_load": "5 kN", "speed": "1500 rpm"}
+```
+→ `l10_hours ≈ 2572 h`。不含可靠度修正 a1、潤滑修正 a_ISO、當量載重 X·Fr + Y·Fa（需廠商資料）。
+
+### `mech_spring_compression`
+圓線壓縮彈簧：彈簧常數 `k = G·d⁴/(8·D³·Na)`、旋繞比、Wahl 係數、剪應力、密合高度（依端部型式）；給 `load` 或 `deflection` 算另一個與應力，給 `free_length` 算到密合的行程並檢查挫屈。輸入：`wire_diameter`、`mean_diameter`、`active_coils`、`shear_modulus`（預設 79.3 GPa）、`end_type`、選填 `free_length`／`load`／`deflection`／`allowable_shear`、`unit_system`。
+
+```json
+{"wire_diameter": "2 mm", "mean_diameter": "16 mm", "active_coils": 8, "load": "100 N"}
+```
+→ `spring_rate = 4.84 N/mm`、`wahl_factor = 1.184`、`shear_stress ≈ 603 MPa`、`solid_height = 20 mm`。僅靜態；不含疲勞與共振。
+
+### `mech_beam_bending`
+單跨梁封閉解：簡支／懸臂 × 集中載重／均佈載重，回傳支承反力、最大剪力、最大彎矩、最大撓度、最大彎曲應力。斷面：`rectangle`、`circle`、`tube` 或 `custom`（`second_moment` + `extreme_fiber`）。輸入：`length`、`load`（集中為力，均佈為每長度力）、`support`、`load_type`、`position`、`elastic_modulus`（預設 210 GPa）、斷面尺寸、選填 `allowable_stress`、`unit_system`。
+
+```json
+{"length": "4 m", "load": "10 kN/m", "load_type": "udl", "width": "50 mm", "height": "100 mm"}
+```
+→ `max_bending_stress = 240 MPa`、`max_moment = 20 kN·m`、`max_deflection ≈ 38.1 mm`。線彈性、小變形、不計自重。
+
 ### `metrology_fit_limits`
 ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，如 `"25 mm"`）、`fit`（孔大寫／軸小寫，如 `"H7/g6"`）。IT01–IT18、孔 A–ZC／軸 a–zc，資料表自建於 `eng_toolkit/domains/metrology/data/iso286.json`（來源、授權、涵蓋範圍與已知缺口見 [docs/iso286-data.md](docs/iso286-data.md)）。
 
