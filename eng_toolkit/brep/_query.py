@@ -311,6 +311,59 @@ def _hits(intersector, origin: np.ndarray, direction: np.ndarray, reach: float) 
     return merged
 
 
+class _IndexedIntersector:
+    """OCCT's ray-query interface with conservative face-box pruning and lazy face intersectors."""
+
+    def __init__(self, shape):
+        from OCP.Bnd import Bnd_Box
+        from OCP.BRep import BRep_Tool
+        from OCP.BRepBndLib import BRepBndLib
+        from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+
+        self._faces = _faces(shape)
+        boxes = []
+        for face in self._faces:
+            box = Bnd_Box()
+            BRepBndLib.Add_s(face, box, False)  # analytic bounds, including topology tolerances; independent of meshing
+            boxes.append((*_array(box.CornerMin()), *_array(box.CornerMax())))
+        bounds = np.array(boxes)
+        tolerance = max(BRep_Tool.MaxTolerance_s(shape, kind) for kind in (TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX))
+        # Pruning must also retain hits admitted by edge/vertex tolerances and by floating-point rounding.
+        margin = tolerance + HIT_TOLERANCE_MM + 16 * np.finfo(float).eps * np.maximum(1.0, np.max(np.abs(bounds), axis=1))
+        self._lo = bounds[:, :3] - margin[:, None]
+        self._hi = bounds[:, 3:] + margin[:, None]
+        self._cache: dict[int, object] = {}
+        self._parameters: list[float] = []
+
+    def Perform(self, line, start: float, end: float):
+        origin, direction = _array(line.Location()), _array(line.Direction())
+        near = np.full(len(self._faces), start, dtype=float)
+        far = np.full(len(self._faces), end, dtype=float)
+        for axis in range(3):
+            if direction[axis] == 0.0:
+                outside = (origin[axis] < self._lo[:, axis]) | (origin[axis] > self._hi[:, axis])
+                far[outside] = -np.inf
+            else:
+                a = (self._lo[:, axis] - origin[axis]) / direction[axis]
+                b = (self._hi[:, axis] - origin[axis]) / direction[axis]
+                near = np.maximum(near, np.minimum(a, b))
+                far = np.minimum(far, np.maximum(a, b))
+        found = []
+        for index in np.flatnonzero(near <= far):
+            if index not in self._cache:
+                self._cache[index] = _load_intersector(self._faces[index])
+            intersector = self._cache[index]
+            intersector.Perform(line, start, end)
+            found.extend(float(intersector.WParameter(k)) for k in range(1, intersector.NbPnt() + 1))
+        self._parameters = found  # keep raw hits; _hits sorts and merges once across all faces
+
+    def NbPnt(self) -> int:
+        return len(self._parameters)
+
+    def WParameter(self, index: int) -> float:
+        return self._parameters[index - 1]
+
+
 def _bore(candidate: _Candidate, intersector, diagonal: float) -> tuple[np.ndarray, np.ndarray, bool] | None:
     """``(entry, drilling direction, thru)`` of a full-circumference concave cylinder, or None if it is not a hole.
 
@@ -363,20 +416,32 @@ def _bore(candidate: _Candidate, intersector, diagonal: float) -> tuple[np.ndarr
 
 def _find_holes(shape, cylinders: list[_Cylinder], diagonal: float) -> tuple[HoleInfo, ...]:
     candidates: list[_Candidate] = []
+    origins = np.empty((len(cylinders), 3))
+    axes = np.empty((len(cylinders), 3))
     for c in cylinders:
-        for existing in candidates:
+        count = len(candidates)
+        offsets = c.location - origins[:count]
+        projections = np.sum(offsets * axes[:count], axis=1)
+        lateral = offsets - projections[:, None] * axes[:count]
+        # A component outside the tolerance cannot pass the original norm test. Allow rounding here;
+        # accepts() below still makes every grouping decision with the original arithmetic and tolerances.
+        margin = SAME_MM + 16 * np.finfo(float).eps * np.maximum(1.0, np.max(np.abs(offsets), axis=1))
+        nearby = np.flatnonzero(np.all(np.abs(lateral) <= margin[:, None], axis=1))
+        for index in nearby:
+            existing = candidates[index]
             if existing.accepts(c):
                 existing.span += c.span
                 existing.face_ids.append(c.face_id)
                 break
         else:
+            origins[count], axes[count] = c.location, c.axis
             candidates.append(
                 _Candidate(c.location, c.axis, c.radius, c.v0, c.v1, span=c.span, face_ids=[c.face_id])
             )
     whole = [c for c in candidates if c.span >= TWO_PI - SAME_MM]
     if not whole:
         return ()
-    intersector = _load_intersector(shape)
+    intersector = _IndexedIntersector(shape)
     found = []
     for candidate in whole:
         bore = _bore(candidate, intersector, diagonal)

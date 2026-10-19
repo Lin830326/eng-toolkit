@@ -43,7 +43,7 @@ AXES: dict[str, tuple[float, float, float]] = {
 TOLERANCE_MM = 1e-6  # lengths closer than this are equal: used for "exactly the sheet thickness" and for limit comparisons
 PARALLEL = 1e-6  # |sin| of the angle below which two directions count as parallel
 FULL_TURN = 2.0 * math.pi - 1e-6
-MAX_FACES = 2500  # measured: 167 s at 2006 faces, and the time grows faster than linearly
+MAX_FACES = 2500  # kept unchanged; performance verified through 2006 faces (see docs/geometry-dfm/design.md)
 LIMIT_MAX_LENGTH_MM = 1e5  # a limit above 100 m is not a manufacturing limit; refusing it also keeps the arithmetic finite
 LIMIT_MAX_RATIO = 1e6
 LIMIT_MAX_COUNT = 6  # there are six axis directions
@@ -538,7 +538,7 @@ def check_sheet_metal(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
         if not any(_parallel(hole.axis, n) for n in normals):
             continue
         holes_checked += 1
-        nearest = _nearest_edge_face(solid, inv, hole, candidates)
+        nearest = _nearest_edge_face(solid, inv, hole, candidates, max_distance_mm=min_edge)
         if nearest is None:
             continue
         distance, face_id = nearest
@@ -574,8 +574,15 @@ def check_sheet_metal(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
     return Report(findings, measurements, checked, list(NOT_PERFORMED["sheet_metal"]), warnings)
 
 
-def _nearest_edge_face(solid: brep.Solid, inv: brep.Inventory, hole: brep.HoleInfo, candidates: list[brep.FaceInfo]) -> tuple[float, int] | None:
-    """Exact distance from a hole's wall to the nearest of ``candidates``, and that face; candidates are tried nearest-box first."""
+def _nearest_edge_face(
+    solid: brep.Solid,
+    inv: brep.Inventory,
+    hole: brep.HoleInfo,
+    candidates: list[brep.FaceInfo],
+    *,
+    max_distance_mm: float,
+) -> tuple[float, int] | None:
+    """Nearest edge face relevant to the reporting limit, with an exact distance; nearest-box first."""
     lo = np.min([inv.faces[i - 1].bbox_min_mm for i in hole.face_ids], axis=0)
     hi = np.max([inv.faces[i - 1].bbox_max_mm for i in hole.face_ids], axis=0)
 
@@ -586,7 +593,9 @@ def _nearest_edge_face(solid: brep.Solid, inv: brep.Inventory, hole: brep.HoleIn
 
     best: tuple[float, int] | None = None
     for face in sorted(candidates, key=box_gap):
-        if best is not None and box_gap(face) >= best[0]:
+        lower_bound = box_gap(face)
+        # These bounds are rounded to 1e-9 mm; leave slack before ruling out a possible finding.
+        if lower_bound > max_distance_mm + TOLERANCE_MM or (best is not None and lower_bound >= best[0]):
             break
         value = brep.distance(solid, brep.HoleRef(hole.id), brep.FaceRef(face.id), inv=inv)
         if best is None or value < best[0]:
