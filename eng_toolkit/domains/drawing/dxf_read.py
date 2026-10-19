@@ -70,7 +70,7 @@ MAX_MESSAGE = 500
 
 
 def _short(value: Any, limit: int = MAX_MESSAGE) -> Any:
-    return value if not isinstance(value, str) or len(value) <= limit else value[:limit] + f"... [{len(value) - limit} more characters]"
+    return Rd.cut_text(value, limit) if isinstance(value, str) else value
 
 
 def _corrupt(message: str, **details: Any) -> ToolFailure:

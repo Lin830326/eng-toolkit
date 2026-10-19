@@ -364,8 +364,7 @@ def _page_content(layout, scale: float, max_lines: int) -> tuple[dict[str, Any],
         for item in node:
             if isinstance(item, LTTextLine):
                 text = " ".join(item.get_text().split())
-                if len(text) > MAX_STRING:
-                    text = text[:MAX_STRING] + f"... [{len(text) - MAX_STRING} more characters]"
+                text = Rd.cut_text(text, MAX_STRING)
                 members = [c for c in item if isinstance(c, LTChar)]
                 chars += len(members)
                 if text:

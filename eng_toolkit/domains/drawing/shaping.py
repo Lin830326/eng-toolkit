@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from eng_toolkit.domains.drawing.reading import cut_text
+
 DETAILS = ("summary", "full")
 MAX_ITEMS = 500
 DEFAULT_ITEMS = 25
@@ -29,7 +31,7 @@ def shape(full: dict[str, Any], *, detail: str, max_items: int) -> dict[str, Any
 
 
 def _cut(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[:limit] + f"... [{len(text) - limit} more characters]"
+    return cut_text(text, limit)
 
 
 def _bound(value: Any, limit: int) -> Any:

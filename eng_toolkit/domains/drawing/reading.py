@@ -6,6 +6,7 @@ The readers (``dxf_read``, ``pdf_read``) run in a child process and hand back on
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -80,6 +81,22 @@ def units_info(insunits: int | None, measurement: int | None) -> tuple[dict[str,
         return {"insunits": insunits, "name": "unitless", "mm_per_unit": None, "source": "none", "measurement_hint": hint}, warnings
     warnings.append(f"$INSUNITS is {insunits}, which is not a unit code (1 to 24) the DXF reference defines; no millimetre values are given.")
     return {"insunits": insunits, "name": f"unknown({insunits})", "mm_per_unit": None, "source": "$INSUNITS", "measurement_hint": hint}, warnings
+
+
+_CUT_MARK = re.compile(r"\.\.\. \[(\d+) more characters\]\Z")
+
+
+def cut_text(text: str, limit: int) -> str:
+    """``text`` cut to ``limit`` characters plus a note of how many characters are missing from the ORIGINAL string.
+
+    A string cut earlier (to 4000 characters for the full result) and cut again (to 500 for the answer) keeps counting from the
+    original: the note of the first cut is read back and added.
+    """
+    found = _CUT_MARK.search(text)
+    kept, hidden = (text[: found.start()], int(found.group(1))) if found else (text, 0)
+    if len(kept) <= limit:
+        return text
+    return kept[:limit] + f"... [{len(kept) - limit + hidden} more characters]"
 
 
 def mm(value: float | None, mm_per_unit: float | None, digits: int = 6) -> float | None:
