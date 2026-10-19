@@ -169,6 +169,7 @@ Results (one run each unless said):
 | after sorting PDF lines top to bottom | 10 / 10, extras 4 / 4 | 10 / 10 with a lenient Q10 rule; **9 / 10** with the strict rule (one answer began "Yes, but no text can be read"); extras 4 / 4 including "unknown" for the unit-less file |
 | Q10 only, summary sentence "NO TEXT LAYER, so no text was read" | | 2 of 3 earlier answers began with "No"; with the sentence "Text: NONE ..." 4 / 6 |
 | Q10 only, summary sentence "Readable text: NO. This PDF has no text layer ..." | | **7 / 8** (the miss was "Yes. Wait, correction: no.") |
+| final code (after the review fixes), 2 runs, strict rule | **20 / 20**, extras 8 / 8 | **20 / 20**, extras 8 / 8 |
 
 What changed because of the check: the PDF lines are sorted top to bottom, then left to right; the PDF summary sentence for a file without text now answers the question the way a person asks it ("Readable text: NO"); the summary says `UNKNOWN` loudly for unit-less files and the model answered "unknown" for the unit-less line instead of 250 mm (2 / 2 times it was asked, once per mode); grammar of counts ("1 group", "inches"). The output was never too long: the default `data` is 5.6 kB, the summary about 700 characters. The check is one model, a few drawings and a handful of runs: a usability signal, not a benchmark, and it does not show that a model reads a long or messy real drawing correctly.
 
