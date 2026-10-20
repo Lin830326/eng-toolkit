@@ -468,6 +468,16 @@ pcb_export(board_path=".../board.kicad_pcb", export="gerbers", layers="F.Cu,B.Cu
 ```
 `pcb_drc`／`pcb_erc` 回 `error_count`、`warning_count`（DRC 另有 `unconnected_count`）；`data.violations` 依 KiCad 的類型（`clearance`、`track_width`、`invalid_outline`…）與嚴重度計數並列出每項涉及的物件與位置（mm），`data.rule_set` 說明用了哪組規則（KiCad 預設值，或板子旁 `.kicad_pro`／`.kicad_dru` 的白名單內容；`use_project_files=false` 則忽略）；原始 JSON 報告是 artifact。**重要限制：** 使用者的函式庫表看不到（設定目錄被導到工作目錄），所以會出現 `lib_footprint_issues`／`lib_symbol_issues` 警告；沒有 Edge.Cuts 外框的板子必有一個 `invalid_outline` 錯誤；違規沒有自己的標記位置，給的是涉及物件的位置；KiCad 10.0.6 的 ERC 報告座標縮小了 100 倍，工具會對照檔內符號位置校正並寫在 `data.position_calibration`；只檢查給定的那一個原理圖檔（子圖紙不複製）。`pcb_export` 的 `export` 為 `gerbers`（另有 `gerbers.zip`）、`drill`（Excellon，mm）、`pos`（CSV，mm，y 向上）、`pdf`、`svg`；圖層名稱必須是該板子圖層表裡的名稱，`data.files` 列出每個檔案的大小與 sha256。不做板子編輯、自動佈線與 3D。判定規則、可信範圍與沒做的事見 [docs/pcb/design.md](docs/pcb/design.md)。
 
+### `fem_mesh`、`fem_static`
+實體 CAD 模型的有限元素：`fem_mesh` 用 Gmsh 產生二階四面體網格（10 節點），回傳節點／元素數、元素品質（平均比值：1 為正四面體、0 為扁平）、網格體積對精確 B-rep 體積的相對差，以及碎片元素與過粗網格的警告，網格存成 `.msh`；`fem_static` 再用 CalculiX 做**線性靜力**分析（小位移、線彈性等向材料），回傳最大位移及位置、最大 von Mises 應力及位置、支承反力對外力的平衡檢查（偏差超過 1e-6 就整個呼叫失敗），並存 `.inp`、`.frd`、`.dat` 與每個節點位移與應力的 `results.csv`。Gmsh 與 CalculiX 是**使用者自己安裝**的獨立程式（GPL，只當外部行程啟動，從不打包或匯入；用 `ENG_TOOLKIT_GMSH`／`ENG_TOOLKIT_CCX` 指定路徑，或放在 `PATH`，`toolkit_doctor` 會列出）；讀幾何需要 `cad` extra。輸入檔與單位處理同 `geometry_measure`（STEP／IGES 依檔內單位轉成 mm）。
+
+```
+fem_static(model_path=".../bar.step", element_size="2.5 mm", youngs_modulus="210 GPa", poisson_ratio=0.3,
+           supports="x = 0 mm : ux; point(0 mm, 5 mm, 0 mm) : uy; point(0 mm, 5 mm, 10 mm) : uy; point(0 mm, 0 mm, 5 mm) : uz",
+           loads="force (10 kN, 0 N, 0 N) on x = 100 mm")
+```
+面的選法是平面：`x = 0 mm`（落在該平面的所有邊界面）或 `normal +z at z = 20 mm`（還要外法向量朝 +z）；支承 `<面> [: ux uy uz | fixed]` 或 `point(x, y, z) : <自由度>`（最近的網格節點，須在一個元素大小內），載重 `force (Fx, Fy, Fz) on <面>`（總力依面積均勻分布）或 `pressure p on <面>`（正值壓向材料）；以 `;` 分隔。一個選不到任何面的選擇器、同時是支承又受力的面、留有剛體運動的支承，都回清楚的錯誤（`fem.empty_selection`、`fem.overlapping_selection`、`fem.not_constrained`）。**呼叫者從不提供 Gmsh 腳本或 CalculiX 輸入檔**，選擇器語言只允許字母、數字與少數符號，解析成數字後由工具自己寫輸入；元素數在網格前以 `6√2·體積/尺寸³` 估算，超過 6 萬個、或尺寸小於外框對角線的 1/1000 回 `input.too_large`。整面固定（`fixed`）會擋住該面的泊松收縮，應力與撓度與梁理論略有差異（警告會說明）。不含塑性、接觸、大位移、動態、溫度。數字的推導、容許誤差與限制見 [docs/fem/design.md](docs/fem/design.md)。
+
 ---
 
 ## 輸入規則：每個物理量都要帶單位
