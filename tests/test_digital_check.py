@@ -66,6 +66,46 @@ def test_a_combinational_loop():
     assert r.values["errors"].quantity == 1
 
 
+@pytest.mark.parametrize("top", ["t", ""])
+@pytest.mark.parametrize(
+    "text, loop_lines",
+    [
+        ("module t(output y);\nwire a;\nassign a = ~a;\nassign y = a;\nendmodule\n", {3}),
+        (
+            "module t(input x, output y);\nwire a,b,c;\nassign a = ~c;\nassign b = ~a;\nassign c = ~b;\nassign y = a ^ x;\nendmodule\n",
+            {3, 4, 5},
+        ),
+        ("module t(input x, output y);\nwire a,b;\nassign a = b & x;\nassign b = ~a;\nassign y = a;\nendmodule\n", {3, 4}),
+        ("module t(input x, output reg y);\nalways @* y = ~y & x;\nendmodule\n", {2}),
+    ],
+    ids=["self-inverter", "inverter-ring", "gated-feedback", "process-feedback"],
+)
+def test_feedback_is_preserved_before_check(text, loop_lines, top):
+    r = check(source=text, top=top)
+    assert r.ok and r.review_status == "unreviewed"
+    f = one(r, "combinational-loop")
+    assert f["file"] == "source" and f["line"] in loop_lines
+    assert set(f["lines"]) == loop_lines and f["severity"] == "error"
+    assert rules(r) == ["combinational-loop"]
+    assert "proc -noopt" in commands(r)
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("module t(output y);\nwire a;\nassign y = a;\nendmodule\n", ["undriven-signal"]),
+        ("module t(input a, output y);\nassign y = ~a;\nendmodule\n", []),
+    ],
+    ids=["genuinely-undriven", "clean-inverter"],
+)
+def test_preserving_feedback_keeps_undriven_and_clean_results(text, expected):
+    r = check(source=text, top="t")
+    assert r.ok and rules(r) == expected
+    assert r.data["clean"] is (not expected)
+    if expected:
+        assert one(r, "undriven-signal")["line"] == 2
+
+
 def test_a_loop_through_a_module_boundary_is_found_after_flattening():
     text = (
         "module inv(input a, output y);\n  assign y = ~a;\nendmodule\n"  # lines 1-3
@@ -78,6 +118,8 @@ def test_a_loop_through_a_module_boundary_is_found_after_flattening():
     r = check(source=text, top="t")
     f = one(r, "combinational-loop")
     assert "flattening" in f["message"] and f["severity"] == "error"
+    assert f["file"] == "source" and f["line"] in (2, 6)
+    assert "undriven-signal" not in rules(r)
 
 
 def test_a_syntax_error_has_file_and_line():

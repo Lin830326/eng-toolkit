@@ -1,6 +1,6 @@
 # The `digital` domain: Verilog synthesis, lint and equivalence checking with Yosys
 
-Code: `eng_toolkit/domains/digital/` (`tools.py` the three tools, `guard.py` the source gatekeeper, `flow.py` scripts, the limited run and the log reader, `lint.py`, `equiv.py`, `metrics.py`, `engines.py` registers `EXTERNAL_TOOLS = (YOSYS,)`). Tests: `tests/test_digital_*.py` (guard 89, synthesize 24, check 15, equivalent 24, hostile 91, 243 in all; real-Yosys tests skip when Yosys is absent). The program is Yosys (ISC licence), started only as a separate process through `eng_toolkit.external` (see `docs/external/design.md`); nothing is imported, linked or bundled.
+Code: `eng_toolkit/domains/digital/` (`tools.py` the three tools, `guard.py` the source gatekeeper, `flow.py` scripts, the limited run and the log reader, `lint.py`, `equiv.py`, `metrics.py`, `engines.py` registers `EXTERNAL_TOOLS = (YOSYS,)`). Tests: `tests/test_digital_*.py`, including direct and gateway Unicode validation in `test_digital_unicode.py`; real-Yosys tests skip when Yosys is absent. The program is Yosys (ISC licence), started only as a separate process through `eng_toolkit.external` (see `docs/external/design.md`); nothing is imported, linked or bundled.
 
 Checked on Yosys 0.70+157 (OSS CAD Suite) on Windows 11. Nothing was run on Linux or macOS and no other Yosys version was tried.
 
@@ -29,7 +29,7 @@ Result: `value` and `values.cells` (total cells), `wires`, `wire_bits`, `area_un
 
 ### `digital_check(source|files, top, language, timeout_seconds)`
 
-`read_verilog`, `hierarchy -check [-top T]`, `proc`, `write_json design.json` (for source locations), `check`, then `flatten` and `check` again, only to find combinational loops that run through a module boundary. `ok` is true when the check ran, also when it found errors (`values.errors`, `values.warnings`, `data.findings`, `data.clean`). Yosys stops at the first error it cannot recover from (a syntax error, a missing module), so that is one finding and the checks after it did not run (a warning in the result says so).
+`read_verilog`, `hierarchy -check [-top T]`, `proc -noopt`, `write_json design.json` (for source locations), `check`, then `flatten` and `check` again, only to find combinational loops that run through a module boundary. `proc -noopt` skips the final `opt_expr` pass, which can erase self-inverting wires and inverter rings before `check` sees them. Preserving those cells lets `check` report `combinational-loop` with source lines while genuinely undriven wires still report `undriven-signal`. `ok` is true when the check ran, also when it found errors (`values.errors`, `values.warnings`, `data.findings`, `data.clean`). Yosys stops at the first error it cannot recover from (a syntax error, a missing module), so that is one finding and the checks after it did not run (a warning in the result says so).
 
 A finding is `{rule, severity, message, file, line, lines, module, signal, detail, hint}`. File and line come from the Yosys message, or from the `src` attribute Yosys keeps on every wire and cell. `file` is the file name you gave, or `source` for inline text; the toolkit's own names (`src0.v`) are replaced in every message.
 
@@ -61,6 +61,8 @@ Each design is read into its own Yosys design, `hierarchy -check -top`, `proc`, 
 ## The security model
 
 Verilog and Yosys are program-adjacent: Yosys's preprocessor opens any file an `` `include `` names and its system tasks read and write files and run programs. The rule: **the caller's text is data and never becomes a Yosys command, a command-line argument or a file name.**
+
+All three tools check every string parameter for UTF-8 encodability before the runner writes or hashes inputs. Lone surrogates return `ok: false` with `input.invalid`, naming the parameter and saying its text is not valid Unicode text without echoing it. These refusals create no job; their provenance hashes an ASCII JSON representation of the rejected inputs. Paths decoded from JSON lists in `files`, `files_a`, and `files_b` get the same validation before file access.
 
 1. The Yosys script is written by the toolkit (`flow.py`, `lint.py`, `equiv.py`, `tools.py`) from fixed lines and values validated first: file names `src<N>.v` chosen by the toolkit, module names that match `[A-Za-z_][A-Za-z0-9_]{0,63}`, `language` and `target` from short lists, integers. The script is stored with the result. A test requires every line of every script to match a fixed pattern (`tests/digital_fixtures.SCRIPT_LINE`) and checks that a marker placed in the Verilog is in no command.
 2. The arguments of Yosys are `-q -l <log> -s <script>`, all inside the job directory (`PathLike`, checked by the layer). No option, include path, plugin, `-D`, `exec`, `shell` or `tee -o` reaches Yosys from a caller.

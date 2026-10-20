@@ -77,6 +77,14 @@ class Source:
     modules: tuple[str, ...]
 
 
+def unicode_text(raw: str, *, param: str) -> None:
+    """Reject lone surrogates without including them in an error message."""
+    try:
+        raw.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ToolFailure("input.invalid", f"{param}: the text is not valid Unicode text", {"param": param}) from None
+
+
 def plain_identifier(raw: str, *, param: str) -> str:
     """``raw`` stripped, if it is a plain Verilog identifier of at most 64 characters (letters, digits, underscore; not starting with a digit)."""
     name = raw.strip()

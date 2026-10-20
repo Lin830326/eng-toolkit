@@ -70,7 +70,7 @@ SCRIPT_LINE = re.compile(
     r"|synth -top [A-Za-z_][A-Za-z0-9_]*( -noabc)?"
     r"|flatten -noscopeinfo"
     r"|abc -g (simple|gates|aig|cmos2|NAND)"
-    r"|opt_clean|proc|flatten|memory|async2sync|stat|ltp -noff|check"
+    r"|opt_clean|proc( -noopt)?|flatten|memory|async2sync|stat|ltp -noff|check"
     r"|tee -o (stat|state)\.json stat -json"
     r"|write_verilog -noattr netlist\.v|write_json (netlist|design)\.json"
     r"|log eng-toolkit-marker-flat-check"
