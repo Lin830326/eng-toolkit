@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import convert_check as CC
+import dwg_fixtures as DF
 import pytest
 import raw_dxf as R
 from fastmcp import Client
@@ -274,7 +275,8 @@ async def test_a_client_gets_a_normal_result_for_nan_coordinates(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_a_client_sees_the_dwg_error_and_the_unreviewed_status(tmp_path):
+async def test_a_client_sees_the_dwg_error_and_the_unreviewed_status(tmp_path, monkeypatch):
+    DF.remove_tool(monkeypatch, tmp_path)
     p = tmp_path / "x.dwg"
     p.write_bytes(b"AC1027\x00" * 4)
     r = await _through_the_gateway({"input_path": str(p), "output_format": "pdf"})

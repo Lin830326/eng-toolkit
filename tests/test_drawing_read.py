@@ -6,6 +6,7 @@ import os
 import typing
 from pathlib import Path
 
+import dwg_fixtures as DF
 import dxf_reader as StdlibDxf
 import pytest
 import raw_dxf as RD
@@ -250,10 +251,11 @@ def test_a_missing_file(tmp_path):
     assert r.error.details["param"] == "path"
 
 
-def test_a_dwg_gets_the_converter_hint_and_other_extensions_are_unsupported(tmp_path):
+def test_a_dwg_without_the_program_names_it_and_other_extensions_are_unsupported(tmp_path, monkeypatch):
+    DF.remove_tool(monkeypatch, tmp_path)  # whatever the machine has installed; DWG input with a program is tested in test_drawing_dwg.py
     (tmp_path / "x.dwg").write_bytes(b"AC1032" + b"\x00" * 50)
-    r = failed(call(tmp_path / "x.dwg"), "input.unsupported_format")
-    assert "dwg2dxf" in r.error.message
+    r = failed(call(tmp_path / "x.dwg"), "engine.unavailable")
+    assert "dwg2dxf" in r.error.message and "ENG_TOOLKIT_DWG2DXF" in r.error.message
     (tmp_path / "x.txt").write_text("hello")
     failed(call(tmp_path / "x.txt"), "input.unsupported_format")
 

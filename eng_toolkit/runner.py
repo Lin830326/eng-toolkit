@@ -115,6 +115,7 @@ def _provenance(engine: str, version: str, inputs: dict[str, Any], handle: "JobH
             versions[dist] = md.version(dist)
         except md.PackageNotFoundError:
             pass
+    versions.update(handle.engine_versions)
     return Provenance(
         engine=engine,
         version=version,
@@ -156,10 +157,15 @@ class JobHandle:
         self._job = job
         self.input_files: list[FileRef] = []
         self._copies: dict[str, str] = {}  # the copy a tool reads -> the path the caller named
+        self.engine_versions: dict[str, str] = {}  # versions of programs that are not Python distributions (an external executable's), added to the provenance
 
     @property
     def job_id(self) -> str:
         return self._job.job_id
+
+    @property
+    def job_dir(self) -> Path:
+        return self._job.dir
 
     def input_file(
         self, raw: str, *, param: str, extensions: tuple[str, ...], max_bytes: int | None = None, too_large_family: str = "input.too_large"

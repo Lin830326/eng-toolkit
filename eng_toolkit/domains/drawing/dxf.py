@@ -534,13 +534,13 @@ TEXT_TYPES = ("TEXT", "MTEXT", "ATTRIB", "ATTDEF")
 MAX_HATCH_SEGMENTS = 200_000  # per hatch; a denser pattern is drawn as its boundary
 MAX_NAMES = 60  # longest list of names (styles, fonts, linetypes, handles) in the answer
 DWG_MESSAGE = (
-    "DWG files are not read by this version: converting a DWG needs the dwg2dxf tool (LibreDWG), which is planned as slice S9 "
-    "and is not available yet. Convert the file to DXF with a CAD program or dwg2dxf and convert the DXF"
+    "this file is a DWG, not a DXF, and reached the DXF converter directly: a DWG is converted to DXF by LibreDWG's dwg2dxf before it gets "
+    "here (drawing_convert does that when the program is installed). Convert the file to DXF first"
 )
 
 
 def dwg_unavailable(name: str = "") -> ToolFailure:
-    return ToolFailure("engine.unavailable", DWG_MESSAGE, {"tool": "dwg2dxf", "format": "dwg", "slice": "S9", **({"path": name} if name else {})})
+    return ToolFailure("engine.unavailable", DWG_MESSAGE, {"tool": "dwg2dxf", "format": "dwg", **({"path": name} if name else {})})
 
 
 class _Clock:

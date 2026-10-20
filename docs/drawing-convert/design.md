@@ -28,7 +28,7 @@ Errors: `input.invalid` (format, version, scale, sheet; a PDF named .dxf), `inpu
 
 * **pdf**: the toolkit's own writer (PDF 1.4, one page, no compression, no dates), the same backend as `drawing_make_views`. **svg**: the same recording in millimetres, own writer. **png**: that PDF rasterised by PDFium at 150 dpi or less (4000 px long side), greyscale, in the child process. PDFium only ever parses the PDF this call just wrote.
 * **dxf**: the document is loaded (strict, then salvage of a cut-off file, then ezdxf's recovery), the version is changed (`doc.dxfversion`), the file is saved with fixed metadata (no dates or GUIDs; CLASS records sorted), and read back with ezdxf to check it and to count what was lost. R12, R2000, R2004, R2007, R2010, R2013, R2018. R13 and R14 cannot be written by the library and are refused by name. `sheet` and `scale` are ignored (warning).
-* **dwg**: `engine.unavailable`, message "converting a DWG needs the dwg2dxf tool (LibreDWG), planned as slice S9"; recognised by the `.dwg` extension (nothing is opened) and by a DWG header inside a `.dxf`. S9 is not built.
+* **dwg**: converted to DXF first by the user's LibreDWG `dwg2dxf` (slice S9, `docs/drawing-dwg/design.md`); without the program `engine.unavailable` with how to get it. Recognised by the `.dwg` extension and by a DWG header inside a `.dxf`.
 
 ## Losses (`data.losses.items`)
 
@@ -81,7 +81,7 @@ The file is untrusted. It is converted by `eng_toolkit.isolated` in a child proc
 
 ## Not done, not verified
 
-* Not built: DWG input (S9); colour; a text layer (searchable PDF text); paper space and layouts (only model space); viewports; a dpi parameter (PNG is fixed at 150 dpi or the 4000 px long side); a title block or frame on the converted page (the converter adds nothing to the drawing); conversion of ELLIPSE, SPLINE and MTEXT to something R12 can hold (they are dropped and listed); complex linetypes with text or shapes (only the dashes are used).
+* Not built: DWG output; colour; a text layer (searchable PDF text); paper space and layouts (only model space); viewports; a dpi parameter (PNG is fixed at 150 dpi or the 4000 px long side); a title block or frame on the converted page (the converter adds nothing to the drawing); conversion of ELLIPSE, SPLINE and MTEXT to something R12 can hold (they are dropped and listed); complex linetypes with text or shapes (only the dashes are used).
 * Not verified: that AutoCAD, BricsCAD or LibreCAD open the DXF written for each release (checked: written by ezdxf, read back by ezdxf, `ezdxf` audit finds no errors for R12 in an experiment, and by the independent reader `tests/dxf_reader.py` for R2000 and R12); PDF in a viewer other than pdfminer.six and PDFium; the memory cap on macOS (not applied, the time limit applies); the figures in the limits table on another machine; fonts: the outlines depend on the fonts installed (the PDF is byte-stable on one machine, not across machines), and the PNG additionally on the PDFium build.
 * `drawing_read` still counts value-`0` lines as records (see Decisions): a file with about 100 000 entities and many zero coordinates can be refused there although it is under its 500 000-entity cap. Not changed here; a follow-up.
 * The loss list for DXF-to-DXF does not see what ezdxf drops inside objects (extension dictionaries, extended data it does not keep, custom classes): only entity types, the listed properties and layouts are counted.

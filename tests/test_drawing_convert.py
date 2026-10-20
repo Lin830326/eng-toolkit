@@ -14,6 +14,7 @@ import typing
 from pathlib import Path
 
 import convert_check as CC
+import dwg_fixtures as DF
 import dxf_reader as DR
 import pytest
 import raw_dxf as R
@@ -493,15 +494,17 @@ def test_a_dxf_that_is_cut_off_is_converted_as_far_as_it_goes(tmp_path):
 # --------------------------------------------------------------------------- refusals
 
 
-def test_a_dwg_is_refused_with_the_name_of_the_tool_it_needs(tmp_path):
+def test_a_dwg_is_refused_with_the_name_of_the_tool_it_needs(tmp_path, monkeypatch):
+    DF.remove_tool(monkeypatch, tmp_path)  # whatever the machine has installed; DWG input with a program is tested in test_drawing_dwg.py
     p = tmp_path / "a.dwg"
     p.write_bytes(b"AC1018\x00\x00\x00\x00\x00\x00\x00\x00")
     r = failed(convert(p, "pdf"), "engine.unavailable")
-    assert "dwg2dxf" in r.error.message and "S9" in r.error.message
+    assert "dwg2dxf" in r.error.message and "ENG_TOOLKIT_DWG2DXF" in r.error.message
     assert r.error.details["tool"] == "dwg2dxf" and r.provenance.input_files == []  # nothing was opened
 
 
-def test_a_dwg_that_is_named_dxf_is_recognised_by_its_content(tmp_path):
+def test_a_dwg_that_is_named_dxf_is_recognised_by_its_content(tmp_path, monkeypatch):
+    DF.remove_tool(monkeypatch, tmp_path)
     p = tmp_path / "a.dxf"
     p.write_bytes(b"AC1018\x00\x00\x00\x00\x00\x00\x00\x00" + bytes(200))
     r = failed(convert(p, "pdf"), "engine.unavailable")
@@ -578,7 +581,7 @@ def test_the_arguments_are_strings_only_and_the_description_states_the_contract(
     assert list(hints) == ["input_path", "output_format", "sheet", "scale", "dxf_version"]
     assert all(typing.get_origin(v) is typing.Annotated and typing.get_args(v)[0] is str for v in hints.values())
     text = drawing_tools.CONVERT_DESCRIPTION
-    for needle in ("283.465", "dwg2dxf", "S9", "data.losses", "true scale", "ISO 5455", "ISO 5457", "R2018", "untrusted"):
+    for needle in ("283.465", "dwg2dxf", "ENG_TOOLKIT_DWG2DXF", "data.losses", "true scale", "ISO 5455", "ISO 5457", "R2018", "untrusted"):
         assert needle in text, needle
     assert "make_views" in drawing_tools.TOOL_NAMES and drawing_tools.TOOL_NAMES == ("make_views", "read", "convert")
 

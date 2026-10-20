@@ -24,7 +24,7 @@ from eng_toolkit import __version__, brep
 from eng_toolkit.contract import QuantityOut, ToolResult
 from eng_toolkit.domains.drawing import callouts as K
 from eng_toolkit.domains.drawing import convert as V
-from eng_toolkit.domains.drawing import dxf, features, raster, reading, shaping
+from eng_toolkit.domains.drawing import dwg, dxf, features, raster, reading, shaping
 from eng_toolkit.domains.drawing import sheet as S
 from eng_toolkit.errors import EngineUnavailable, ToolFailure
 from eng_toolkit.isolated import MEMORY_MB, TIMEOUT_S, run_isolated
@@ -361,7 +361,11 @@ READ_DESCRIPTION = (
     "attributes (exact) or from label and value texts (inferred, with a confidence); and an estimate of the number of views. "
     "PDF: the page count and sizes in mm, text lines with their positions, and vector statistics (paths by line width and "
     "dash, lengths, extents); a PDF with no text layer, such as the ones drawing_make_views writes (its text is outlines), "
-    "says so and returns vector statistics only. DWG is not read (convert it with dwg2dxf first). "
+    "says so and returns vector statistics only. "
+    "DWG (releases R12, R2000, R2004, R2007, R2010, R2013, R2018; also a DWG that is named .dxf) is read only when the user has installed "
+    f"LibreDWG's dwg2dxf ({dwg.ENV_EXE} or PATH): the toolkit runs it as a separate program, in a limited process, and reads the DXF it writes "
+    "with the checks below; data.dwg names the release and tool version, and the result says LibreDWG may lose or change content. Without the "
+    "program a DWG returns engine.unavailable with what to install. "
     "The answer is a short 'summary' paragraph plus the main facts, every list cut to max_items with its total; the full "
     "content is in the JSON file named in data.full_json. detail='full' adds fields to each item. The file is untrusted: "
     f"it is read in a separate process with a {TIMEOUT_S:g} s and {MEMORY_MB} MB limit, files over {LIMITS.max_file_bytes // 10**6} MB "
@@ -424,37 +428,43 @@ def _read_values(full: dict[str, Any]) -> tuple[dict[str, QuantityOut], str]:
 
 @server.tool(name="read", description=READ_DESCRIPTION)
 def read(
-    path: Annotated[str, Field(description="Path to the drawing: .dxf or .pdf (a .dwg must be converted to DXF first)")],
+    path: Annotated[str, Field(description="Path to the drawing: .dxf, .pdf or .dwg (a .dwg needs LibreDWG's dwg2dxf, installed by the user)")],
     detail: Annotated[str, Field(description="summary (default) or full: full adds fields to each listed item, never more items")] = "summary",
     max_items: Annotated[int, Field(description=f"How many items of each list to return inline, 1 to {shaping.MAX_ITEMS}; the JSON file has them all")] = shaping.DEFAULT_ITEMS,
 ) -> ToolResult:
     inputs = {"path": path, "detail": detail, "max_items": max_items}
     suffix = Path(path).suffix.lower()
-    engines = (READERS[suffix][2],) if suffix in READERS else ()
+    engines = (READERS[".dxf" if suffix == ".dwg" else suffix][2],) if suffix in READERS or suffix == ".dwg" else ()
 
     def compute(job: JobHandle) -> Computed:
         if detail not in shaping.DETAILS:
             raise ToolFailure("input.invalid", f"detail must be one of {list(shaping.DETAILS)}, got {detail!r}", {"param": "detail", "allowed": list(shaping.DETAILS)})
         if not 1 <= max_items <= shaping.MAX_ITEMS:
             raise ToolFailure("input.invalid", f"max_items must be between 1 and {shaping.MAX_ITEMS}, got {max_items}", {"param": "max_items", "min": 1, "max": shaping.MAX_ITEMS})
-        if suffix == ".dwg":
-            raise ToolFailure(
-                "input.unsupported_format",
-                "path: DWG files are not read by this version; convert the file to DXF first (for example with LibreDWG's dwg2dxf, "
-                "which you install yourself) and read the DXF",
-                {"param": "path", "path": str(Path(path)), "supported": list(READERS)},
-            )
         limits, timeout_s, memory_mb = _read_limits()
-        file = job.input_file(path, param="path", extensions=tuple(READERS), max_bytes=limits.max_file_bytes, too_large_family="drawing.too_large")
-        target, module, dist = READERS[file.suffix.lower()]
+        shown = str(Path(path))
+        if suffix == ".dwg":
+            _require_engine(*READERS[".dxf"][1:])
+            dwg.require_tool(shown)  # before the file is opened: a missing program costs nothing
+        file = job.input_file(path, param="path", extensions=(*READERS, ".dwg"), max_bytes=limits.max_file_bytes, too_large_family="drawing.too_large")
+        converted: dwg.Converted | None = None
+        if file.suffix.lower() in (".dwg", ".dxf") and dwg.needs_conversion(file):
+            _require_engine(*READERS[".dxf"][1:])
+            converted = dwg.convert(job, file, shown=shown, max_output_bytes=limits.max_file_bytes)
+        target, module, dist = READERS[".dxf" if converted else file.suffix.lower()]
         _require_engine(module, dist)
-        outcome = run_isolated(target, [str(file), limits.as_dict()], timeout_s=timeout_s, memory_mb=memory_mb)
+        outcome = run_isolated(target, [str(converted.path if converted else file), limits.as_dict()], timeout_s=timeout_s, memory_mb=memory_mb)
         full = outcome.value
+        if converted:  # the reader saw the DXF that dwg2dxf wrote; say so in the file record as well
+            full["file"] = {**full["file"], "name": Path(path).name, "dxf_name": dwg.OUTPUT_NAME, "dxf_bytes": full["file"]["bytes"], "bytes": job.input_files[-1].bytes, "source_format": "dwg"}
+            full["dwg"] = converted.info
         saved = job.write_json("drawing_read.json", full)
         data = shaping.shape(full, detail=detail, max_items=max_items)
         data["full_json"] = saved.path
+        if converted:
+            data["dwg"] = converted.info
         data["limits"] = {**limits.as_dict(), "timeout_s": timeout_s, "memory_mb": memory_mb, "memory_cap_applied": outcome.memory_cap_applied}
-        warnings = list(full["warnings"])
+        warnings = [*(converted.warnings if converted else []), *full["warnings"]]
         if not outcome.memory_cap_applied:
             warnings.append("The memory limit could not be applied to the reading process on this platform; only the time limit protects the server.")
         values, primary = _read_values(full)
@@ -492,7 +502,10 @@ CONVERT_DESCRIPTION = (
     "the renderer did not draw (colour, fonts replaced, text not searchable, MTEXT formatting, hatch patterns, ACIS solids and "
     "proxy objects, hidden layers, images, paper space, external references; for DXF output the entity types and properties "
     "the chosen release lacks, found by writing the file and reading it back), and data.entities counts the entities drawn "
-    "and skipped per type. DWG is not read: a .dwg returns engine.unavailable (it needs the dwg2dxf tool, planned as slice S9). "
+    "and skipped per type. A DWG (R12, R2000 to R2018; also one named .dxf) is converted to DXF first by LibreDWG's dwg2dxf, which the user must "
+    f"have installed ({dwg.ENV_EXE} or PATH; the toolkit runs it as a separate program with a time, memory and size limit) and the DXF is then "
+    "converted like any other; data.dwg names the release and the tool version, and LibreDWG may lose or change content. Without the program "
+    "a DWG returns engine.unavailable with what to install. "
     f"The file is untrusted: it is converted in a separate process with a time and {MEMORY_MB} MB limit; files over "
     f"{V.LIMITS.max_file_bytes // 10**6} MB, over {V.LIMITS.max_entities} entities or over {V.LIMITS.max_work} units of work "
     "(entities, vertices and text characters, block references expanded), block references that loop or nest deeper than "
@@ -509,7 +522,7 @@ def _count(n: float) -> QuantityOut:
 
 @server.tool(name="convert", description=CONVERT_DESCRIPTION)
 def convert(
-    input_path: Annotated[str, Field(description="Path to the drawing: a .dxf (a .dwg returns engine.unavailable, see the description)")],
+    input_path: Annotated[str, Field(description="Path to the drawing: a .dxf, or a .dwg (needs LibreDWG's dwg2dxf, installed by the user; see the description)")],
     output_format: Annotated[str, Field(description=f"One of {', '.join(V.OUTPUT_FORMATS)}")],
     sheet: Annotated[str, Field(description=f"pdf, svg, png only. auto (extents plus 10 mm) or one of {', '.join(S.SHEETS)} (ISO 5457)")] = "auto",
     scale: Annotated[str, Field(description=f"pdf, svg, png only. auto or an ISO 5455 scale: {', '.join(V.scale_text(r) for r in V.ISO_SCALES)}")] = "auto",
@@ -529,13 +542,17 @@ def convert(
                 warnings.append("sheet and scale are ignored for dxf output: the drawing is rewritten, not placed on a page")
         elif version != V.DEFAULT_DXF_VERSION:
             warnings.append(f"dxf_version {version} is ignored: the output is {fmt}")
-        if Path(input_path).suffix.lower() == ".dwg":
-            raise dxf.dwg_unavailable(str(Path(input_path)))
         limits, timeout_s, memory_mb = V.runtime_limits(TIMEOUT_S, MEMORY_MB)
         dxf.require_engine()
         if fmt == "png":
             raster.require_engine()
-        file = job.input_file(input_path, param="input_path", extensions=(".dxf",), max_bytes=limits.max_file_bytes, too_large_family="drawing.too_large")
+        shown = str(Path(input_path))
+        if Path(input_path).suffix.lower() == ".dwg":
+            dwg.require_tool(shown)  # before the file is opened: a missing program costs nothing
+        file = job.input_file(input_path, param="input_path", extensions=(".dxf", ".dwg"), max_bytes=limits.max_file_bytes, too_large_family="drawing.too_large")
+        converted = dwg.convert(job, file, shown=shown, max_output_bytes=limits.max_file_bytes) if dwg.needs_conversion(file) else None
+        if converted:
+            warnings += converted.warnings
         request = {
             "format": fmt,
             "sheet": sheet_arg,
@@ -546,7 +563,7 @@ def convert(
         }
         with tempfile.TemporaryDirectory(prefix="eng-toolkit-conv-") as scratch:
             try:
-                outcome = run_isolated(dxf.CONVERT_TARGET, [str(file), request, scratch], timeout_s=timeout_s, memory_mb=memory_mb)
+                outcome = run_isolated(dxf.CONVERT_TARGET, [str(converted.path if converted else file), request, scratch], timeout_s=timeout_s, memory_mb=memory_mb)
             except ToolFailure as exc:
                 if exc.family == "engine.timeout":
                     raise ToolFailure("engine.timeout", f"the drawing took longer than {timeout_s:g} s to convert and was stopped", exc.details) from exc
@@ -575,6 +592,8 @@ def convert(
         for key in ("page", "extents", "png", "dxf", "entities_before", "entities_after", "dropped", "converted"):
             if key in result:
                 data[key] = result[key]
+        if converted:
+            data["dwg"] = converted.info
         data["output_files"] = [a.path for a in artifacts]
         data["memory_cap_applied"] = outcome.memory_cap_applied
         data["timeout_s"] = timeout_s
