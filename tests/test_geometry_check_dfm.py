@@ -331,6 +331,10 @@ def test_a_block_is_not_sheet_metal(models):
 # --------------------------------------------------------------------------- units and file kinds
 
 
+def test_the_inch_fixture_declares_inches(models):
+    assert "CONVERSION_BASED_UNIT('INCH'" in models["inch"].read_text()
+
+
 def test_an_inch_file_is_read_in_millimetres_and_reported_in_the_output_unit(models):
     mm = run(models["inch"], limits=limits(min_wall="2 mm"))
     (wall,) = rules(mm, "cnc.min_wall")

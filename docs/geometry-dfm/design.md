@@ -56,6 +56,8 @@ Every finding carries: `rule`, `severity`, `check` (`exact`/`heuristic`), `messa
 * Not a solid (shell, loose faces, zero solids or zero volume): `geometry.not_a_solid`. A manufacturability check needs material between faces.
 * Empty or unreadable file: `input.invalid` (same reader as `geometry_measure`). `.stl`: `input.unsupported_format`.
 * More than 2500 faces: `input.too_large`.
+* `max_seconds` outside 1 to 600: `input.out_of_range`. The default budget is 120 seconds.
+* Wall-clock budget exhausted: `geometry.time_budget_exceeded`, with the phase, elapsed seconds and budget in `error.details`.
 * Unknown limit key, bare number for a length, negative or wrong-dimension value, bad JSON, a sheet-metal limit given to cnc_milling: `input.invalid` / `units.*`.
 * Several solids: not refused. They are checked together as one body and a warning says so; a wall between two separate solids is not recognised.
 
@@ -80,6 +82,8 @@ Fixtures are built with OCP from primitives whose dimensions are the numbers exp
 | sharp L | no bend radius | radius 0 at (38, ., 2), heuristic | equal |
 | stepped plate | 2 mm with a 3 mm boss | not uniform, other thickness 3.0 | equal |
 | inch file | STEP written in inches, wall 1.27 mm = 0.05 in | 1.27 mm; 0.05 inch with `output_unit=inch` | equal |
+
+The inch fixture now creates `STEPControl_Writer` before setting `write.step.unit` to `INCH` and asserts that OpenCASCADE accepts the setting. The former value `IN` was rejected silently, so earlier runs of this fixture tested millimetres. A separate test checks that the file contains `CONVERSION_BASED_UNIT('INCH'`. The corrected file gives a 1.27 mm wall and a 0.05 inch result through the shared reader; no loader fix was needed. The geometry conversion inch test now also creates the writer before setting the unit.
 
 Also tested: BREP input, two solids (warning, same wall), a planar shell (refused), an empty file, `.stl`, unknown and unsupported processes (`turning`, `injection_molding`, `additive`, `cnc_3axis`, `witchcraft`), ten bad `limits`, `max_findings` truncation, the face-count limit, a real MCP client through the gateway, and the edge facts (a box pocket has 8 concave edges at 270 deg and 8 tangent edges at 180 deg once filleted).
 
@@ -150,9 +154,19 @@ At each of the four optimization steps, canonical JSON comparisons matched all 2
 
 The full suite passed before and after the changes with `.venv\Scripts\python.exe -m pytest -q --basetemp=scratch_bench/pytest_tmp -p no:cacheprovider`. `.venv\Scripts\python.exe -m eng_toolkit doctor` returned `ok: true` and exit 0 both times. Final logs are retained in `scratch_bench/final_pytest.log` and `scratch_bench/final_doctor.json`.
 
-### Cancellation and remaining limits
+### Time budget
 
-There is still no public cancellation or time-budget parameter. Adding `max_seconds` requires editing the tool signature and compute wrapper in `eng_toolkit/domains/geometry/tools.py`, which was outside the permitted files. A small follow-up could create a monotonic deadline there, pass it into inventory and rule phases, and raise `ToolFailure("geometry.time_budget_exceeded", ..., {"phase": phase})` at phase and loop boundaries. A boundary check cannot interrupt an OCCT call already in progress.
+`geometry_check_dfm` accepts integer `max_seconds`, default 120, from 1 to 600 seconds. A monotonic deadline starts at tool entry, before workspace setup and input validation. The wrapper passes a deadline callback to inventory, hole detection, DFM measurements and rules. Other callers of these measuring functions can omit the callback.
+
+Checks at phase boundaries and within face, edge, candidate-pair, ray and rule loops stop work when elapsed time reaches the budget. Failure returns `ok: false`, family `geometry.time_budget_exceeded`, and `details` containing exactly `phase`, `elapsed_s` and `max_seconds`. The message names the phase, seconds used and limit. Phases are `read`, `inventory`, `edges`, `cylinders`, `pairs`, `access`, `rules` and `distance`. Input copying and native import use `read`; solid validation and hole detection use `inventory`; hole-to-edge queries use `distance`.
+
+An OpenCASCADE call already running cannot be interrupted. STEP import, meshing or an exact geometric query can exceed the budget before the next check returns the error. The budget is cooperative and does not guarantee a response within `max_seconds`. MCP transport cancellation remains separate. Results retain `review_status: unreviewed`.
+
+Before editing production code, `scratch_bench/compare_dfm.py capture` froze input bytes, arguments and complete `data.findings` JSON from all 40 successful calls in the existing DFM fixture suite. Replays after the inch-fixture fix matched 40/40 calls. Replays after adding the budget matched 40/40 with the default and 40/40 with 600 seconds. This includes both supported processes and the original persisted file used by the inch test. The corrected inch file has separate declaration and dimensional tests. The runner refuses to overwrite its baseline.
+
+`tests/test_geometry_check_dfm_budget.py` covers a real one-second timeout on a 250-fin comb, bounds, unchanged findings with default and generous budgets, deterministic expiry in every phase, finite error serialization, and the parameter schema and timeout through a real gateway client.
+
+### Remaining limits
 
 STEP import, native meshing, and edge facts still take time. Face access still uses one sample and exact native ray intersections, and its work can grow faster than linearly. These measurements cover constructed fixtures through 2006 faces, not arbitrary vendor files. Rules keep their original exact or heuristic classifications, and outputs remain `review_status: unreviewed`.
 

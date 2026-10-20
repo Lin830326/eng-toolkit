@@ -10,6 +10,7 @@ only for the same file bytes and the same OCCT version.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -90,7 +91,7 @@ class FaceAccess:
     open_directions: tuple[str, ...]  # labels from the caller's directions that reach the point without meeting the part
 
 
-def _maps(shape):
+def _maps(shape, *, deadline: Callable[[str], None] | None = None):
     from OCP.collections import (
         IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher as EdgeToFaces,
     )
@@ -108,6 +109,8 @@ def _maps(shape):
     explorer = TopExp_Explorer(shape, TopAbs_FACE)
     n = 0
     while explorer.More():
+        if deadline is not None:
+            deadline("edges")
         n += 1
         face_id[face_map.FindIndex(explorer.Current())] = n
         explorer.Next()
@@ -138,13 +141,15 @@ class _Normals:
         return vector / np.linalg.norm(vector)
 
 
-def _boundary_signs(faces, edge_to_faces) -> dict[tuple[int, int], float]:
+def _boundary_signs(faces, edge_to_faces, *, deadline: Callable[[str], None] | None = None) -> dict[tuple[int, int], float]:
     """``(face id, edge index) -> +1`` when that face's boundary runs along the edge's own parameter direction, ``-1`` against it."""
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_REVERSED
     from OCP.TopExp import TopExp_Explorer
 
     signs: dict[tuple[int, int], float] = {}
     for face_id, face in enumerate(faces, start=1):
+        if deadline is not None:
+            deadline("edges")
         explorer = TopExp_Explorer(face, TopAbs_EDGE)
         while explorer.More():
             edge = explorer.Current()
@@ -153,7 +158,7 @@ def _boundary_signs(faces, edge_to_faces) -> dict[tuple[int, int], float]:
     return signs
 
 
-def edge_facts(solid: Solid) -> tuple[EdgeFact, ...]:
+def edge_facts(solid: Solid, *, deadline: Callable[[str], None] | None = None) -> tuple[EdgeFact, ...]:
     """Every edge shared by exactly two different faces, with how the faces meet there.
 
     Convex or concave is decided from the faces' outward normals and the boundary direction (exact); a seam
@@ -169,12 +174,16 @@ def edge_facts(solid: Solid) -> tuple[EdgeFact, ...]:
     from OCP.TopoDS import TopoDS
 
     shape = solid._handle
-    edge_to_faces, face_map, face_id = _maps(shape)
+    if deadline is not None:
+        deadline("edges")
+    edge_to_faces, face_map, face_id = _maps(shape, deadline=deadline)
     faces = _faces(shape)
     normals = _Normals(faces)
-    signs = _boundary_signs(faces, edge_to_faces)
+    signs = _boundary_signs(faces, edge_to_faces, deadline=deadline)
     found: list[EdgeFact] = []
     for index in range(1, edge_to_faces.Extent() + 1):
+        if deadline is not None:
+            deadline("edges")
         edge = TopoDS.Edge(edge_to_faces.FindKey(index))
         if BRep_Tool.Degenerated_s(edge):
             continue
@@ -213,10 +222,12 @@ def edge_facts(solid: Solid) -> tuple[EdgeFact, ...]:
                 radius_mm=_r(curve.Circle().Radius()) if kind == "circle" else None,
             )
         )
+    if deadline is not None:
+        deadline("edges")
     return tuple(found)
 
 
-def cylinder_facts(solid: Solid, inv: Inventory) -> tuple[CylinderFact, ...]:
+def cylinder_facts(solid: Solid, inv: Inventory, *, deadline: Callable[[str], None] | None = None) -> tuple[CylinderFact, ...]:
     """Every cylinder face with its radius, axis, axial extent and angular span."""
     _occ.load()
     from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -224,6 +235,8 @@ def cylinder_facts(solid: Solid, inv: Inventory) -> tuple[CylinderFact, ...]:
     faces = _faces(solid._handle)
     found = []
     for info in inv.faces:
+        if deadline is not None:
+            deadline("cylinders")
         if info.kind != "cylinder" or info.sense not in ("concave", "convex"):
             continue
         surface = BRepAdaptor_Surface(faces[info.id - 1])
@@ -246,6 +259,8 @@ def cylinder_facts(solid: Solid, inv: Inventory) -> tuple[CylinderFact, ...]:
                 radial=_tuple(_unit(radial)),
             )
         )
+    if deadline is not None:
+        deadline("cylinders")
     return tuple(found)
 
 
@@ -296,7 +311,10 @@ def _axis_aligned(normal: np.ndarray) -> int | None:
     return index if abs(normal[index]) > 1.0 - 1e-9 else None
 
 
-def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ...], *, max_gap_mm: float) -> PairSearch:
+def facing_pairs(
+    solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ...], *, max_gap_mm: float,
+    deadline: Callable[[str], None] | None = None,
+) -> PairSearch:
     """Pairs of faces with material between them closer than ``max_gap_mm``.
 
     * Planes: two planar faces with opposite outward normals, each on the other's material side, whose shadows overlap;
@@ -306,6 +324,8 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
       difference of the radii, confirmed by a radial ray that meets exactly those two surfaces first.
     """
     _occ.load()
+    if deadline is not None:
+        deadline("pairs")
     shape = solid._handle
     faces = _faces(shape)
     lo = np.min([f.bbox_min_mm for f in inv.faces], axis=0)
@@ -313,8 +333,10 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
     diagonal = float(np.linalg.norm(hi - lo))
     nudge = max(1e-6 * diagonal, 1e-5)
     deflection = max(CHORD_FRACTION * diagonal, 1e-3)
-    intersector = _IndexedIntersector(shape)
+    intersector = _IndexedIntersector(shape, deadline=deadline, phase="pairs")
     samples = _Samples(shape, faces, deflection)
+    if deadline is not None:
+        deadline("pairs")
     pairs: list[FacingPair] = []
     tested = 0
     complete = True
@@ -322,6 +344,8 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
     planes = [f for f in inv.faces if f.kind == "plane" and f.normal is not None and f.origin_mm is not None]
     by_normal: dict[tuple[float, float, float], list] = {}
     for f in planes:
+        if deadline is not None:
+            deadline("pairs")
         by_normal.setdefault(tuple(round(c, 6) + 0.0 for c in f.normal), []).append(f)
     for key, group in sorted(by_normal.items()):
         opposite_key = tuple(round(-c, 6) + 0.0 for c in key)
@@ -332,6 +356,8 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
             n = np.array(a.normal)
             axis = _axis_aligned(n)
             for b in opposite:
+                if deadline is not None:
+                    deadline("pairs")
                 # b behind a (on a's material side) is also a behind b, because b's outward normal is -n; the other sign is a gap in the air
                 gap = -float((np.array(b.origin_mm) - np.array(a.origin_mm)) @ n)
                 if not GAP_MIN_MM < gap <= max_gap_mm:
@@ -349,6 +375,8 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
                 for source, target, out in ((a, b, n), (b, a, -n)):
                     wall = None
                     for point in samples.of(source.id, SAMPLES_PER_FACE):
+                        if deadline is not None:
+                            deadline("pairs")
                         if not _inside(faces[target.id - 1], point - out * gap):
                             continue  # the point's shadow misses the other face: air or another feature is across from it
                         found = _hits(intersector, point - out * nudge, -out, gap)
@@ -377,6 +405,8 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
         axis = np.array(inner.axis)
         base = np.array(inner.start_mm)
         for outer in convex:
+            if deadline is not None:
+                deadline("pairs")
             gap = outer.radius_mm - inner.radius_mm
             if not GAP_MIN_MM < gap <= max_gap_mm:
                 continue
@@ -414,13 +444,18 @@ def facing_pairs(solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ..
                 )
         if not complete:
             break
+    if deadline is not None:
+        deadline("pairs")
     return PairSearch(pairs=tuple(pairs), tested=tested, complete=complete)
 
 
 # --------------------------------------------------------------------------- reach
 
 
-def face_access(solid: Solid, inv: Inventory, directions: dict[str, Vec3], *, kinds: tuple[str, ...] = ("plane",)) -> tuple[FaceAccess, ...]:
+def face_access(
+    solid: Solid, inv: Inventory, directions: dict[str, Vec3], *, kinds: tuple[str, ...] = ("plane",),
+    deadline: Callable[[str], None] | None = None,
+) -> tuple[FaceAccess, ...]:
     """For each face of the given kinds, the ``directions`` from which a point of the face is reachable in a straight line.
 
     The test point is the centre of the face's largest mesh triangle, moved 1e-5 of the part size out along the
@@ -429,6 +464,8 @@ def face_access(solid: Solid, inv: Inventory, directions: dict[str, Vec3], *, ki
     face that is only partly shadowed counts as reachable where its sample is.
     """
     _occ.load()
+    if deadline is not None:
+        deadline("access")
     shape = solid._handle
     faces = _faces(shape)
     lo = np.min([f.bbox_min_mm for f in inv.faces], axis=0)
@@ -437,11 +474,13 @@ def face_access(solid: Solid, inv: Inventory, directions: dict[str, Vec3], *, ki
     nudge = max(1e-5 * diagonal, 1e-5)
     deflection = max(CHORD_FRACTION * diagonal, 1e-3)
     reach = 2.0 * diagonal + 1.0
-    intersector = _IndexedIntersector(shape)
+    intersector = _IndexedIntersector(shape, deadline=deadline, phase="access")
     samples = _Samples(shape, faces, deflection)
     unit = {label: _unit(np.array(v, dtype=np.float64)) for label, v in directions.items()}
     found = []
     for info in inv.faces:
+        if deadline is not None:
+            deadline("access")
         if info.kind not in kinds or info.normal is None:
             continue
         points = samples.of(info.id, 1)
@@ -454,6 +493,8 @@ def face_access(solid: Solid, inv: Inventory, directions: dict[str, Vec3], *, ki
             label for label, d in unit.items() if float(d @ normal) >= -1e-9 and not _hits(intersector, start, d, reach)
         )
         found.append(FaceAccess(face_id=info.id, point_mm=_tuple(sample), open_directions=reachable))
+    if deadline is not None:
+        deadline("access")
     return tuple(found)
 
 

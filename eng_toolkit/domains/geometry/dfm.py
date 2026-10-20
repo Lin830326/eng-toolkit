@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import math
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -202,18 +204,23 @@ def _hole_face_ids(inv: brep.Inventory) -> set[int]:
 # --------------------------------------------------------------------------- cnc_milling
 
 
-def check_cnc_milling(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, float], tool_axis: str) -> Report:
+def check_cnc_milling(
+    solid: brep.Solid, inv: brep.Inventory, limits: dict[str, float], tool_axis: str,
+    *, deadline: Callable[[str], None] | None = None,
+) -> Report:
     axis = AXES[tool_axis]
     findings: list[Finding] = []
     warnings: list[str] = []
     tool_radius = limits["tool_radius"]
 
     # internal corners: sharp concave edges parallel to the tool axis, and concave cylinder fillets around it
-    edges = brep.edge_facts(solid)
-    cylinders = brep.cylinder_facts(solid, inv)
+    edges = brep.edge_facts(solid, deadline=deadline)
+    cylinders = brep.cylinder_facts(solid, inv, deadline=deadline)
     in_holes = _hole_face_ids(inv)
     sharp = fillets = 0
     for edge in edges:
+        if deadline is not None:
+            deadline("rules")
         if edge.convexity == "concave" and edge.kind == "line" and _parallel(edge.direction, axis):
             sharp += 1
             findings.append(
@@ -236,6 +243,8 @@ def check_cnc_milling(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
                 )
             )
     for cyl in cylinders:
+        if deadline is not None:
+            deadline("rules")
         if cyl.sense != "concave" or cyl.face_id in in_holes or cyl.span_rad >= FULL_TURN or not _parallel(cyl.axis, axis):
             continue
         fillets += 1
@@ -258,6 +267,8 @@ def check_cnc_milling(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
 
     # holes
     for hole in inv.holes:
+        if deadline is not None:
+            deadline("rules")
         ratio = hole.depth_mm / hole.diameter_mm
         if ratio > limits["max_hole_depth_ratio"] + 1e-9:
             findings.append(
@@ -298,13 +309,15 @@ def check_cnc_milling(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
 
     # walls
     search = limits["min_wall"] * WALL_SEARCH_FACTOR
-    search_result = brep.facing_pairs(solid, inv, cylinders, max_gap_mm=search)
+    search_result = brep.facing_pairs(solid, inv, cylinders, max_gap_mm=search, deadline=deadline)
     if not search_result.complete:
         warnings.append(
             f"The wall search stopped after {search_result.tested} candidate face pairs; thin walls beyond them may be missing"
         )
     thin = [p for p in search_result.pairs if _less(p.gap_mm, limits["min_wall"])]
     for pair in sorted(thin, key=lambda p: (p.gap_mm, p.face_ids)):
+        if deadline is not None:
+            deadline("rules")
         what = "between parallel planar faces" if pair.kind == "plane" else "between coaxial cylinders (a tube or bend wall)"
         findings.append(
             Finding(
@@ -328,9 +341,11 @@ def check_cnc_milling(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
     smallest = min((p.gap_mm for p in search_result.pairs), default=None)
 
     # tool access
-    access = brep.face_access(solid, inv, AXES)
+    access = brep.face_access(solid, inv, AXES, deadline=deadline)
     blocked = [a for a in access if len(a.open_directions) < limits["min_access_directions"]]
     for a in blocked:
+        if deadline is not None:
+            deadline("rules")
         findings.append(
             Finding(
                 rule="cnc.tool_access",
@@ -385,11 +400,16 @@ def _cluster(pairs: list[brep.FacingPair], inv: brep.Inventory) -> list[tuple[fl
     return clusters
 
 
-def check_sheet_metal(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, float]) -> Report:
+def check_sheet_metal(
+    solid: brep.Solid, inv: brep.Inventory, limits: dict[str, float],
+    *, deadline: Callable[[str], None] | None = None,
+) -> Report:
     findings: list[Finding] = []
     warnings: list[str] = []
-    cylinders = brep.cylinder_facts(solid, inv)
-    search = brep.facing_pairs(solid, inv, cylinders, max_gap_mm=limits["max_thickness"])
+    cylinders = brep.cylinder_facts(solid, inv, deadline=deadline)
+    search = brep.facing_pairs(solid, inv, cylinders, max_gap_mm=limits["max_thickness"], deadline=deadline)
+    if deadline is not None:
+        deadline("rules")
     if not search.complete:
         warnings.append(f"The thickness search stopped after {search.tested} candidate face pairs; the result may be incomplete")
     clusters = _cluster(list(search.pairs), inv)
@@ -418,9 +438,11 @@ def check_sheet_metal(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
 
     thickness, _, dominant = max(clusters, key=lambda c: c[1])
     covered = {face for pair in dominant for face in pair.face_ids}
-    edges = brep.edge_facts(solid)
+    edges = brep.edge_facts(solid, deadline=deadline)
     neighbours: dict[int, set[int]] = {}
     for edge in edges:
+        if deadline is not None:
+            deadline("rules")
         a, b = edge.face_ids
         neighbours.setdefault(a, set()).add(b)
         neighbours.setdefault(b, set()).add(a)
@@ -482,6 +504,8 @@ def check_sheet_metal(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
     bends = [p for p in dominant if p.kind == "cylinder" and p.span_rad is not None and p.span_rad < FULL_TURN]
     min_radius = limits["min_bend_radius_ratio"] * thickness
     for pair in sorted(bends, key=lambda p: p.face_ids):
+        if deadline is not None:
+            deadline("rules")
         radius = float(pair.inner_radius_mm)
         if _less(radius, min_radius):
             findings.append(
@@ -505,6 +529,8 @@ def check_sheet_metal(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
     planar_covered = {f for p in dominant if p.kind == "plane" for f in p.face_ids}
     sharp_bends = 0
     for edge in edges:
+        if deadline is not None:
+            deadline("rules")
         a, b = edge.face_ids
         if edge.convexity == "concave" and edge.kind == "line" and a in planar_covered and b in planar_covered:
             sharp_bends += 1
@@ -535,10 +561,12 @@ def check_sheet_metal(solid: brep.Solid, inv: brep.Inventory, limits: dict[str, 
     min_edge = limits["min_hole_edge_ratio"] * thickness
     holes_checked = 0
     for hole in inv.holes:
+        if deadline is not None:
+            deadline("rules")
         if not any(_parallel(hole.axis, n) for n in normals):
             continue
         holes_checked += 1
-        nearest = _nearest_edge_face(solid, inv, hole, candidates, max_distance_mm=min_edge)
+        nearest = _nearest_edge_face(solid, inv, hole, candidates, max_distance_mm=min_edge, deadline=deadline)
         if nearest is None:
             continue
         distance, face_id = nearest
@@ -581,6 +609,7 @@ def _nearest_edge_face(
     candidates: list[brep.FaceInfo],
     *,
     max_distance_mm: float,
+    deadline: Callable[[str], None] | None = None,
 ) -> tuple[float, int] | None:
     """Nearest edge face relevant to the reporting limit, with an exact distance; nearest-box first."""
     lo = np.min([inv.faces[i - 1].bbox_min_mm for i in hole.face_ids], axis=0)
@@ -593,21 +622,47 @@ def _nearest_edge_face(
 
     best: tuple[float, int] | None = None
     for face in sorted(candidates, key=box_gap):
+        if deadline is not None:
+            deadline("distance")
         lower_bound = box_gap(face)
         # These bounds are rounded to 1e-9 mm; leave slack before ruling out a possible finding.
         if lower_bound > max_distance_mm + TOLERANCE_MM or (best is not None and lower_bound >= best[0]):
             break
         value = brep.distance(solid, brep.HoleRef(hole.id), brep.FaceRef(face.id), inv=inv)
+        if deadline is not None:
+            deadline("distance")
         if best is None or value < best[0]:
             best = (value, face.id)
     return best
 
 
-def run(process: str, solid: brep.Solid, inv: brep.Inventory, limits: dict[str, float], tool_axis: str) -> Report:
+@dataclass(frozen=True)
+class Deadline:
+    """Cooperative wall-clock budget; native operations finish before the next check."""
+
+    max_seconds: int
+    started: float = field(default_factory=lambda: time.monotonic())
+
+    def __call__(self, phase: str) -> None:
+        elapsed = time.monotonic() - self.started
+        if elapsed >= self.max_seconds:
+            raise ToolFailure(
+                "geometry.time_budget_exceeded",
+                f"Time budget exceeded in {phase}: used {elapsed:.3f} seconds, limit {self.max_seconds} seconds",
+                {"phase": phase, "elapsed_s": elapsed, "max_seconds": self.max_seconds},
+            )
+
+
+def run(
+    process: str, solid: brep.Solid, inv: brep.Inventory, limits: dict[str, float], tool_axis: str,
+    *, deadline: Callable[[str], None] | None = None,
+) -> Report:
+    if deadline is not None:
+        deadline("rules")
     if process == "cnc_milling":
-        return check_cnc_milling(solid, inv, limits, tool_axis)
+        return check_cnc_milling(solid, inv, limits, tool_axis, deadline=deadline)
     if process == "sheet_metal":
-        return check_sheet_metal(solid, inv, limits)
+        return check_sheet_metal(solid, inv, limits, deadline=deadline)
     raise unsupported_process(process)
 
 

@@ -136,9 +136,9 @@ def comb(teeth, pitch=3.0, tooth=1.5, height=10.0):
 
 def write_step_inches(shape, path: Path) -> Path:
     """A STEP file whose length unit is the inch (the numbers in the file are in inches)."""
-    Interface_Static.SetCVal_s("write.step.unit", "IN")
+    writer = STEPControl_Writer()  # registers the STEP parameters before setting the unit
+    assert Interface_Static.SetCVal_s("write.step.unit", "INCH")
     try:
-        writer = STEPControl_Writer()
         writer.Transfer(shape, STEPControl_AsIs)
         assert writer.Write(str(path)) == IFSelect_RetDone
     finally:

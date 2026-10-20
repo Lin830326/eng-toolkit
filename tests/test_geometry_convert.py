@@ -432,9 +432,9 @@ def test_step_in_inches_is_converted_to_millimetres(cad, tmp_path):
     from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
 
     source = tmp_path / "cube_inch.step"
-    Interface_Static.SetCVal_s("write.step.unit", "INCH")
+    writer = STEPControl_Writer()
+    assert Interface_Static.SetCVal_s("write.step.unit", "INCH")
     try:
-        writer = STEPControl_Writer()
         writer.Transfer(cad.box(length=25.4, width=25.4, height=25.4), STEPControl_AsIs)
         assert writer.Write(str(source)) == IFSelect_RetDone
     finally:

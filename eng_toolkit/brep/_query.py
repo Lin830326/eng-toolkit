@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -314,15 +315,19 @@ def _hits(intersector, origin: np.ndarray, direction: np.ndarray, reach: float) 
 class _IndexedIntersector:
     """OCCT's ray-query interface with conservative face-box pruning and lazy face intersectors."""
 
-    def __init__(self, shape):
+    def __init__(self, shape, *, deadline: Callable[[str], None] | None = None, phase: str = "inventory"):
         from OCP.Bnd import Bnd_Box
         from OCP.BRep import BRep_Tool
         from OCP.BRepBndLib import BRepBndLib
         from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 
+        self._deadline = deadline
+        self._phase = phase
         self._faces = _faces(shape)
         boxes = []
         for face in self._faces:
+            if deadline is not None:
+                deadline(phase)
             box = Bnd_Box()
             BRepBndLib.Add_s(face, box, False)  # analytic bounds, including topology tolerances; independent of meshing
             boxes.append((*_array(box.CornerMin()), *_array(box.CornerMax())))
@@ -336,6 +341,8 @@ class _IndexedIntersector:
         self._parameters: list[float] = []
 
     def Perform(self, line, start: float, end: float):
+        if self._deadline is not None:
+            self._deadline(self._phase)
         origin, direction = _array(line.Location()), _array(line.Direction())
         near = np.full(len(self._faces), start, dtype=float)
         far = np.full(len(self._faces), end, dtype=float)
@@ -350,12 +357,16 @@ class _IndexedIntersector:
                 far = np.minimum(far, np.maximum(a, b))
         found = []
         for index in np.flatnonzero(near <= far):
+            if self._deadline is not None:
+                self._deadline(self._phase)
             if index not in self._cache:
                 self._cache[index] = _load_intersector(self._faces[index])
             intersector = self._cache[index]
             intersector.Perform(line, start, end)
             found.extend(float(intersector.WParameter(k)) for k in range(1, intersector.NbPnt() + 1))
         self._parameters = found  # keep raw hits; _hits sorts and merges once across all faces
+        if self._deadline is not None:
+            self._deadline(self._phase)
 
     def NbPnt(self) -> int:
         return len(self._parameters)
@@ -414,11 +425,15 @@ def _bore(candidate: _Candidate, intersector, diagonal: float) -> tuple[np.ndarr
     return hi_end, -a, False
 
 
-def _find_holes(shape, cylinders: list[_Cylinder], diagonal: float) -> tuple[HoleInfo, ...]:
+def _find_holes(
+    shape, cylinders: list[_Cylinder], diagonal: float, *, deadline: Callable[[str], None] | None = None,
+) -> tuple[HoleInfo, ...]:
     candidates: list[_Candidate] = []
     origins = np.empty((len(cylinders), 3))
     axes = np.empty((len(cylinders), 3))
     for c in cylinders:
+        if deadline is not None:
+            deadline("inventory")
         count = len(candidates)
         offsets = c.location - origins[:count]
         projections = np.sum(offsets * axes[:count], axis=1)
@@ -428,6 +443,8 @@ def _find_holes(shape, cylinders: list[_Cylinder], diagonal: float) -> tuple[Hol
         margin = SAME_MM + 16 * np.finfo(float).eps * np.maximum(1.0, np.max(np.abs(offsets), axis=1))
         nearby = np.flatnonzero(np.all(np.abs(lateral) <= margin[:, None], axis=1))
         for index in nearby:
+            if deadline is not None:
+                deadline("inventory")
             existing = candidates[index]
             if existing.accepts(c):
                 existing.span += c.span
@@ -441,9 +458,11 @@ def _find_holes(shape, cylinders: list[_Cylinder], diagonal: float) -> tuple[Hol
     whole = [c for c in candidates if c.span >= TWO_PI - SAME_MM]
     if not whole:
         return ()
-    intersector = _IndexedIntersector(shape)
+    intersector = _IndexedIntersector(shape, deadline=deadline)
     found = []
     for candidate in whole:
+        if deadline is not None:
+            deadline("inventory")
         bore = _bore(candidate, intersector, diagonal)
         if bore is not None:
             found.append((candidate, *bore))
@@ -471,7 +490,7 @@ def _find_holes(shape, cylinders: list[_Cylinder], diagonal: float) -> tuple[Hol
     )
 
 
-def inventory(solid: Solid) -> Inventory:
+def inventory(solid: Solid, *, deadline: Callable[[str], None] | None = None) -> Inventory:
     """Every face with its geometry, and the holes found among the concave full cylinders.
 
     Face ids are the 1-based order of ``TopExp_Explorer``: valid for the same file bytes and the same OCCT
@@ -484,6 +503,8 @@ def inventory(solid: Solid) -> Inventory:
     infos: list[FaceInfo] = []
     cylinders: list[_Cylinder] = []
     for face_id, face in enumerate(_faces(shape), start=1):
+        if deadline is not None:
+            deadline("inventory")
         info, cylinder = _describe(face_id, face)
         infos.append(info)
         if cylinder is not None and info.sense == "concave":
@@ -492,7 +513,7 @@ def inventory(solid: Solid) -> Inventory:
     diagonal = float(np.linalg.norm(np.array(hi) - np.array(lo)))
     return Inventory(
         faces=tuple(infos),
-        holes=_find_holes(shape, cylinders, diagonal),
+        holes=_find_holes(shape, cylinders, diagonal, deadline=deadline),
         edges=_unique_count(shape, TopAbs_EDGE),
         vertices=_unique_count(shape, TopAbs_VERTEX),
     )

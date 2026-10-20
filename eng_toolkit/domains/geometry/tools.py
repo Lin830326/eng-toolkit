@@ -443,6 +443,8 @@ CHECK_DFM_DESCRIPTION = (
     '{"min_wall": "1 mm", "tool_radius": "2 mm"} for cnc_milling (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["cnc_milling"]) + "), or "
     '{"min_bend_radius_ratio": 1.5} for sheet_metal (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["sheet_metal"]) + "). "
     "The defaults are the toolkit's own rules of thumb, not a standard. A file without a closed solid is refused. "
+    "max_seconds is a wall-clock budget (default 120, 1 to 600 seconds). On expiry, returns "
+    "geometry.time_budget_exceeded at the next check. An OpenCASCADE call already running cannot be interrupted. "
     f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')})."
 )
 
@@ -467,17 +469,28 @@ def check_dfm(
         int, Field(description="Findings listed in data, 1 to 500. The summary counts and dfm_findings.json cover all of them")
     ] = 100,
     output_unit: Annotated[str, Field(description="Length unit of the measured values and limits, e.g. 'mm', 'inch'")] = "mm",
+    max_seconds: Annotated[
+        int, Field(description="Wall-clock budget in seconds, 1 to 600; default 120. Stops at the next check; a running OpenCASCADE call cannot be interrupted")
+    ] = 120,
 ) -> ToolResult:
+    deadline = dfm.Deadline(max_seconds)
     inputs = {
         "model_path": model_path,
         "process": process,
         "limits": limits,
         "tool_axis": tool_axis,
         "max_findings": max_findings,
+        "max_seconds": max_seconds,
         "output_unit": output_unit,
     }
 
     def compute(job: JobHandle) -> Computed:
+        if not 1 <= max_seconds <= 600:
+            raise ToolFailure(
+                "input.out_of_range",
+                f"max_seconds: must be between 1 and 600, got {max_seconds}",
+                {"param": "max_seconds"},
+            )
         name = process.strip().lower()
         if name not in dfm.PROCESSES:
             raise dfm.unsupported_process(process)
@@ -497,8 +510,10 @@ def check_dfm(
                 f"Use one of {list(brep.SOLID_EXTENSIONS)}",
                 {"param": "model_path", "supported": list(brep.SOLID_EXTENSIONS)},
             )
+        deadline("read")
         model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
         solid = brep.read_solid(model_file, param="model_path")
+        deadline("read")
         file_hash = job.input_files[-1].sha256
         if solid.faces == 0:
             raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
@@ -516,8 +531,11 @@ def check_dfm(
                 f"model_path has {solid.faces} faces; the limit is {dfm.MAX_FACES}",
                 {"faces": solid.faces, "limit": dfm.MAX_FACES},
             )
-        inv = brep.inventory(solid)
-        report = dfm.run(name, solid, inv, limit_mm, axis_name)
+        deadline("inventory")
+        inv = brep.inventory(solid, deadline=deadline)
+        deadline("inventory")
+        report = dfm.run(name, solid, inv, limit_mm, axis_name, deadline=deadline)
+        deadline("rules")
 
         warnings = list(report.warnings)
         if solid.solids > 1:
@@ -607,6 +625,7 @@ def check_dfm(
             "face_ids_valid_for": file_hash,
             "conventions": DFM_CONVENTIONS,
         }
+        deadline("rules")
         return Computed(values=values, primary="errors", warnings=warnings, data=data, artifacts=[artifact])
 
     return run_tool(
