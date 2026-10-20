@@ -432,6 +432,14 @@ drawing_convert(input_path=".../flange.dxf", output_format="pdf", sheet="A3", sc
 ```
 → 輸出 `converted.<格式>` 在工作目錄（原檔不動，附 sha256）；`data.losses.items` 列出目標格式放不下或沒畫出的東西（顏色一律黑、字型被取代、PDF/SVG/PNG 的文字沒有文字層、MTEXT 格式、ACIS 實體與代理物件、被關閉或凍結的圖層、圖紙空間、外部參考；DXF 輸出則是舊版本沒有的實體類型與屬性，例如 R12 沒有 LWPOLYLINE、線寬、真彩色、`$INSUNITS`，是寫出檔案再讀回來數出來的），`data.entities` 依類型數出畫了與跳過的實體數。`.dwg` 回 `engine.unavailable`（需要 `dwg2dxf`，列為 S9，尚未提供）。檔案不受信任：在子行程裡轉換（預設 60 秒、2048 MB；`ENG_TOOLKIT_CONVERT_TIMEOUT_S`、`ENG_TOOLKIT_CONVERT_MEMORY_MB`、`ENG_TOOLKIT_CONVERT_MAX_MB` 可調），超過 20 萬個實體、100 萬單位工作量（區塊展開後）、區塊自我參照或巢狀超過 16 層、座標超過 1e12 mm、頁面超過 5080 mm 的檔案會被拒絕或截掉並說明原因，NaN 與無限大座標的實體會被移除並列出。詳見 `docs/drawing-convert/design.md`。
 
+### `spice_simulate`、`spice_check_netlist`、`spice_measure`
+用 ngspice 做電路模擬（ngspice 是你自己安裝的程式，只當獨立行程以批次模式啟動，不隨附；用 `toolkit_doctor` 看有沒有找到，或設定 `ENG_TOOLKIT_NGSPICE`）。`spice_simulate`：`analysis` 為 `op`、`dc`、`ac`、`tran`，網表用文字（`netlist`）或檔案（`netlist_file`）給，`outputs` 如 `v(out),i(v1)`；`op` 回每個輸出的值，掃描類回每個輸出的最小、最大、最後值，完整表格寫成 `result.csv`。`spice_check_netlist`：不啟動 ngspice，只解析並列出元件、節點、缺接地、重複名稱、缺 `.model`／`.subckt`、浮接節點。`spice_measure`：從 `result.csv` 算 −3 dB 頻率、10–90 % 上升／下降時間、過衝、整定時間、穩態值，公式隨結果回傳。
+
+```
+spice_simulate(analysis="tran", netlist="rc\nV1 in 0 PULSE(0 1 0 1n 1n 1 2)\nR1 in out 1k\nC1 out 0 1u", outputs="v(out)", step="10 us", stop="5 ms")
+```
+→ `v(out).final` = 0.99326 V（1 − e^−5）；`i(v1)` 的符號是 SPICE 慣例：電流流進電源的 + 端為正，供電的電源顯示負值。**網表當作資料，不是程式**：逐行對照白名單，`.control`、`.include`、`.lib`、`.write`、`.osdi`、A／N 元件（程式碼模型）、`file`、`external`、隨機函數、`.end` 之後的文字、超過 1e±30 的數值、超過 200 KB／1000 個元件（子電路展開後計）的網表一律拒絕，錯誤訊息指出行號與指令；分析由參數決定，不由網表決定；暫態超過 10 萬點拒絕。**確定性：** 同一網表同一結果。**數值誤差：** 工作點與 AC 是線性代數（約 1e-12 相對誤差）；暫態與二極體取決於 ngspice 的積分誤差與常數。詳見 `docs/spice/design.md`。
+
 ---
 
 ## 輸入規則：每個物理量都要帶單位
