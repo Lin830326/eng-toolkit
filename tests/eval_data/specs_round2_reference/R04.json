@@ -1,0 +1,1 @@
+{"features": [{"op": "cylinder", "diameter": "50 mm", "height": "40 mm"}, {"op": "shell", "faces": ">z", "thickness": "2.5 mm"}]}

@@ -1,0 +1,592 @@
+[
+ {
+  "id": "R01_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 18257.5222039,
+  "expected": 18257.52220392306,
+  "rel_error": 1.263103908656298e-12,
+  "size": [
+   120.0,
+   20.0,
+   8.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "hole"
+  ]
+ },
+ {
+  "id": "R01_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 18257.5222039,
+  "expected": 18257.52220392306,
+  "rel_error": 1.263103908656298e-12,
+  "size": [
+   120.0,
+   20.0,
+   8.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "hole"
+  ]
+ },
+ {
+  "id": "R01_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 18257.5222039,
+  "expected": 18257.52220392306,
+  "rel_error": 1.263103908656298e-12,
+  "size": [
+   120.0,
+   20.0,
+   8.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "hole"
+  ]
+ },
+ {
+  "id": "R02_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 45766.7217775,
+  "expected": 45766.72177749611,
+  "rel_error": 8.505388134446143e-14,
+  "size": [
+   100.0,
+   100.0,
+   6.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "hole",
+   "pattern"
+  ]
+ },
+ {
+  "id": "R02_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 45766.7217775,
+  "expected": 45766.72177749611,
+  "rel_error": 8.505388134446143e-14,
+  "size": [
+   100.0,
+   100.0,
+   6.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "hole",
+   "pattern"
+  ]
+ },
+ {
+  "id": "R02_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 45766.7217775,
+  "expected": 45766.72177749611,
+  "rel_error": 8.505388134446143e-14,
+  "size": [
+   100.0,
+   100.0,
+   6.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "hole",
+   "pattern"
+  ]
+ },
+ {
+  "id": "R03_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 22994.6903509,
+  "expected": 22994.690350851266,
+  "rel_error": 2.1193746624205547e-12,
+  "size": [
+   60.0,
+   40.0,
+   10.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "hole",
+   "mirror"
+  ]
+ },
+ {
+  "id": "R03_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 22994.6903509,
+  "expected": 22994.690350851266,
+  "rel_error": 2.1193746624205547e-12,
+  "size": [
+   60.0,
+   40.0,
+   10.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "hole",
+   "mirror"
+  ]
+ },
+ {
+  "id": "R03_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 22994.6903509,
+  "expected": 22994.690350851266,
+  "rel_error": 2.1193746624205547e-12,
+  "size": [
+   60.0,
+   40.0,
+   10.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "hole",
+   "mirror"
+  ]
+ },
+ {
+  "id": "R04_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 18898.6433068,
+  "expected": 18898.6433067511,
+  "rel_error": 2.5875778663676778e-12,
+  "size": [
+   50.0,
+   50.0,
+   40.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "shell"
+  ]
+ },
+ {
+  "id": "R04_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 18898.6433068,
+  "expected": 18898.6433067511,
+  "rel_error": 2.5875778663676778e-12,
+  "size": [
+   50.0,
+   50.0,
+   40.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "shell"
+  ]
+ },
+ {
+  "id": "R04_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 18898.6433068,
+  "expected": 18898.6433067511,
+  "rel_error": 2.5875778663676778e-12,
+  "size": [
+   50.0,
+   50.0,
+   40.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "shell"
+  ]
+ },
+ {
+  "id": "R05_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 19913.628421,
+  "expected": 19913.62842102152,
+  "rel_error": 1.0805988837891367e-12,
+  "size": [
+   80.0,
+   50.0,
+   6.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "extrude"
+  ]
+ },
+ {
+  "id": "R05_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 19913.628421,
+  "expected": 19913.62842102152,
+  "rel_error": 1.0805988837891367e-12,
+  "size": [
+   80.0,
+   50.0,
+   6.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "extrude"
+  ]
+ },
+ {
+  "id": "R05_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 19913.628421,
+  "expected": 19913.62842102152,
+  "rel_error": 1.0805988837891367e-12,
+  "size": [
+   80.0,
+   50.0,
+   6.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "extrude"
+  ]
+ },
+ {
+  "id": "R06_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 1767.14586764,
+  "expected": 1767.1458676442585,
+  "rel_error": 2.4098076142707886e-12,
+  "size": [
+   15.0,
+   30.0,
+   5.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "extrude"
+  ]
+ },
+ {
+  "id": "R06_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 1767.14586764,
+  "expected": 1767.1458676442585,
+  "rel_error": 2.4098076142707886e-12,
+  "size": [
+   15.0,
+   30.0,
+   5.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "extrude"
+  ]
+ },
+ {
+  "id": "R06_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 1767.14586764,
+  "expected": 1767.1458676442585,
+  "rel_error": 2.4098076142707886e-12,
+  "size": [
+   15.0,
+   30.0,
+   5.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "extrude"
+  ]
+ },
+ {
+  "id": "R07_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 15981.917582,
+  "expected": 15981.91758199705,
+  "rel_error": 1.846086864992271e-13,
+  "size": [
+   30.0,
+   30.0,
+   20.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "extrude"
+  ]
+ },
+ {
+  "id": "R07_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 15981.917582,
+  "expected": 15981.91758199705,
+  "rel_error": 1.846086864992271e-13,
+  "size": [
+   30.0,
+   30.0,
+   20.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "extrude"
+  ]
+ },
+ {
+  "id": "R07_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 15981.917582,
+  "expected": 15981.91758199705,
+  "rel_error": 1.846086864992271e-13,
+  "size": [
+   30.0,
+   30.0,
+   20.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "extrude"
+  ]
+ },
+ {
+  "id": "R08_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 46195.9574241,
+  "expected": 46195.95742411728,
+  "rel_error": 3.740673491196905e-13,
+  "size": [
+   80.0,
+   50.0,
+   24.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "cylinder",
+   "fillet"
+  ]
+ },
+ {
+  "id": "R08_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 46195.9574241,
+  "expected": 46195.95742411728,
+  "rel_error": 3.740673491196905e-13,
+  "size": [
+   80.0,
+   50.0,
+   24.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "cylinder",
+   "fillet"
+  ]
+ },
+ {
+  "id": "R08_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 46195.9574241,
+  "expected": 46195.95742411728,
+  "rel_error": 3.740673491196905e-13,
+  "size": [
+   80.0,
+   50.0,
+   24.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "cylinder",
+   "fillet"
+  ]
+ },
+ {
+  "id": "R09_s1",
+  "passed": false,
+  "detail": "",
+  "volume": 36692.3859827,
+  "expected": 36372.385965949354,
+  "rel_error": 0.008797883566126725,
+  "size": [
+   80.0,
+   80.0,
+   8.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "extrude",
+   "extrude",
+   "extrude",
+   "extrude",
+   "extrude",
+   "extrude"
+  ]
+ },
+ {
+  "id": "R09_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 36372.385761,
+  "expected": 36372.385965949354,
+  "rel_error": 5.634751488866472e-09,
+  "size": [
+   80.0,
+   80.0,
+   8.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "extrude",
+   "extrude",
+   "extrude",
+   "extrude",
+   "extrude",
+   "extrude"
+  ]
+ },
+ {
+  "id": "R09_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 36372.385966,
+  "expected": 36372.385965949354,
+  "rel_error": 1.392483325117736e-12,
+  "size": [
+   80.0,
+   80.0,
+   8.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "cylinder",
+   "extrude",
+   "pattern"
+  ]
+ },
+ {
+  "id": "R10_s1",
+  "passed": true,
+  "detail": "",
+  "volume": 44784.7475409,
+  "expected": 44784.74754094511,
+  "rel_error": 1.0071210339878857e-12,
+  "size": [
+   80.0,
+   50.0,
+   22.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "cylinder",
+   "cylinder",
+   "fillet"
+  ]
+ },
+ {
+  "id": "R10_s2",
+  "passed": true,
+  "detail": "",
+  "volume": 44784.7475409,
+  "expected": 44784.74754094511,
+  "rel_error": 1.0071210339878857e-12,
+  "size": [
+   80.0,
+   50.0,
+   22.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "cylinder",
+   "cylinder",
+   "fillet"
+  ]
+ },
+ {
+  "id": "R10_s3",
+  "passed": true,
+  "detail": "",
+  "volume": 44784.7475409,
+  "expected": 44784.74754094511,
+  "rel_error": 1.0071210339878857e-12,
+  "size": [
+   80.0,
+   50.0,
+   22.0
+  ],
+  "worst_size_error": 0.0,
+  "solids": 1,
+  "ops": [
+   "box",
+   "cylinder",
+   "cylinder",
+   "fillet"
+  ]
+ }
+]

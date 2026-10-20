@@ -713,8 +713,12 @@ def make_part(
             raise _invalid_param("name", f"{name!r} must be 1 to 64 ASCII letters, digits, '_' or '-'", pattern=PART_NAME.pattern)
         wanted = _part_formats(formats)
 
+        def open_model(raw: str, pointer: str) -> tuple[Path, str]:
+            opened = job.input_file(raw, param=pointer, extensions=brep.SOLID_EXTENSIONS)
+            return opened, job.input_files[-1].sha256
+
         parsed = partspec.parse_spec(spec)
-        built = partspec.build(parsed)
+        built = partspec.build(parsed, open_file=open_model)
         props = brep.mass_properties(built.solid)
 
         with tempfile.TemporaryDirectory(prefix="eng-toolkit-") as scratch:
@@ -782,6 +786,7 @@ def make_part(
             "features": [record.to_dict() for record in built.records],
             "holes_total": len(built.holes),
             "holes": [hole.to_dict() for hole in built.holes[:MAX_HOLES_IN_DATA]],
+            "imports": [item.to_dict() for item in built.imports],
             "params": dict(parsed.params),
             "bbox": {"min_mm": list(props.bbox_min_mm), "max_mm": list(props.bbox_max_mm)},
             "solids": built.solid.solids,

@@ -1,0 +1,1 @@
+{"features": [{"op": "box", "name": "bar", "size": ["120 mm", "20 mm", "8 mm"]}, {"op": "hole", "name": "h", "at": [["10 mm", "10 mm", "8 mm"]], "diameter": "5 mm"}, {"op": "pattern", "of": "h", "count": 6, "step": ["20 mm", "0 mm", "0 mm"]}]}

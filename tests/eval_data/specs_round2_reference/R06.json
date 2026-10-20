@@ -1,0 +1,1 @@
+{"features": [{"op": "extrude", "distance": "5 mm", "profile": {"path": {"start": ["0 mm", "-15 mm"], "segments": [{"to": ["0 mm", "15 mm"], "radius": "15 mm", "turn": "right"}, {"to": ["0 mm", "-15 mm"]}]}}}]}

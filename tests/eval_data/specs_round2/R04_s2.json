@@ -1,0 +1,1 @@
+{"params":{"D":"50 mm","H":"40 mm","t":"2.5 mm"},"features":[{"op":"cylinder","name":"body","diameter":"$D","height":"$H","at":["0 mm","0 mm","0 mm"],"axis":"+z","mode":"add"},{"op":"shell","name":"cup","faces":">z","thickness":"$t"}]}

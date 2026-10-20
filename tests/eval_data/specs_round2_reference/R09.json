@@ -1,0 +1,1 @@
+{"features": [{"op": "cylinder", "diameter": "80 mm", "height": "8 mm"}, {"op": "box", "name": "slot", "mode": "cut", "size": ["20 mm", "4 mm", "8 mm"], "at": ["15 mm", "-2 mm", "0 mm"]}, {"op": "pattern", "of": "slot", "count": 6, "angle": "360 deg"}]}

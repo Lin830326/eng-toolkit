@@ -1,0 +1,1 @@
+{"features": [{"op": "cylinder", "diameter": "100 mm", "height": "6 mm", "at": ["0 mm", "0 mm", "0 mm"]}, {"op": "hole", "name": "h", "at": [["35 mm", "0 mm", "6 mm"]], "diameter": "6 mm"}, {"op": "pattern", "of": "h", "count": 8, "angle": "360 deg"}]}

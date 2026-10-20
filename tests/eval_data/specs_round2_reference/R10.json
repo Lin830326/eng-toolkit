@@ -1,0 +1,1 @@
+{"features": [{"op": "box", "name": "plate", "size": ["80 mm", "50 mm", "10 mm"]}, {"op": "cylinder", "name": "b1", "diameter": "16 mm", "height": "12 mm", "at": ["20 mm", "25 mm", "10 mm"]}, {"op": "cylinder", "name": "b2", "diameter": "16 mm", "height": "12 mm", "at": ["60 mm", "25 mm", "10 mm"]}, {"op": "fillet", "edges": "of:b1 & circle & >z", "radius": "2 mm"}]}

@@ -1,0 +1,1 @@
+{"params":{},"features":[{"op":"cylinder","name":"plate","diameter":"100 mm","height":"6 mm","at":["0 mm","0 mm","0 mm"],"axis":"+z","mode":"add"},{"op":"hole","name":"bolt_hole","at":[["35 mm","0 mm","6 mm"]],"axis":"-z","diameter":"6 mm","depth":"thru"},{"op":"pattern","name":"bolts","of":"bolt_hole","count":8,"angle":"360 deg","center":["0 mm","0 mm","0 mm"],"axis":"+z"}]}

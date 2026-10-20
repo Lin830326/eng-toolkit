@@ -1,0 +1,39 @@
+{
+ "name": "geometry_make_part",
+ "description": "Build a 3D part from a declarative JSON spec (nothing is executed) and write STEP, optionally GLB, STL and BREP, with exact volume, surface area, bounding-box size and optional mass. Needs the optional cad engine (uv sync --extra cad).\nThe spec is a JSON object with \"params\" (name: expression, optional) and \"features\" (a list, at most 200). Every number is a unit string such as \"25 mm\" or \"90 deg\"; bare numbers are rejected. \"$name\" uses an earlier param; an expression may use + - * / ( ) and one plain power of at most 6, e.g. \"($L - 2 mm) / 2\", at most 200 characters. Features run in order on one solid; the first must be a body with mode \"add\". Each feature has \"op\" and an optional \"name\" (letters, digits, _ and -).\nTypes: L = unit string like \"25 mm\" or \"1.5 in\"; V2 = list [L, L]; V3 = list [L, L, L]; POINTS = list of at least 3 V2; A = angle like \"90 deg\" or \"1.57 rad\"; AXIS = \"+x\" \"-x\" \"+y\" \"-y\" \"+z\" \"-z\"; MODE = \"add\" | \"cut\" | \"intersect\"; PLANE = \"xy\" | \"xz\" | \"yz\" (sketch axes u, v = x, y | x, z | y, z; normal +z | +y | +x); UV = \"u\" | \"v\"; DEPTH = L or \"thru\"; ENTRIES = list of V3; CBORE = {\"diameter\": L, \"depth\": L}; CSINK = {\"diameter\": L, \"angle\": A} (included angle); TEXT = short text; SEL = edge selector. * = required.\nOps:\n- box (body): size* V3, at V3=origin, mode MODE=\"add\". Block; at is its minimum corner.\n- cylinder (body): diameter* L, height* L, at V3=origin, axis AXIS=\"+z\", mode MODE=\"add\". Round bar from its base centre at, rising along axis.\n- sphere (body): diameter* L, at V3=origin, mode MODE=\"add\". Ball; at is its centre.\n- cone (body): diameter* L, top_diameter* L, height* L, at V3=origin, axis AXIS=\"+z\", mode MODE=\"add\". Cone or frustum from its base centre at, rising along axis; top_diameter 0 mm makes a point.\n- extrude (body): plane PLANE=\"xy\", offset L=0 mm, profile* PROFILE, distance* L, mode MODE=\"add\". Extrude a 2D profile along the plane normal; a negative distance reverses it.\n- revolve (body): plane PLANE=\"xy\", offset L=0 mm, profile* PROFILE, axis UV=\"v\", angle A=360 deg, mode MODE=\"add\". Turn a profile about the plane's u or v axis through its origin; keep the profile on one side of it.\n- hole (modifier): at* ENTRIES, axis AXIS=\"-z\", diameter* L, depth DEPTH=\"thru\", counterbore CBORE, countersink CSINK, thread TEXT, fit TEXT. Drill at each entry point along axis; depth counts from the entry; thread and fit are text callouts only.\n- fillet (modifier): edges* SEL, radius* L. Round the selected edges.\n- chamfer (modifier): edges* SEL, distance* L. Bevel the selected edges symmetrically.\nProfiles: {\"rect\": {size* V2, at V2=[0 mm, 0 mm], centered BOOL=false}} | {\"circle\": {diameter* L, at V2=[0 mm, 0 mm]}} | {\"polygon\": {points* POINTS}} | {\"slot\": {length* L, width* L, at V2=[0 mm, 0 mm], angle A=0 deg}} (a rect's at is its minimum corner unless centered).\nEdge selectors join terms with &: all |x |y |z >x <x >y <y >z <z convex concave line circle. |x = straight edges along x; >x = edges in the +x face of the part's bounding box; convex and concave = outside and inside corners (a cylinder seam is neither).\nDivide by plain numbers (\"$L / 4\"), not by lengths. Example: {\"params\":{\"L\":\"100 mm\",\"W\":\"50 mm\",\"T\":\"20 mm\",\"d\":\"10 mm\"},\"features\":[{\"op\":\"box\",\"name\":\"body\",\"size\":[\"$L\",\"$W\",\"$T\"]},{\"op\":\"hole\",\"name\":\"bore\",\"at\":[[\"$L / 4\",\"$W / 2\",\"$T\"]],\"axis\":\"-z\",\"diameter\":\"$d\",\"depth\":\"thru\",\"fit\":\"H7\"},{\"op\":\"fillet\",\"name\":\"corners\",\"edges\":\"|z & convex\",\"radius\":\"2 mm\"}]}\nErrors: input.invalid has details.pointer (e.g. /features/2/diameter) and details.allowed; geometry.empty_selection and geometry.build_failed name the failing feature_index. Also writes <name>.features.json (declared holes, bound to the STEP by sha256) and spec.json.",
+ "parameters": {
+  "spec": {
+   "type": "string",
+   "default": null,
+   "description": "Part spec as a JSON string, at most 64 kB: {params, features}. The grammar and an example are in the tool description"
+  },
+  "name": {
+   "type": "string",
+   "default": "part",
+   "description": "Product name in the STEP file and stem of the output files: 1 to 64 letters, digits, '_' or '-'"
+  },
+  "formats": {
+   "type": "string",
+   "default": "step",
+   "description": "Comma list of files to write besides the always-written STEP: 'glb', 'stl', 'brep'. Empty = STEP only"
+  },
+  "mesh_deflection": {
+   "type": "string",
+   "default": "0.01 mm",
+   "description": "Chord error of the GLB/STL tessellation, 0.001 mm to 100 mm, e.g. '0.01 mm'"
+  },
+  "density": {
+   "type": "string",
+   "default": "",
+   "description": "Optional material density with unit, e.g. '2700 kg/m^3'; adds 'mass'. Empty = no mass"
+  },
+  "output_unit": {
+   "type": "string",
+   "default": "mm",
+   "description": "Length unit of the results, e.g. 'mm', 'cm', 'inch'"
+  }
+ },
+ "required": [
+  "spec"
+ ]
+}
