@@ -1,6 +1,6 @@
 # External programs: finding and running software the user installed
 
-The shared layer under every domain that starts a native program: LibreDWG's `dwg2dxf` (drawing), ngspice, Yosys and KiCad (electronics), Gmsh and CalculiX (fea). Code: `eng_toolkit/external.py` (find, run, version, doctor row), `eng_toolkit/external_catalog.py` (the descriptors, data only), `ExternalTool` and `EXTERNAL` in `eng_toolkit/licenses.py` (the descriptor type and the registry). Tests: `tests/test_external.py` (fake program, 34), `tests/test_external_registry.py` (registry, catalog, doctor, 11), `tests/test_external_real.py` (the real programs, skipped when absent, 15). No tool uses it yet; the DWG slice is the first.
+The shared layer under every domain that starts a native program: LibreDWG's `dwg2dxf` (drawing), ngspice (spice), Yosys (digital), Gmsh and CalculiX (fem), KiCad (pcb). Code: `eng_toolkit/external.py` (find, run, version, doctor row), `eng_toolkit/external_catalog.py` (the descriptors, data only), `ExternalTool` and `EXTERNAL` in `eng_toolkit/licenses.py` (the descriptor type and the registry). Tests: `tests/test_external.py` (fake program, 34), `tests/test_external_registry.py` (registry, catalog, doctor, 11), `tests/test_external_real.py` (the real programs, skipped when absent, 15). No tool uses it yet; the DWG slice is the first.
 
 ## The licence boundary
 
