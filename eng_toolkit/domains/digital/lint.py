@@ -35,7 +35,7 @@ def check_script(sources: list[Source], top: str | None, language: str) -> list[
     return [
         *flow.read_lines(sources, language),
         hier,
-        "proc",
+        "proc -noopt",  # proc's final opt_expr can erase inverter loops before check sees them.
         "write_json design.json",
         "check",
         "log " + flow.FLAT_MARKER,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -16,7 +17,7 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from eng_toolkit import __version__
-from eng_toolkit.contract import QuantityOut, ToolResult
+from eng_toolkit.contract import QuantityOut, ToolResult, failure
 from eng_toolkit.domains.digital import equiv, flow, guard, lint, metrics
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.runner import Computed, JobHandle, run_tool
@@ -63,6 +64,25 @@ def _dimensionless(value: float) -> QuantityOut:
     return QuantityOut(quantity=float(value), unit="dimensionless")
 
 
+def _run_digital_tool(*, tool_name: str, engine: str, inputs: dict[str, Any], compute: Callable[[JobHandle], Computed]) -> ToolResult:
+    # The shared runner writes and hashes inputs before entering compute.
+    try:
+        for param, value in inputs.items():
+            if isinstance(value, str):
+                guard.unicode_text(value, param=param)
+    except ToolFailure as exc:
+        return failure(
+            family=exc.family,
+            message=exc.message,
+            details=exc.details,
+            engine=engine,
+            version=__version__,
+            # Preserve the rejected inputs for hashing as ASCII JSON, which can represent surrogates.
+            inputs={"escaped_inputs": json.dumps(inputs, ensure_ascii=True)},
+        )
+    return run_tool(tool_name=tool_name, engine=engine, version=__version__, inputs=inputs, compute=compute)
+
+
 def split_paths(raw: str, *, param: str) -> list[str]:
     """The paths in ``raw``: a JSON array of strings, or paths separated by ';' or line breaks.  At most :data:`MAX_FILES`."""
     text = raw.strip()
@@ -81,6 +101,7 @@ def split_paths(raw: str, *, param: str) -> list[str]:
     if len(paths) > MAX_FILES:
         raise ToolFailure("input.out_of_range", f"{param}: {len(paths)} files is over the limit of {MAX_FILES}", {"param": param, "max_files": MAX_FILES})
     for path in paths:
+        guard.unicode_text(path, param=param)
         if "\x00" in path:
             raise ToolFailure("input.invalid", f"{param}: a path holds a NUL character", {"param": param})
     return paths
@@ -250,7 +271,7 @@ def synthesize(
             artifacts=artifacts,
         )
 
-    return run_tool(tool_name="digital_synthesize", engine=ENGINE_SYNTHESIZE, version=__version__, inputs=inputs, compute=compute)
+    return _run_digital_tool(tool_name="digital_synthesize", engine=ENGINE_SYNTHESIZE, inputs=inputs, compute=compute)
 
 
 # --------------------------------------------------------------------------- digital_check
@@ -317,7 +338,7 @@ def check(
             artifacts=artifacts,
         )
 
-    return run_tool(tool_name="digital_check", engine=ENGINE_CHECK, version=__version__, inputs=inputs, compute=compute)
+    return _run_digital_tool(tool_name="digital_check", engine=ENGINE_CHECK, inputs=inputs, compute=compute)
 
 
 # --------------------------------------------------------------------------- digital_equivalent
@@ -432,7 +453,7 @@ def equivalent(
             values["checked_cycles"] = _dimensionless(cycles)
         return Computed(values=values, primary="mismatch_found", warnings=warnings, data=data, artifacts=artifacts)
 
-    return run_tool(tool_name="digital_equivalent", engine=ENGINE_EQUIVALENT, version=__version__, inputs=inputs, compute=compute)
+    return _run_digital_tool(tool_name="digital_equivalent", engine=ENGINE_EQUIVALENT, inputs=inputs, compute=compute)
 
 
 __all__ = ["TOOL_NAMES", "server"]
