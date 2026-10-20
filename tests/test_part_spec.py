@@ -20,7 +20,8 @@ from eng_toolkit.errors import ToolFailure
 from eng_toolkit.units import parse_quantity
 
 README = Path(__file__).resolve().parents[1] / "README.md"
-BODIES = {"box", "cylinder", "sphere", "cone", "extrude", "revolve"}
+DESCRIPTION_LIMIT = 5200  # characters; round 1 had 3900 for nine ops, round 2 adds seven features of the language (docs/geometry-drawing/make-part-round2.md)
+BODIES = {"box", "cylinder", "sphere", "cone", "extrude", "import", "revolve"}
 
 
 def rejected(text: str, family: str = "input.invalid") -> ToolFailure:
@@ -401,7 +402,7 @@ def test_a_bad_selector_term_lists_the_allowed_terms():
     with pytest.raises(ToolFailure) as info:
         parse_spec(spec([box(("9 mm", "9 mm", "9 mm")), fillet("|w & convex", "1 mm")]))
     assert info.value.details["pointer"] == "/features/1/edges"
-    assert set(info.value.details["allowed"]) == set(brep.EDGE_TERMS)
+    assert set(info.value.details["allowed"]) == set(brep.EDGE_TERMS) | {"of:<feature name>"}
 
 
 # --------------------------------------------------------------------------- edge selectors
@@ -432,7 +433,7 @@ def test_bad_edge_selectors_are_input_invalid_and_list_the_terms(text):
         brep.parse_edge_selector(text)
     assert info.value.family == "input.invalid"
     assert info.value.details["selector"] == text
-    assert set(info.value.details["allowed"]) == set(brep.EDGE_TERMS)
+    assert set(info.value.details["allowed"]) == set(brep.EDGE_TERMS) | {"of:<feature name>"}
 
 
 def test_the_edge_terms_are_the_documented_set():
@@ -547,10 +548,10 @@ def description() -> str:
     return MAKE_PART_DESCRIPTION
 
 
-def test_the_registry_has_the_nine_ops_with_roles():
-    assert set(OPS) == {"box", "cylinder", "sphere", "cone", "extrude", "revolve", "hole", "fillet", "chamfer"}
+def test_the_registry_has_the_thirteen_ops_with_roles():
+    assert set(OPS) == {"box", "cylinder", "sphere", "cone", "extrude", "import", "revolve", "hole", "pattern", "mirror", "shell", "fillet", "chamfer"}
     assert {name for name, op in OPS.items() if op.role == "body"} == BODIES
-    assert {name for name, op in OPS.items() if op.role == "modifier"} == {"hole", "fillet", "chamfer"}
+    assert {name for name, op in OPS.items() if op.role == "modifier"} == {"hole", "pattern", "mirror", "shell", "fillet", "chamfer"}
     assert all(op.summary for op in OPS.values())
 
 
@@ -575,7 +576,7 @@ def test_the_description_is_generated_from_the_registry(monkeypatch):
 
 def test_the_description_is_compact_and_carries_one_example_that_parses():
     text = description()
-    assert len(text) < 3900, len(text)
+    assert len(text) < DESCRIPTION_LIMIT, len(text)
     assert text.count('{"params"') == 1
     example = json.dumps(part.EXAMPLE_SPEC, separators=(",", ":"))
     assert example in text

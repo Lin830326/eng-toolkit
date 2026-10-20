@@ -1,0 +1,1 @@
+{"params":{},"features":[{"op":"box","name":"half","size":["30 mm","40 mm","10 mm"],"at":["0 mm","0 mm","0 mm"],"mode":"add"},{"op":"hole","name":"bore","at":[["15 mm","20 mm","10 mm"]],"axis":"-z","diameter":"8 mm","depth":"thru"},{"op":"mirror","name":"full","plane":"yz","offset":"0 mm"}]}

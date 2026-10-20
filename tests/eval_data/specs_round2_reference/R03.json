@@ -1,0 +1,1 @@
+{"features": [{"op": "box", "name": "half", "size": ["30 mm", "40 mm", "10 mm"]}, {"op": "hole", "at": [["15 mm", "20 mm", "10 mm"]], "diameter": "8 mm"}, {"op": "mirror", "plane": "yz"}]}

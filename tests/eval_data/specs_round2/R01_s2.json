@@ -1,0 +1,1 @@
+{"params":{"L":"120 mm","W":"20 mm","T":"8 mm","d":"5 mm"},"features":[{"op":"box","name":"bar","size":["$L","$W","$T"]},{"op":"hole","name":"holes","at":[["10 mm","10 mm","$T"],["30 mm","10 mm","$T"],["50 mm","10 mm","$T"],["70 mm","10 mm","$T"],["90 mm","10 mm","$T"],["110 mm","10 mm","$T"]],"axis":"-z","diameter":"$d","depth":"thru"}]}

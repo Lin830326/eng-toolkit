@@ -1,0 +1,1 @@
+{"features": [{"op": "box", "size": ["80 mm", "50 mm", "6 mm"]}, {"op": "extrude", "mode": "cut", "distance": "6 mm", "profile": {"slot": {"length": "46 mm", "width": "16 mm", "at": ["40 mm", "25 mm"]}}}]}

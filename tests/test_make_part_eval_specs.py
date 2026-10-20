@@ -52,6 +52,11 @@ def test_description_is_the_one_the_model_saw():
     )
 
 
+def test_the_round_one_description_is_kept_as_the_record_of_what_that_model_saw():
+    seen = json.loads((DATA / "tool_as_seen_round1.json").read_text(encoding="utf8"))
+    assert len(seen["description"]) == 3737 and "- pattern (" not in seen["description"]
+
+
 @pytest.mark.parametrize("task", TASKS, ids=[t["id"] for t in TASKS])
 def test_model_written_spec_builds_the_described_part(ocp, task):
     text = (DATA / "specs" / f"{task['id']}.json").read_text(encoding="utf8")
@@ -66,3 +71,50 @@ def test_model_written_spec_builds_the_described_part(ocp, task):
     size = [measured.values[k].quantity for k in ("size_x", "size_y", "size_z")]
     assert max(abs(a - b) for a, b in zip(size, task["size"])) <= TOL.ABS_TOL_SIZE, (size, task["size"])
     assert measured.data["solids"] == 1
+
+
+# --------------------------------------------------------------------------- round 2 (docs/geometry-drawing/make-part-eval.md, "Round 2")
+
+ROUND2 = _load("tasks_round2").TASKS
+KNOWN_FAILURES = {"R09_s1"}  # the model computed the rotated outlines by hand and rounded them; its volume is 0.88 % off
+R2_SPECS = sorted((DATA / "specs_round2").glob("R*_s?.json"))
+
+
+def _check(task, text, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    built = getattr(make_part, "fn", make_part)(spec=text, name=task["id"])
+    assert built.ok, built.error
+    step = next(a.path for a in built.artifacts if a.path.endswith(".step"))
+    measured = getattr(measure, "fn", measure)(model_path=step)
+    assert measured.ok, measured.error
+    volume = measured.values["volume"].quantity
+    size = [measured.values[k].quantity for k in ("size_x", "size_y", "size_z")]
+    return (
+        abs(volume - task["volume"]) / task["volume"],
+        max(abs(a - b) for a, b in zip(size, task["size"])),
+        measured.data["solids"],
+    )
+
+
+def test_round_two_has_ten_tasks_and_three_pinned_samples_each():
+    assert [t["id"] for t in ROUND2] == [f"R{i:02d}" for i in range(1, 11)]
+    assert [p.stem for p in R2_SPECS] == [f"{t['id']}_s{n}" for t in ROUND2 for n in (1, 2, 3)]
+    assert (DATA / "specs_round2" / "scores.json").is_file()
+
+
+@pytest.mark.parametrize("path", R2_SPECS, ids=[p.stem for p in R2_SPECS])
+def test_round_two_model_written_spec_builds_the_described_part(ocp, path, tmp_path, monkeypatch):
+    task = next(t for t in ROUND2 if t["id"] == path.stem.split("_")[0])
+    rel, worst, solids = _check(task, path.read_text(encoding="utf8"), tmp_path, monkeypatch)
+    if path.stem in KNOWN_FAILURES:
+        assert rel > TOL.REL_TOL_VOLUME, "a recorded failure now passes: update KNOWN_FAILURES and the record"
+    else:
+        assert rel <= TOL.REL_TOL_VOLUME and worst <= TOL.ABS_TOL_SIZE and solids == 1, (rel, worst, solids)
+
+
+@pytest.mark.parametrize("task", ROUND2, ids=[t["id"] for t in ROUND2])
+def test_round_two_reference_spec_reaches_the_closed_form(ocp, task, tmp_path, monkeypatch):
+    """The ground truth is reachable with the grammar: a spec written by hand with the new ops matches it to 1e-9."""
+    text = (DATA / "specs_round2_reference" / f"{task['id']}.json").read_text(encoding="utf8")
+    rel, worst, solids = _check(task, text, tmp_path, monkeypatch)
+    assert rel <= 1e-9 and worst <= TOL.ABS_TOL_SIZE and solids == 1, (rel, worst, solids)

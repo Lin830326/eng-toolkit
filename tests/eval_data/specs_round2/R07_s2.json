@@ -1,0 +1,1 @@
+{"params":{},"features":[{"op":"extrude","name":"boss","plane":"xy","offset":"0 mm","profile":{"rect":{"size":["30 mm","30 mm"],"at":["0 mm","0 mm"],"centered":false}},"distance":"20 mm","taper":"5 deg","mode":"add"}]}

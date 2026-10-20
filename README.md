@@ -329,13 +329,17 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 | `cylinder` | body | `diameter`*、`height`*、`at`（底面圓心，預設原點）、`axis`（預設 `"+z"`）、`mode` |
 | `sphere` | body | `diameter`*、`at`（球心，預設原點）、`mode` |
 | `cone` | body | `diameter`*（底面）、`top_diameter`*（頂面，可為 `"0 mm"` 成為尖錐；與 `diameter` 相等就是圓柱）、`height`*、`at`（底面圓心，預設原點）、`axis`（預設 `"+z"`）、`mode` |
-| `extrude` | body | `plane`（`"xy"` 預設、`"xz"`、`"yz"`）、`offset`（沿平面法向移動，預設 `0 mm`）、`profile`*、`distance`*（沿法向，負值反向）、`mode` |
+| `extrude` | body | `plane`（`"xy"` 預設、`"xz"`、`"yz"`）、`offset`（沿平面法向移動，預設 `0 mm`）、`profile`*、`distance`*（沿法向，負值反向）、`taper`（0 到 45 deg，側壁沿拉伸方向內縮；不提供外擴，要外擴請從較寬的一端以負 `distance` 反向拉伸）、`mode` |
+| `import` | body | `file`*（`.step` `.stp` `.iges` `.igs` `.brep`，經 `JobHandle.input_file`，單位規則同 `geometry_measure`）、`at`（位移）、`mode`；檔案必須剛好一個實體 |
 | `revolve` | body | `plane`、`offset`、`profile`*、`axis`（平面的 `"u"` 或 `"v"` 軸，過平面原點，預設 `"v"`）、`angle`（預設 `360 deg`）、`mode` |
 | `hole` | 修改 | `at`*（入口點清單 `[[x, y, z], ...]`）、`axis`（鑽入方向，預設 `"-z"`）、`diameter`*、`depth`（長度或 `"thru"`，預設 `"thru"`；從入口算起）、`counterbore` `{diameter, depth}`、`countersink` `{diameter, angle}`（含角）、`thread`、`fit`（後兩者只是標註文字，不產生螺紋或公差幾何） |
+| `pattern` | 修改 | `of`*（較前面的 body 或 hole 的名稱）、`count`*（共幾個，含原件，2 到 256）、`step`（線性，每個再移 `[x, y, z]`）或 `angle`（環形，360 deg 為均分一圈，較小則首尾涵蓋該角）二擇一、`center`、`axis`（環形的軸，預設過原點、`"+z"`）；孔的陣列會宣告 `count × 原孔數` 個孔 |
+| `mirror` | 修改 | `plane`*、`offset`、`of`（省略 = 整個目前零件，否則只鏡射該 feature）|
+| `shell` | 修改 | `faces`*（面選擇器）、`thickness`*（壁厚向內長，移除選到的面）|
 | `fillet` | 修改 | `edges`*（邊選擇器）、`radius`* |
 | `chamfer` | 修改 | `edges`*、`distance`*（對稱倒角） |
 
-`mode` 是 `"add"`（預設，聯集）、`"cut"` 或 `"intersect"`；`axis` 是 `"+x" "-x" "+y" "-y" "+z" "-z"` 之一。平面 `plane` 的草圖座標 (u, v) 為 (x, y)、(x, z)、(y, z)，法向 +z、+y、+x。輪廓 `profile` 是恰有一個鍵的物件：`{"rect": {"size": [u, v], "at": [u, v], "centered": false}}`（`at` 是最小角，`centered` 為 true 時是中心）、`{"circle": {"diameter", "at"}}`、`{"polygon": {"points": [[u, v], ...]}}`（至少 3 點，不可自交）、`{"slot": {"length", "width", "at", "angle"}}`（`length` 含兩端圓頭，須大於 `width`）。`revolve` 的輪廓必須在旋轉軸的同一側。孔從 `at` 的入口點沿 `axis` 鑽 `depth`（`"thru"` 為穿過整個零件；盲孔深過零件就是穿透）；整個 feature 沒切掉任何材料時回警告（多半是入口點或方向弄反了）。
+`mode` 是 `"add"`（預設，聯集）、`"cut"` 或 `"intersect"`；`axis` 是 `"+x" "-x" "+y" "-y" "+z" "-z"` 之一。平面 `plane` 的草圖座標 (u, v) 為 (x, y)、(x, z)、(y, z)，法向 +z、+y、+x。輪廓 `profile` 是恰有一個鍵的物件：`{"rect": {"size": [u, v], "at": [u, v], "centered": false}}`（`at` 是最小角，`centered` 為 true 時是中心）、`{"circle": {"diameter", "at"}}`、`{"polygon": {"points": [[u, v], ...]}}`（至少 3 點，不可自交）、`{"slot": {"length", "width", "at", "angle"}}`（`length` 含兩端圓頭，須大於 `width`）、`{"path": {"start": [u, v], "segments": [{"to"}, {"to", "radius", "turn"}, {"to", "via"}]}}`（直線與圓弧的封閉輪廓，最後一段的 `to` 須等於 `start`，檢查封閉、自交與弧線一致；`radius` 取較短的弧，`turn` 為 `"left"`（逆時針，預設）或 `"right"`；`via` 是弧通過的點）。`revolve` 的輪廓必須在旋轉軸的同一側。孔從 `at` 的入口點沿 `axis` 鑽 `depth`（`"thru"` 為穿過整個零件；盲孔深過零件就是穿透）；整個 feature 沒切掉任何材料時回警告（多半是入口點或方向弄反了）。
 
 **限制與邊界行為**（都有測試與獨立驗證）：
 * 一份規格所有 `hole` 的孔位合計最多 **1000** 個；超過立刻回 `input.invalid`，`details.limit` 是 1000。1000 個孔在開發機上約 25 秒，其中約 9 秒是把 STEP 讀回驗證，250 個約 3 秒，時間隨孔數成長得比線性快。
@@ -343,7 +347,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 * 圓角或倒角的大小容不下時（例如 10 mm 方塊全部邊倒 5 mm 或更大，或比板厚還大的圓角）回 `geometry.build_failed`，`details` 指出是第幾個 feature；剛好小於一半（如 4.9 mm）則照常做出有效實體。半徑或距離為 0 或負數回 `input.invalid`。
 * 切到什麼都不剩、或與不相交的實體取交集，回 `geometry.build_failed` 並指出該 feature。
 
-**邊選擇器**是以 `&` 相交的詞：`all`；`|x` `|y` `|z`（平行該軸的直線邊）；`>x` `<x` `>y` `<y` `>z` `<z`（位於零件外框該方向極值面上的邊）；`convex`（外角）與 `concave`（內角），由相鄰兩面的二面角判斷，平滑相接（例如圓柱的接縫線，兩側是同一個面）兩者都不是，所以 `|z & convex` 只會選到外緣的四條豎邊，不會選到孔的接縫線；`line`（直線邊）與 `circle`（圓邊）。沒有任何邊符合時回 `geometry.empty_selection`，`details.matches_per_term` 列出每個詞各單獨符合幾條，方便修正選擇器。
+**邊選擇器**是以 `&` 相交的詞：`all`；`|x` `|y` `|z`（平行該軸的直線邊）；`>x` `<x` `>y` `<y` `>z` `<z`（位於零件外框該方向極值面上的邊）；`convex`（外角）與 `concave`（內角），由相鄰兩面的二面角判斷，平滑相接（例如圓柱的接縫線，兩側是同一個面）兩者都不是，所以 `|z & convex` 只會選到外緣的四條豎邊，不會選到孔的接縫線；`line`（直線邊）與 `circle`（圓邊）。`of:名稱` 選出較前面的 body、hole、pattern 或 mirror feature 所建立的邊（落在它的工具形狀表面、且先前不存在的邊）；面選擇器（`shell` 用）有 `all` `>x` `<x` `>y` `<y` `>z` `<z` `plane` `cylinder` 與 `of:名稱`，`>z` 是頂面。沒有任何邊符合時回 `geometry.empty_selection`，`details.matches_per_term` 列出每個詞各單獨符合幾條，方便修正選擇器。
 
 ```json
 {"params":{"L":"100 mm","W":"50 mm","T":"20 mm","d":"10 mm"},"features":[{"op":"box","name":"body","size":["$L","$W","$T"]},{"op":"hole","name":"bore","at":[["$L / 4","$W / 2","$T"]],"axis":"-z","diameter":"$d","depth":"thru","fit":"H7"},{"op":"fillet","name":"corners","edges":"|z & convex","radius":"2 mm"}]}
@@ -356,7 +360,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 
 **錯誤。** 規格錯誤是 `input.invalid`，`details.pointer` 是 JSON pointer（如 `/features/2/diameter`），`details.allowed` 是該處允許的欄位或值；單位錯誤沿用 `units.bare_number`、`units.dimension_mismatch`、`units.parse_error`，`details` 同樣帶 `pointer`。核心建模失敗時 `error.details` 帶 `feature_index`（從 1 起）、`feature_name`、`op` 與 `pointer`：`geometry.build_failed`（核心失敗，如不可能的圓角半徑；`details.occt` 是核心訊息）、`geometry.empty_selection`；最後結果必須恰好是一個通過 BRepCheck 的實體，否則回 `geometry.invalid_result`（例如兩個互不相連的實體）。失敗的結果不帶警告，也不寫出零件檔。
 
-限制：規格 64 kB、200 個 feature、全規格孔位置共 1000、運算式 200 字元。v1 沒有螺紋幾何、放樣、掃掠、陣列、鏡射、薄殼、傾斜拉伸與匯入既有 STEP；結果同樣是未經工程核可的模型。
+限制：規格 64 kB、200 個 feature、全規格孔位置共 1000、運算式 200 字元。沒有螺紋幾何、放樣與掃掠（陣列、鏡射、薄殼、傾斜拉伸、含圓弧的路徑輪廓與匯入既有 STEP 為第二輪，設計記錄見 `docs/geometry-drawing/make-part-round2.md`）；結果同樣是未經工程核可的模型。
 
 ### `geometry_check_dfm`
 對實體 3D 模型做可製造性（DFM）檢查：`process` 目前只支援 `cnc_milling` 與 `sheet_metal`，其他製程（`turning`、`injection_molding`、`additive`…）回 `geometry.unsupported_process`，不猜。需要選用的 `cad` extra。輸入：`model_path`、`process`、`limits`（可省略的 JSON 物件，覆蓋預設限值，長度要帶單位，例如 `{"min_wall": "1 mm", "tool_radius": "2 mm"}`）、`tool_axis`（銑削主軸方向，預設 `+z`）、`max_findings`、`output_unit`。每個發現（finding）都有規則代號、嚴重度（`error`／`warn`／`info`）、實測值與限值、面／邊編號、模型座標中的一個點，以及 `check`：`exact`（精確的 B-rep 量，如半徑、平面間距、精確距離）或 `heuristic`（取樣或把形狀解讀成特徵，兩個方向都可能錯）。結果另有依嚴重度的計數 `data.summary` 與 `data.not_performed`（沒做的檢查）。**預設限值是本工具箱自己的經驗值，不是任何標準的數值，也不宣稱符合任何標準**，請以 `limits` 帶入貴廠的值；沒有閉合實體（只有殼或曲面）的檔案會被拒絕。規則：`cnc.internal_corner_radius`、`cnc.min_wall`、`cnc.hole_depth_ratio`、`cnc.min_hole_diameter`、`cnc.tool_access`（heuristic）、`sheet.thickness`、`sheet.thickness_uniform`（heuristic）、`sheet.min_bend_radius`、`sheet.hole_to_edge`。規則、做法、實測時間與未做項目見 [`docs/geometry-dfm/design.md`](docs/geometry-dfm/design.md)。

@@ -1,0 +1,1 @@
+{"params":{"R":"15 mm","T":"5 mm"},"features":[{"op":"extrude","name":"plate","plane":"xy","offset":"0 mm","profile":{"path":{"start":["0 mm","-15 mm"],"segments":[{"to":["0 mm","15 mm"]},{"to":["0 mm","-15 mm"],"via":["15 mm","0 mm"]}]}},"distance":"$T"}]}

@@ -7,13 +7,16 @@ kernel's message in ``details['occt']``; an edge selector that matches nothing r
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal, Mapping, Sequence
 
 import numpy as np
 
 from eng_toolkit.brep import _occ
+from eng_toolkit.brep._created import Created
 from eng_toolkit.brep._files import _count
+from eng_toolkit.brep._path import Path2, PathSegment, resolve
 from eng_toolkit.brep._query import _array, _bbox, _faces
 from eng_toolkit.brep._types import Solid, Vec3
 from eng_toolkit.errors import ToolFailure
@@ -22,6 +25,9 @@ Vec2 = tuple[float, float]
 Mode = Literal["add", "cut", "intersect"]
 MODES: tuple[str, ...] = ("add", "cut", "intersect")
 EDGE_TERMS: tuple[str, ...] = ("all", "|x", "|y", "|z", ">x", "<x", ">y", "<y", ">z", "<z", "convex", "concave", "line", "circle")
+FACE_TERMS: tuple[str, ...] = ("all", ">x", "<x", ">y", "<y", ">z", "<z", "plane", "cylinder")
+OF_PREFIX = "of:"  # the term of:<feature name> is valid in an edge selector and in a face selector
+OF_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 TWO_PI = 2.0 * math.pi
 PARALLEL = 1.0 - 1e-9  # |cos| of a line direction that counts as parallel to an axis
 EXTREME_MM = 1e-6  # an edge lies in a bounding-box face when its coordinates are this close to the extreme
@@ -62,7 +68,7 @@ class Slot2:
     angle: float = 0.0  # of the long axis from u, radians
 
 
-Profile2 = Rect2 | Circle2 | Polygon2 | Slot2
+Profile2 = Rect2 | Circle2 | Polygon2 | Slot2 | Path2
 
 
 @dataclass(frozen=True)
@@ -80,25 +86,49 @@ class EdgeSelector:
 
 
 @dataclass(frozen=True)
+class FaceSelector:
+    text: str
+    terms: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EdgeMatch:
     count: int  # edges matched by every term
     per_term: dict[str, int]  # edges each term matches on its own
 
 
-def parse_edge_selector(text: str) -> EdgeSelector:
-    """Split on ``&`` and check every term; pure, needs no engine."""
+def _parse_terms(text: str, allowed: tuple[str, ...], what: str) -> tuple[str, ...]:
+    shown_allowed = [*allowed, f"{OF_PREFIX}<feature name>"]
     if not isinstance(text, str):
-        raise ToolFailure("input.invalid", f"an edge selector is a string of terms joined by '&', not {type(text).__name__}", {"selector": text, "allowed": list(EDGE_TERMS)})
+        raise ToolFailure("input.invalid", f"{what} is a string of terms joined by '&', not {type(text).__name__}", {"selector": text, "allowed": shown_allowed})
     terms = tuple(part.strip() for part in text.split("&"))
     for term in terms:
-        if term not in EDGE_TERMS:
-            shown = term or "(empty)"
-            raise ToolFailure(
-                "input.invalid",
-                f"edge selector {text!r}: {shown!r} is not a term; use terms from {list(EDGE_TERMS)} joined by '&'",
-                {"selector": text, "term": term, "allowed": list(EDGE_TERMS)},
-            )
-    return EdgeSelector(text=text, terms=terms)
+        if term in allowed:
+            continue
+        if term.startswith(OF_PREFIX) and OF_NAME.fullmatch(term[len(OF_PREFIX) :]):
+            continue
+        shown = term or "(empty)"
+        raise ToolFailure(
+            "input.invalid",
+            f"{what} {text!r}: {shown!r} is not a term; use terms from {shown_allowed} joined by '&'",
+            {"selector": text, "term": term, "allowed": shown_allowed},
+        )
+    return terms
+
+
+def parse_edge_selector(text: str) -> EdgeSelector:
+    """Split on ``&`` and check every term (the fixed terms and ``of:<feature name>``); pure, needs no engine."""
+    return EdgeSelector(text=text, terms=_parse_terms(text, EDGE_TERMS, "edge selector"))
+
+
+def parse_face_selector(text: str) -> FaceSelector:
+    """The same for faces: the terms of :data:`FACE_TERMS` and ``of:<feature name>``."""
+    return FaceSelector(text=text, terms=_parse_terms(text, FACE_TERMS, "face selector"))
+
+
+def selector_features(selector: EdgeSelector | FaceSelector) -> tuple[str, ...]:
+    """The feature names a selector refers to with ``of:`` terms."""
+    return tuple(term[len(OF_PREFIX) :] for term in selector.terms if term.startswith(OF_PREFIX))
 
 
 # --------------------------------------------------------------------------- helpers
@@ -309,6 +339,33 @@ def _slot_wire(profile: Slot2, plane: SketchPlane):
     return wire.Wire()
 
 
+def _path_wire(profile: Path2, plane: SketchPlane):
+    from dataclasses import replace
+
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire
+    from OCP.GC import GC_MakeArcOfCircle
+
+    pieces, problems = resolve(profile)
+    if problems:
+        raise ToolFailure("input.invalid", f"path: {problems[0].message}")
+    pieces[-1] = replace(pieces[-1], end=profile.start)  # closed within the tolerance: make it exact so the wire closes
+
+    def lift(p) -> np.ndarray:
+        return _lift(plane, float(p[0]), float(p[1]))
+
+    wire = BRepBuilderAPI_MakeWire()
+    for piece in pieces:
+        a, b = _pnt(lift(piece.start)), _pnt(lift(piece.end))
+        if piece.via is None:
+            edge = BRepBuilderAPI_MakeEdge(a, b).Edge()
+        else:
+            edge = BRepBuilderAPI_MakeEdge(GC_MakeArcOfCircle(a, _pnt(lift(piece.via)), b).Value()).Edge()
+        wire.Add(edge)
+    if not wire.IsDone():
+        raise _failure("path: the outline could not be joined into one closed wire")
+    return wire.Wire()
+
+
 def _profile_face(profile: Profile2, plane: SketchPlane):
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeWire
     from OCP.gp import gp_Ax2, gp_Circ
@@ -330,6 +387,8 @@ def _profile_face(profile: Profile2, plane: SketchPlane):
         wire = _polygon_wire([_lift(plane, u, v) for u, v in profile.points])
     elif isinstance(profile, Slot2):
         wire = _slot_wire(profile, plane)
+    elif isinstance(profile, Path2):
+        wire = _path_wire(profile, plane)
     else:
         raise ToolFailure("input.invalid", f"unknown profile {type(profile).__name__}")
     face = BRepBuilderAPI_MakeFace(wire, True)
@@ -338,21 +397,60 @@ def _profile_face(profile: Profile2, plane: SketchPlane):
     return face.Face()
 
 
-def make_prism(profile: Profile2, plane: SketchPlane, distance: float) -> Solid:
-    """Extrude a profile along the plane normal; a negative ``distance`` goes the other way."""
+def _facing(face, normal: np.ndarray) -> float:
+    """+1 when the face's own normal points along ``normal``, -1 when it points the other way (a profile drawn clockwise)."""
+    from OCP.BRepGProp import BRepGProp_Face
+    from OCP.BRepTools import BRepTools
+    from OCP.gp import gp_Pnt, gp_Vec
+
+    u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+    where, vec = gp_Pnt(), gp_Vec()
+    BRepGProp_Face(face).Normal(0.5 * (u0 + u1), 0.5 * (v0 + v1), where, vec)
+    return 1.0 if float(_array(vec) @ normal) > 0.0 else -1.0
+
+
+def make_prism(profile: Profile2, plane: SketchPlane, distance: float, taper: float | None = None) -> Solid:
+    """Extrude a profile along the plane normal; a negative ``distance`` goes the other way.
+
+    ``taper`` (radians, None or 0 for a straight extrusion; 0 up to but excluding 90 degrees) leans every side wall inward along the
+    direction of the extrusion.  Widening is not offered: the kernel rounds the corners of a widening draft, so the result would not
+    be the straight-walled frustum that was asked for.  A taper that narrows the profile to nothing before the distance is reached
+    is refused (the kernel would stop at the apex without saying so).
+    """
     _occ.load()
     from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
     from OCP.gp import gp_Vec
+    from OCP.LocOpe import LocOpe_DPrism
 
     if not (math.isfinite(distance) and distance != 0.0):
         raise ToolFailure("input.invalid", f"extrude distance must be non-zero, got {distance!r}")
     face = _profile_face(profile, plane)
     normal = _frame(plane)[2]
+    if taper is None or taper == 0.0:
+        try:
+            shape = BRepPrimAPI_MakePrism(face, gp_Vec(*(float(c) for c in normal * distance))).Shape()
+        except Exception as exc:  # noqa: BLE001 - OCCT raises its own exception types
+            raise _failure("extrude: the kernel could not sweep the profile", exc) from exc
+        return _as_solid(shape, "extrude")
+    if not (math.isfinite(taper) and 0.0 < taper < math.pi / 2.0):
+        raise ToolFailure("input.invalid", f"taper must be an angle above 0 and below 90 degrees (it narrows along the extrusion), got {taper!r}", {"field": "taper"})
+    # The kernel extrudes along the face's own normal, narrowing when height and angle have the same sign.
+    along = math.copysign(1.0, distance) * _facing(face, normal)
     try:
-        shape = BRepPrimAPI_MakePrism(face, gp_Vec(*(float(c) for c in normal * distance))).Shape()
-    except Exception as exc:  # noqa: BLE001 - OCCT raises its own exception types
-        raise _failure("extrude: the kernel could not sweep the profile", exc) from exc
-    return _as_solid(shape, "extrude")
+        shape = LocOpe_DPrism(face, along * abs(distance) / math.cos(taper), taper * along).Shape()  # its height runs along the sloping wall
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("extrude: the kernel could not build the tapered extrusion", exc) from exc
+    solid = _as_solid(shape, "extrude")
+    axis = int(np.argmax(np.abs(normal)))
+    lo, hi = _bbox(solid._handle)
+    if abs((hi[axis] - lo[axis]) - abs(distance)) > 1e-6 * max(abs(distance), 1.0):
+        raise ToolFailure(
+            "input.invalid",
+            f"extrude: a taper of {math.degrees(taper):g} degrees closes the profile to a point after {hi[axis] - lo[axis]:g} mm, "
+            f"before the distance of {abs(distance):g} mm; use a smaller taper or distance",
+            {"field": "taper"},
+        )
+    return solid
 
 
 def make_revolution(profile: Profile2, plane: SketchPlane, axis: Literal["u", "v"], angle: float) -> Solid:
@@ -438,6 +536,21 @@ def _children(shape) -> list:
         found.append(iterator.Value())
         iterator.Next()
     return found
+
+
+def join_tools(tools: Sequence[Solid]) -> Solid:
+    """One compound holding the pieces of every tool (a compound tool is opened one level), for a single :func:`combine`."""
+    _occ.load()
+    from OCP.BRep import BRep_Builder
+    from OCP.TopoDS import TopoDS_Compound
+
+    builder = BRep_Builder()
+    compound = TopoDS_Compound()
+    builder.MakeCompound(compound)
+    for tool in tools:
+        for piece in _children(tool._handle):
+            builder.Add(compound, piece)
+    return _wrap(compound)
 
 
 def combine(base: Solid, tool: Solid, mode: Mode) -> Solid:
@@ -601,10 +714,12 @@ class _Edges:
             out.append("convex" if sine > SMOOTH else "concave" if sine < -SMOOTH else "smooth")
         return out
 
-    def matches(self, term: str) -> list[bool]:
+    def matches(self, term: str, created: Mapping[str, Created] | None = None) -> list[bool]:
         n = len(self)
         if term == "all":
             return [True] * n
+        if term.startswith(OF_PREFIX):
+            return _of(term, created).edge_flags(self.edges)
         if term in ("line", "circle"):
             return [k == term for k in self.kind]
         if term in ("convex", "concave"):
@@ -616,22 +731,29 @@ class _Edges:
         return [abs(float(lo[axis]) - extreme) <= EXTREME_MM and abs(float(hi[axis]) - extreme) <= EXTREME_MM for lo, hi in self.box]
 
 
-def _select(shape, selector: EdgeSelector) -> tuple[list, EdgeMatch]:
+def _of(term: str, created: Mapping[str, Created] | None) -> Created:
+    name = term[len(OF_PREFIX) :]
+    if created is None or name not in created:
+        raise ToolFailure("input.invalid", f"{term!r}: no recorded geometry of a feature named {name!r}; the feature must be built earlier in the same spec", {"selector": term})
+    return created[name]
+
+
+def _select(shape, selector: EdgeSelector, created: Mapping[str, Created] | None = None) -> tuple[list, EdgeMatch]:
     table = _Edges(shape)
-    per_term: dict[str, list[bool]] = {term: table.matches(term) for term in selector.terms}
+    per_term: dict[str, list[bool]] = {term: table.matches(term, created) for term in selector.terms}
     chosen = [all(per_term[term][i] for term in selector.terms) for i in range(len(table))]
     edges = [edge for edge, keep in zip(table.edges, chosen) if keep]
     return edges, EdgeMatch(count=len(edges), per_term={term: sum(flags) for term, flags in per_term.items()})
 
 
-def select_edges(solid: Solid, selector: EdgeSelector) -> EdgeMatch:
+def select_edges(solid: Solid, selector: EdgeSelector, created: Mapping[str, Created] | None = None) -> EdgeMatch:
     """How many edges the selector picks, and how many each term matches on its own."""
     _occ.load()
-    return _select(solid._handle, selector)[1]
+    return _select(solid._handle, selector, created)[1]
 
 
-def _chosen(solid: Solid, selector: EdgeSelector) -> list:
-    edges, match = _select(solid._handle, selector)
+def _chosen(solid: Solid, selector: EdgeSelector, created: Mapping[str, Created] | None = None) -> list:
+    edges, match = _select(solid._handle, selector, created)
     if not edges:
         raise ToolFailure(
             "geometry.empty_selection",
@@ -641,12 +763,12 @@ def _chosen(solid: Solid, selector: EdgeSelector) -> list:
     return edges
 
 
-def _modify(solid: Solid, selector: EdgeSelector, size: float, what: str, maker_name: str) -> tuple[Solid, int]:
+def _modify(solid: Solid, selector: EdgeSelector, size: float, what: str, maker_name: str, created: Mapping[str, Created] | None = None) -> tuple[Solid, int]:
     _occ.load()
     from OCP.BRepFilletAPI import BRepFilletAPI_MakeChamfer, BRepFilletAPI_MakeFillet
 
     _positive(size, f"{what} size")
-    edges = _chosen(solid, selector)
+    edges = _chosen(solid, selector, created)
     maker = (BRepFilletAPI_MakeFillet if maker_name == "fillet" else BRepFilletAPI_MakeChamfer)(solid._handle)
     try:
         for edge in edges:
@@ -664,11 +786,178 @@ def _modify(solid: Solid, selector: EdgeSelector, size: float, what: str, maker_
     return _checked(shape, f"{what} of {size:g} mm on {len(edges)} edges"), len(edges)
 
 
-def fillet(solid: Solid, edges: EdgeSelector, radius: float) -> tuple[Solid, int]:
+def fillet(solid: Solid, edges: EdgeSelector, radius: float, created: Mapping[str, Created] | None = None) -> tuple[Solid, int]:
     """Round the selected edges; returns the result and the number of edges used."""
-    return _modify(solid, edges, radius, "fillet", "fillet")
+    return _modify(solid, edges, radius, "fillet", "fillet", created)
 
 
-def chamfer(solid: Solid, edges: EdgeSelector, distance: float) -> tuple[Solid, int]:
+def chamfer(solid: Solid, edges: EdgeSelector, distance: float, created: Mapping[str, Created] | None = None) -> tuple[Solid, int]:
     """Bevel the selected edges symmetrically; returns the result and the number of edges used."""
-    return _modify(solid, edges, distance, "chamfer", "chamfer")
+    return _modify(solid, edges, distance, "chamfer", "chamfer", created)
+
+
+# --------------------------------------------------------------------------- mirror and shell
+
+
+def mirror(solid: Solid, plane: SketchPlane) -> Solid:
+    """The reflection of a solid in the plane ``xy`` (z = offset), ``xz`` (y = offset) or ``yz`` (x = offset); a copy."""
+    _occ.load()
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.gp import gp_Ax2, gp_Trsf
+
+    normal = _frame(plane)[2]
+    if not math.isfinite(plane.offset):
+        raise ToolFailure("input.invalid", f"mirror offset must be a finite length, got {plane.offset!r}")
+    motion = gp_Trsf()
+    motion.SetMirror(gp_Ax2(_pnt(normal * plane.offset), _direction(normal, "mirror plane")))
+    try:
+        reflected = BRepBuilderAPI_Transform(solid._handle, motion, True).Shape()
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("mirror: the kernel could not reflect the shape", exc) from exc
+    return _as_solid(reflected, "mirror")
+
+
+def _face_table(shape) -> tuple[list, list[str], list[tuple[np.ndarray, np.ndarray]]]:
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cylinder, GeomAbs_Plane
+
+    faces = _faces(shape)
+    kinds, boxes = [], []
+    for face in faces:
+        surface = BRepAdaptor_Surface(face).GetType()
+        kinds.append("plane" if surface == GeomAbs_Plane else "cylinder" if surface == GeomAbs_Cylinder else "other")
+        lo, hi = _bbox(face)
+        boxes.append((np.array(lo), np.array(hi)))
+    return faces, kinds, boxes
+
+
+def _select_faces(shape, selector: FaceSelector, created: Mapping[str, Created] | None) -> list:
+    faces, kinds, boxes = _face_table(shape)
+    bottom, top = (np.array(v) for v in _bbox(shape))
+    chosen = [True] * len(faces)
+    for term in selector.terms:
+        if term == "all":
+            continue
+        if term.startswith(OF_PREFIX):
+            flags = _of(term, created).face_flags(faces)
+        elif term in ("plane", "cylinder"):
+            flags = [k == term for k in kinds]
+        else:
+            axis = AXES[term[1]]
+            extreme = top[axis] if term[0] == ">" else bottom[axis]
+            flags = [abs(float(lo[axis]) - extreme) <= EXTREME_MM and abs(float(hi[axis]) - extreme) <= EXTREME_MM for lo, hi in boxes]
+        chosen = [a and b for a, b in zip(chosen, flags)]
+    return [face for face, keep in zip(faces, chosen) if keep]
+
+
+def select_faces(solid: Solid, selector: FaceSelector, created: Mapping[str, Created] | None = None) -> int:
+    """How many faces the selector picks."""
+    _occ.load()
+    return len(_select_faces(solid._handle, selector, created))
+
+
+def shell(solid: Solid, faces: FaceSelector, thickness: float, created: Mapping[str, Created] | None = None) -> tuple[Solid, int]:
+    """Hollow the solid: remove the selected faces and grow walls of ``thickness`` inward from the rest; returns the result and the faces removed.
+
+    Corners of the cavity stay sharp (intersection join).  The result must be one valid solid with less volume than before: the
+    kernel can answer a wall that is too thick with the unchanged solid or with an invalid one, and both are refused.
+    """
+    _occ.load()
+    from OCP.BRepOffset import BRepOffset_Skin
+    from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeThickSolid
+    from OCP.collections import List_TopoDS_Shape
+    from OCP.GeomAbs import GeomAbs_Intersection
+
+    size = _positive(thickness, "shell thickness")
+    shape = solid._handle
+    picked = _select_faces(shape, faces, created)
+    if not picked:
+        raise ToolFailure("geometry.empty_selection", f"face selector {faces.text!r} matches no face of the part", {"selector": faces.text})
+    lo, hi = (np.array(v) for v in _bbox(shape))
+    boxes = [tuple(np.array(v) for v in _bbox(face)) for face in picked]
+    for axis, name in enumerate("xyz"):
+        removed = any(abs(float(f_lo[axis]) - float(e)) <= EXTREME_MM and abs(float(f_hi[axis]) - float(e)) <= EXTREME_MM for f_lo, f_hi in boxes for e in (lo[axis], hi[axis]))
+        room = (hi[axis] - lo[axis]) / (1.0 if removed else 2.0)
+        if size >= room * (1.0 - 1e-9):
+            raise ToolFailure(
+                "input.invalid",
+                f"shell: a wall of {size:g} mm does not fit in the {hi[axis] - lo[axis]:g} mm of the part along {name}"
+                + ("" if removed else " (walls grow inward from both sides, so the wall must be under half of it)"),
+                {"field": "thickness"},
+            )
+    before = _volume(shape)
+    removing = List_TopoDS_Shape()
+    for face in picked:
+        removing.Append(face)
+    maker = BRepOffsetAPI_MakeThickSolid()
+    try:
+        maker.MakeThickSolidByJoin(shape, removing, -size, 1e-6, BRepOffset_Skin, False, False, GeomAbs_Intersection)
+        maker.Build()
+        if not maker.IsDone():
+            raise _failure(f"shell of {size:g} mm removing {len(picked)} faces is not possible")
+        result = maker.Shape()
+    except ToolFailure:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _failure(f"shell of {size:g} mm removing {len(picked)} faces is not possible", exc) from exc
+    if result.IsNull():
+        raise _failure(f"shell of {size:g} mm removing {len(picked)} faces gave no shape")
+    hollow = _checked(result, f"shell of {size:g} mm removing {len(picked)} faces")
+    after = _volume(hollow._handle)
+    if not after < before * (1.0 - 1e-9):
+        raise _failure(
+            f"shell of {size:g} mm removing {len(picked)} faces left the volume at {after:g} mm^3 (it was {before:g}): the wall does not fit the part",
+            why="the offset produced no cavity",
+        )
+    return hollow, len(picked)
+
+
+# --------------------------------------------------------------------------- import
+
+
+def import_solid(path, offset: Vec3 = (0.0, 0.0, 0.0), *, param: str | None = None) -> Solid:
+    """The one solid of a STEP, IGES or BREP file (read in millimetres as :func:`read_solid` does), moved by ``offset``.
+
+    A file that holds no closed solid (a shell, loose faces), more than one solid, or a solid the kernel finds invalid is
+    refused with ``input.invalid`` (``details.field`` is ``file``).  Anything else in the file next to the solid is dropped.
+    """
+    _occ.load()
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+
+    from eng_toolkit.brep._files import read_solid
+
+    prefix = f"{param}: " if param else ""
+    found = read_solid(path, param=param)
+    name = path.name if hasattr(path, "name") else str(path)
+    if found.solids == 0:
+        raise ToolFailure(
+            "input.invalid",
+            f"{prefix}{name!r} holds no closed solid ({found.faces} faces): import needs a solid, not a shell or loose faces",
+            {"field": "file", "solids": 0, "faces": found.faces},
+        )
+    if found.solids > 1:
+        raise ToolFailure(
+            "input.invalid",
+            f"{prefix}{name!r} holds {found.solids} solids: import takes exactly one; export the body you want on its own",
+            {"field": "file", "solids": found.solids},
+        )
+    if found.roots_transferred < found.roots_in_file:
+        raise ToolFailure(
+            "input.invalid",
+            f"{prefix}only {found.roots_transferred} of {found.roots_in_file} root entities of {name!r} could be transferred, so the solid may be incomplete",
+            {"field": "file"},
+        )
+    explorer = TopExp_Explorer(found._handle, TopAbs_SOLID)
+    shape = TopoDS.Solid(explorer.Current())
+    volume = _volume(shape)
+    if volume < 0.0:
+        shape = shape.Reversed()
+        volume = -volume
+    if not volume > 0.0 or not _valid(shape):
+        raise ToolFailure("input.invalid", f"{prefix}the solid in {name!r} has no volume or fails the kernel's validity check", {"field": "file"})
+    solid = _wrap(shape)
+    if any(float(c) != 0.0 for c in offset):
+        solid = transform(solid, ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), offset)
+    return solid
