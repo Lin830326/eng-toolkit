@@ -148,6 +148,8 @@ def test_imperial_units():
         ({"tip": "free"}, "input.invalid", "tip"),
         ({"fin_type": "annular"}, "input.invalid", "fin_type"),
         ({"fin_count": 0, "base_unfinned_area": "0.1 m^2"}, "input.invalid", "fin_count"),
+        ({"fin_count": -3}, "input.invalid", "fin_count"),
+        ({"fin_count": -1, "base_unfinned_area": "0.1 m^2"}, "input.invalid", "fin_count"),
         ({"fin_count": 3, "base_unfinned_area": "-1 m^2"}, "input.invalid", "base_unfinned_area"),
     ],
 )

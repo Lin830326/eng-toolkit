@@ -203,7 +203,7 @@ def fin(
             data["corrected_length_heat_rate_W"] = q_corr
             data["corrected_length_relative_difference"] = abs(q_corr - q) / abs(q)
         # Array
-        if fin_count > 0 or not is_blank(base_unfinned_area):
+        if fin_count != 0 or not is_blank(base_unfinned_area):  # a negative count must reach whole_number and be refused, not become 'no array'
             n = whole_number(fin_count, name="fin_count", lo=1, hi=1_000_000)
             a_b = positive_quantity(base_unfinned_area, name="base_unfinned_area", dimension="area", unit="m**2", lo=0.0, hi=1e9, allow_zero=True) if not is_blank(base_unfinned_area) else 0.0
             a_t = n * a_f + a_b
