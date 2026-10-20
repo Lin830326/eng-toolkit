@@ -82,6 +82,14 @@ Slice S10, part one, of [design.md](design.md). Round 1 ([make-part-eval.md](mak
 * Determinism: the same file bytes give the same STEP bytes. `spec_sha256` covers the spec text only, so the file bytes are recorded beside it: `data.imports` and `<name>.features.json` list `{feature, feature_index, file, sha256}` for every import, and `provenance.input_files` records the real path, size and hash.
 * Holes and other features inside an imported solid are not declared (the kernel could find them with `geometry_measure`); a warning says so.
 
+### `or` between selector groups
+
+Edge selectors (`fillet`, `chamfer`) and face selectors (`shell`) accept up to eight non-empty groups joined by lowercase, whitespace-delimited `or`. `&` binds tighter: `of:boss & circle & >z or of:boss & line`. There are no parentheses. `>z or <z` removes both end faces; `>x or <x or >z` opens three sides. The union counts each edge or face once. A valid group may match nothing; only an empty whole union raises `geometry.empty_selection`.
+
+Every group must parse on its own. `>z or`, `or >z`, `>z or or <z`, uppercase `OR`, `||` and commas are `input.invalid`, with `details.pointer` at the selector field and `details.allowed` listing its terms. More than eight groups also reports `details.limit: 8`. Existing input limits still apply, including the 64 kB spec limit. A feature named `or` remains valid: `of:or` is a term, not a standalone operator.
+
+The shell pre-check uses the whole union. Removing either or both ends of an axis gives that axis the full part size as its room; retaining both walls gives half the size. On a 40 x 30 x 20 box opened at both z ends, the rooms are 20, 15 and 20 mm: 14 mm fits, while 15 and 16 mm fail. With both x ends open, the rooms are 40, 15 and 10 mm: 9 mm fits, while 10 and 14 mm fail. The checks for a valid single solid and smaller volume remain in place. Tests derive the multi-face shell and edge-union fillet volumes by hand, including the overlapping strips at box corners.
+
 ## What is exact and what is not
 
 Exact against closed forms, measured at 1e-12 relative or better in `tests/test_make_part_round2.py`: pattern volumes (4 holes remove exactly 4 times one), polar positions, mirrored volumes, the shell cavity of a box and of a cylinder, a stadium and a D shape extruded, a torus and a half disc revolved (Pappus), square, circle and stadium tapers, an `of:` fillet against the Pappus volume of the removed ring and against the explicit edge list, imported blocks.
@@ -97,6 +105,8 @@ Not exact or not proven:
 ## The description budget
 
 The tool description is generated from `OPS`; it is what a small model reads. It was 3737 characters for nine ops (limit 3900). With seven more features it is 5108; the limit in `tests/test_part_spec.py` is now 5200. Compression applied: one `pattern` op instead of two; `mirror` reuses the `PLANE` type; `SEGS` carries the whole path grammar in one type entry; summaries are one clause each. Dropped: nothing from round 1, and no second example (the single example still parses and is the one in the README). The cost of the extra 1370 characters is about 350 tokens per session; if that matters for a very small context, the first things to remove are the `import` op line and the face-selector sentence, in that order, since both are the least likely to be needed in a first call.
+
+The `or` syntax adds 82 characters, bringing the description to 5190, below the unchanged 5200 limit. `tests/eval_data/tool_as_seen.json` is regenerated from the gateway with `tests/eval_data/run_round2.py seen`; the round 1 description and all pinned model-written specs remain unchanged.
 
 ## Not done
 

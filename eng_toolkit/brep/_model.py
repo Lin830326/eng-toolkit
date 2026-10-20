@@ -28,6 +28,8 @@ EDGE_TERMS: tuple[str, ...] = ("all", "|x", "|y", "|z", ">x", "<x", ">y", "<y", 
 FACE_TERMS: tuple[str, ...] = ("all", ">x", "<x", ">y", "<y", ">z", "<z", "plane", "cylinder")
 OF_PREFIX = "of:"  # the term of:<feature name> is valid in an edge selector and in a face selector
 OF_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
+SELECTOR_OR = re.compile(r"(?<!\S)or(?!\S)")
+MAX_SELECTOR_GROUPS = 8
 TWO_PI = 2.0 * math.pi
 PARALLEL = 1.0 - 1e-9  # |cos| of a line direction that counts as parallel to an axis
 EXTREME_MM = 1e-6  # an edge lies in a bounding-box face when its coordinates are this close to the extreme
@@ -82,48 +84,64 @@ class SketchPlane:
 @dataclass(frozen=True)
 class EdgeSelector:
     text: str  # as the caller wrote it
-    terms: tuple[str, ...]  # validated, intersected
+    groups: tuple[tuple[str, ...], ...]  # union of intersections
+
+    @property
+    def terms(self) -> tuple[str, ...]:
+        return tuple(term for group in self.groups for term in group)
 
 
 @dataclass(frozen=True)
 class FaceSelector:
     text: str
-    terms: tuple[str, ...]
+    groups: tuple[tuple[str, ...], ...]
+
+    @property
+    def terms(self) -> tuple[str, ...]:
+        return tuple(term for group in self.groups for term in group)
 
 
 @dataclass(frozen=True)
 class EdgeMatch:
-    count: int  # edges matched by every term
+    count: int  # unique edges in the union
     per_term: dict[str, int]  # edges each term matches on its own
 
 
-def _parse_terms(text: str, allowed: tuple[str, ...], what: str) -> tuple[str, ...]:
+def _parse_groups(text: str, allowed: tuple[str, ...], what: str) -> tuple[tuple[str, ...], ...]:
     shown_allowed = [*allowed, f"{OF_PREFIX}<feature name>"]
     if not isinstance(text, str):
         raise ToolFailure("input.invalid", f"{what} is a string of terms joined by '&', not {type(text).__name__}", {"selector": text, "allowed": shown_allowed})
-    terms = tuple(part.strip() for part in text.split("&"))
-    for term in terms:
-        if term in allowed:
-            continue
-        if term.startswith(OF_PREFIX) and OF_NAME.fullmatch(term[len(OF_PREFIX) :]):
-            continue
-        shown = term or "(empty)"
+    parts = SELECTOR_OR.split(text)
+    if len(parts) > MAX_SELECTOR_GROUPS:
         raise ToolFailure(
             "input.invalid",
-            f"{what} {text!r}: {shown!r} is not a term; use terms from {shown_allowed} joined by '&'",
-            {"selector": text, "term": term, "allowed": shown_allowed},
+            f"{what} has at most {MAX_SELECTOR_GROUPS} groups joined by 'or'",
+            {"selector": text, "allowed": shown_allowed, "limit": MAX_SELECTOR_GROUPS},
         )
-    return terms
+    groups = tuple(tuple(term.strip() for term in group.split("&")) for group in parts)
+    for group in groups:
+        for term in group:
+            if term in allowed:
+                continue
+            if term.startswith(OF_PREFIX) and OF_NAME.fullmatch(term[len(OF_PREFIX) :]):
+                continue
+            shown = term or "(empty)"
+            raise ToolFailure(
+                "input.invalid",
+                f"{what} {text!r}: {shown!r} is not a term; join terms from {shown_allowed} with '&', groups with ' or '",
+                {"selector": text, "term": term, "allowed": shown_allowed},
+            )
+    return groups
 
 
 def parse_edge_selector(text: str) -> EdgeSelector:
-    """Split on ``&`` and check every term (the fixed terms and ``of:<feature name>``); pure, needs no engine."""
-    return EdgeSelector(text=text, terms=_parse_terms(text, EDGE_TERMS, "edge selector"))
+    """Union of ``or`` groups of ``&`` terms; pure, needs no engine."""
+    return EdgeSelector(text=text, groups=_parse_groups(text, EDGE_TERMS, "edge selector"))
 
 
 def parse_face_selector(text: str) -> FaceSelector:
     """The same for faces: the terms of :data:`FACE_TERMS` and ``of:<feature name>``."""
-    return FaceSelector(text=text, terms=_parse_terms(text, FACE_TERMS, "face selector"))
+    return FaceSelector(text=text, groups=_parse_groups(text, FACE_TERMS, "face selector"))
 
 
 def selector_features(selector: EdgeSelector | FaceSelector) -> tuple[str, ...]:
@@ -741,7 +759,7 @@ def _of(term: str, created: Mapping[str, Created] | None) -> Created:
 def _select(shape, selector: EdgeSelector, created: Mapping[str, Created] | None = None) -> tuple[list, EdgeMatch]:
     table = _Edges(shape)
     per_term: dict[str, list[bool]] = {term: table.matches(term, created) for term in selector.terms}
-    chosen = [all(per_term[term][i] for term in selector.terms) for i in range(len(table))]
+    chosen = [any(all(per_term[term][i] for term in group) for group in selector.groups) for i in range(len(table))]
     edges = [edge for edge, keep in zip(table.edges, chosen) if keep]
     return edges, EdgeMatch(count=len(edges), per_term={term: sum(flags) for term, flags in per_term.items()})
 
@@ -834,11 +852,11 @@ def _face_table(shape) -> tuple[list, list[str], list[tuple[np.ndarray, np.ndarr
 def _select_faces(shape, selector: FaceSelector, created: Mapping[str, Created] | None) -> list:
     faces, kinds, boxes = _face_table(shape)
     bottom, top = (np.array(v) for v in _bbox(shape))
-    chosen = [True] * len(faces)
-    for term in selector.terms:
+    per_term = {}
+    for term in dict.fromkeys(selector.terms):
         if term == "all":
-            continue
-        if term.startswith(OF_PREFIX):
+            flags = [True] * len(faces)
+        elif term.startswith(OF_PREFIX):
             flags = _of(term, created).face_flags(faces)
         elif term in ("plane", "cylinder"):
             flags = [k == term for k in kinds]
@@ -846,7 +864,8 @@ def _select_faces(shape, selector: FaceSelector, created: Mapping[str, Created] 
             axis = AXES[term[1]]
             extreme = top[axis] if term[0] == ">" else bottom[axis]
             flags = [abs(float(lo[axis]) - extreme) <= EXTREME_MM and abs(float(hi[axis]) - extreme) <= EXTREME_MM for lo, hi in boxes]
-        chosen = [a and b for a, b in zip(chosen, flags)]
+        per_term[term] = flags
+    chosen = [any(all(per_term[term][i] for term in group) for group in selector.groups) for i in range(len(faces))]
     return [face for face, keep in zip(faces, chosen) if keep]
 
 

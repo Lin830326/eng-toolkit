@@ -92,6 +92,56 @@ def test_the_description_names_every_new_op_and_the_path_profile():
     assert "of:NAME" in MAKE_PART_DESCRIPTION and "taper" in MAKE_PART_DESCRIPTION
 
 
+# --------------------------------------------------------------------------- selector groups
+
+
+@pytest.mark.parametrize(
+    ("op", "field", "size"),
+    [("shell", "faces", {"thickness": "1 mm"}), ("fillet", "edges", {"radius": "1 mm"}), ("chamfer", "edges", {"distance": "1 mm"})],
+)
+def test_selector_groups_preserve_precedence_in_the_canonical_spec(op, field, size):
+    text = " of:body& >z  or  of:body & <z "
+    parsed = parse_spec(spec([{**PLATE, "name": "body"}, {"op": op, field: text, **size}]))
+    selector = parsed.features[1].args[field]
+    assert selector.groups == (("of:body", ">z"), ("of:body", "<z"))
+    assert parsed.referenced == frozenset({"body"})
+    assert json.loads(parsed.canonical)["features"][1][field] == "of:body & >z or of:body & <z"
+    again = parse_spec(parsed.canonical)
+    assert again.features[1].args[field].groups == selector.groups
+    assert again.sha256 == parsed.sha256
+
+
+@pytest.mark.parametrize("parse", [brep.parse_edge_selector, brep.parse_face_selector])
+def test_or_is_a_whitespace_delimited_token_and_eight_groups_are_allowed(parse):
+    assert parse("of:or or of:floor & >z").groups == (("of:or",), ("of:floor", ">z"))
+    assert len(parse(" or ".join([">z"] * 8)).groups) == 8
+
+
+@pytest.mark.parametrize("field", ["faces", "edges"])
+def test_a_feature_named_or_is_unambiguous_and_all_union_references_are_validated(field):
+    feature = {"op": "shell", "faces": "of:or or <z", "thickness": "1 mm"} if field == "faces" else {"op": "fillet", "edges": "of:or or <z", "radius": "1 mm"}
+    parsed = parse_spec(spec([{**PLATE, "name": "or"}, feature]))
+    assert parsed.referenced == frozenset({"or"})
+    rejected([{**PLATE, "name": "or"}, {**feature, field: "of:or or of:ghost"}], f"/features/1/{field}")
+
+
+@pytest.mark.parametrize("parse", [brep.parse_edge_selector, brep.parse_face_selector])
+@pytest.mark.parametrize("text", [">z or", "or >z", ">z or or <z", ">z OR <z", ">z || <z", ">z, <z", ">zor <z", ">z or<z", "(>z or <z)", ">z & or <z", ">z or <z &"])
+def test_invalid_union_syntax_is_refused_by_both_parsers(parse, text):
+    with pytest.raises(ToolFailure) as info:
+        parse(text)
+    assert info.value.family == "input.invalid"
+    assert info.value.details["allowed"]
+
+
+@pytest.mark.parametrize("field", ["faces", "edges"])
+def test_the_group_limit_reaches_the_selector_field(field):
+    feature = {"op": "shell", "thickness": "1 mm"} if field == "faces" else {"op": "fillet", "radius": "1 mm"}
+    error = rejected([PLATE, {**feature, field: " or ".join([">z"] * 9)}], f"/features/1/{field}")
+    assert error.details["limit"] == 8
+    assert error.details["allowed"]
+
+
 # --------------------------------------------------------------------------- pattern errors
 
 

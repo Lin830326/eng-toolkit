@@ -245,6 +245,42 @@ def test_a_shell_can_remove_the_faces_a_feature_created(ocp):
     assert r.values["volume"].quantity == pytest.approx(expected, abs=1e-5)  # 5080.48
 
 
+def test_a_tube_open_at_both_ends_matches_the_annulus_volume(ocp):
+    r = ok([cylinder("30 mm", "20 mm"), {"op": "shell", "faces": ">z or <z", "thickness": "2 mm"}])
+    # pi * (15^2 - (15 - 2)^2) * 20 = pi * 56 * 20 = 1120 pi.
+    assert r.values["volume"].quantity == pytest.approx(1120 * pi, abs=1e-6)
+    assert r.data["features"][1]["edges_used"] == 2
+    step = artifact(r, "part.step")
+    measured = getattr(measure, "fn", measure)(model_path=str(step))
+    assert measured.ok and measured.data["solids"] == 1
+    assert measured.values["volume"].quantity == pytest.approx(1120 * pi, abs=1e-6)
+
+
+@pytest.mark.parametrize(
+    ("faces", "thickness", "expected", "removed"),
+    [
+        # 40*30*20 - (40-4)*(30-4)*20 = 24000 - 18720 = 5280.
+        (">z or <z", "2 mm", 5280, 2),
+        # The x ends are open: 24000 - 40*(30-4)*(20-4) = 24000 - 16640 = 7360.
+        (">x or <x", "2 mm", 7360, 2),
+        # x ends and top open: 24000 - 40*(30-4)*(20-2) = 24000 - 18720 = 5280.
+        (">x or <x or >z", "2 mm", 5280, 3),
+        # x/y rooms 20/15, z room 20: t=14 fits; 24000 - (40-28)*(30-28)*20 = 23520.
+        (">z or <z", "14 mm", 23520, 2),
+        # x/y/z rooms 40/15/10: t=9 fits; 24000 - 40*(30-18)*(20-18) = 23040.
+        (">x or <x", "9 mm", 23040, 2),
+        # Each face counts once, and a valid empty group does not empty the union.
+        (">z or >z & plane or >z & <z", "2 mm", 7152, 1),  # 24000 - 36*26*18 = 7152.
+        ("cylinder or >z or <z", "2 mm", 5280, 2),  # no cylinder faces on a box.
+    ],
+)
+def test_shell_union_volumes_and_thickness_rooms(ocp, faces, thickness, expected, removed):
+    r = ok([box(("40 mm", "30 mm", "20 mm")), {"op": "shell", "faces": faces, "thickness": thickness}])
+    assert r.values["volume"].quantity == pytest.approx(expected, abs=1e-6)
+    assert r.data["features"][1]["edges_used"] == removed
+    assert r.data["solids"] == 1 and r.review_status == "unreviewed"
+
+
 def test_a_shell_before_holes_warns_that_they_are_offset_with_the_part(ocp):
     r = ok([box(("40 mm", "30 mm", "20 mm")), named(hole([("10 mm", "10 mm", "20 mm")], "4 mm"), "h"), {"op": "shell", "faces": ">z", "thickness": "2 mm"}])
     assert any("shell" in w and "holes declared before" in w for w in r.warnings), r.warnings
@@ -362,6 +398,53 @@ def test_an_of_term_selects_only_the_edges_of_that_feature(ocp):
     # the boss owns three edges (top circle, base circle, seam); the plate keeps its 12 minus nothing it lost
     assert ok([plate, boss, {"op": "chamfer", "edges": "of:boss & circle", "distance": "1 mm"}]).data["features"][2]["edges_used"] == 2
     assert ok([plate, boss, {"op": "chamfer", "edges": "of:plate & |z", "distance": "1 mm"}]).data["features"][2]["edges_used"] == 4  # the plate's four vertical edges
+
+
+def test_an_edge_union_is_the_explicit_union_of_the_single_group_sets(ocp):
+    from eng_toolkit import brep
+    from eng_toolkit.brep import _model
+
+    plate = named(box(("40 mm", "40 mm", "10 mm")), "plate")
+    boss = named(cylinder("20 mm", "15 mm", at=("20 mm", "20 mm", "10 mm")), "boss")
+    # The boss circles are at z=25 and z=10. <z is the plate bottom at z=0, so
+    # of:boss & circle & <z selects nothing. concave picks the base circle at z=10.
+    groups = ["of:boss & circle & >z", "of:boss & circle & concave"]
+    selection = " or ".join(groups)
+    before = brep.make_box((40, 40, 10), (0, 0, 0))
+    tool = brep.make_cylinder(20, 15, (20, 20, 10), (0, 0, 1))
+    solid = brep.combine(before, tool, "add")
+    created = {"boss": brep.created_by(before, solid, tool)}
+    singles = [_model._select(solid._handle, brep.parse_edge_selector(group), created)[0] for group in groups]
+    union = _model._select(solid._handle, brep.parse_edge_selector(selection), created)[0]
+    assert [len(edges) for edges in singles] == [1, 1] and len(union) == 2
+    assert all(any(edge.IsSame(other) for other in union) for edges in singles for edge in edges)
+    assert all(any(edge.IsSame(other) for edges in singles for other in edges) for edge in union)
+    assert brep.select_edges(solid, brep.parse_edge_selector("of:boss & circle & <z"), created).count == 0
+    r = ok([plate, boss, {"op": "fillet", "edges": selection, "radius": "2 mm"}])
+    # Pappus: top removes 2*pi*(100/3 - 8*pi). The base fills a square minus a quarter disc,
+    # area 4-pi, radial moment 4*11 - pi*(12 - 8/(3*pi)) = 44 - 12*pi + 8/3.
+    # Its added volume is 2*pi times that moment.
+    # Base minus top = 2*pi*(40/3 - 4*pi); outer volume = 16000 + 1500*pi.
+    assert r.values["volume"].quantity == pytest.approx(16000 + 4580 * pi / 3 - 8 * pi**2, abs=1e-5)
+    assert r.data["features"][2]["edges_used"] == 2
+
+
+def test_eight_box_edges_selected_by_or_have_the_hand_derived_fillet_volume(ocp):
+    r = ok([box(("40 mm", "40 mm", "10 mm")), {"op": "fillet", "edges": "|z & convex or |x & convex", "radius": "2 mm"}])
+    # Four x edges (40 mm) plus four z edges (10 mm): strip loss = 4*(40+10)*r^2*(1-pi/4).
+    # At each of 8 corners two strips overlap. At depth y in [0,r], inset d=r-sqrt(r^2-(r-y)^2).
+    # Integral d^2 dy = r^3*(5/3-pi/2), so add back 8*r^3*(5/3-pi/2).
+    # r=2: 16000 - 800*(1-pi/4) + 64*(5/3-pi/2) = 45920/3 + 168*pi.
+    assert r.values["volume"].quantity == pytest.approx(45920 / 3 + 168 * pi, abs=1e-5)
+    assert r.data["features"][1]["edges_used"] == 8
+
+
+@pytest.mark.parametrize("edges", ["|z & convex or |z", "|z & convex or circle", "circle or |z & convex"])
+def test_chamfer_union_deduplicates_and_accepts_empty_groups(ocp, edges):
+    r = ok([box(("40 mm", "40 mm", "10 mm")), {"op": "chamfer", "edges": edges, "distance": "2 mm"}])
+    # Four disjoint vertical triangular prisms: 16000 - 4*(2*2/2)*10 = 15920.
+    assert r.values["volume"].quantity == pytest.approx(15920, abs=1e-6)
+    assert r.data["features"][1]["edges_used"] == 4
 
 
 def test_the_hole_rims_of_one_hole_only_are_rounded(ocp):
@@ -572,6 +655,80 @@ async def through_the_gateway(features, **kwargs):
     text = " ".join(getattr(part, "text", "") for part in raw.content)
     assert "NaN" not in text and "Infinity" not in text
     return ToolResult.model_validate(raw.structured_content)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("op", "field", "size"),
+    [("shell", "faces", {"thickness": "2 mm"}), ("fillet", "edges", {"radius": "2 mm"}), ("chamfer", "edges", {"distance": "2 mm"})],
+)
+@pytest.mark.parametrize("selector", [">z or", "or >z", ">z or or <z", ">z OR <z", ">z || <z", ">z, <z", ">z or nonsense", " or ".join([">z"] * 9)])
+async def test_invalid_selector_groups_are_refused_through_the_gateway(op, field, size, selector):
+    r = await through_the_gateway([cube(), {"op": op, field: selector, **size}])
+    assert not r.ok and r.error.family == "input.invalid"
+    assert r.error.details["pointer"] == f"/features/1/{field}"
+    from eng_toolkit import brep
+
+    terms = brep.FACE_TERMS if field == "faces" else brep.EDGE_TERMS
+    assert set(r.error.details["allowed"]) == {*terms, "of:<feature name>"}
+    if selector.count(" or ") == 8:
+        assert r.error.details["limit"] == 8
+    assert r.review_status == "unreviewed" and r.values == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["faces", "edges"])
+async def test_a_hundred_thousand_character_selector_hits_the_existing_spec_size_limit(field):
+    modifier = {"op": "shell", "thickness": "2 mm"} if field == "faces" else {"op": "fillet", "radius": "2 mm"}
+    r = await through_the_gateway([cube(), {**modifier, field: "x" * 100000}])
+    assert not r.ok and r.error.family == "input.invalid"
+    assert r.error.details["pointer"] == "" and r.error.details["limit_bytes"] == 65536
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("thickness", [float("nan"), float("inf"), float("-inf")])
+async def test_a_union_shell_with_nonfinite_thickness_is_refused_without_nonfinite_results(thickness):
+    r = await through_the_gateway([cube(), {"op": "shell", "faces": ">z or <z", "thickness": thickness}])
+    assert not r.ok and r.error.details["pointer"] == "/features/1/thickness"
+    assert r.values == {} and r.review_status == "unreviewed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("faces", "thickness", "axis"),
+    [
+        (">z or <z", "15 mm", "y"), (">z or <z", "16 mm", "y"),  # y room = 30/2 = 15.
+        (">x or <x", "10 mm", "z"), (">x or <x", "14 mm", "z"),  # z room = 20/2 = 10; x room = 40.
+    ],
+)
+async def test_union_shells_refuse_walls_at_or_above_the_remaining_room(ocp, faces, thickness, axis):
+    r = await through_the_gateway([box(("40 mm", "30 mm", "20 mm")), {"op": "shell", "faces": faces, "thickness": thickness}])
+    assert not r.ok and r.error.family == "input.invalid"
+    assert r.error.details["pointer"] == "/features/1/thickness"
+    assert f"along {axis}" in r.error.message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "modifier",
+    [
+        {"op": "shell", "faces": ">z & <z or cylinder", "thickness": "2 mm"},
+        {"op": "fillet", "edges": "|z & |x or circle", "radius": "2 mm"},
+        {"op": "chamfer", "edges": "|z & |x or circle", "distance": "2 mm"},
+    ],
+)
+async def test_only_an_empty_whole_union_is_an_empty_selection(ocp, modifier):
+    r = await through_the_gateway([cube(), modifier])
+    assert not r.ok and r.error.family == "geometry.empty_selection"
+    assert r.error.details["pointer"] == "/features/1" and r.error.details["feature_index"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_valid_union_works_through_the_gateway_with_finite_results(ocp):
+    r = await through_the_gateway([box(("40 mm", "30 mm", "20 mm")), {"op": "shell", "faces": ">z or <z", "thickness": "14 mm"}])
+    # 40*30*20 - (40-28)*(30-28)*20 = 24000 - 480 = 23520.
+    assert r.ok and r.values["volume"].quantity == pytest.approx(23520, abs=1e-6)
+    assert r.review_status == "unreviewed"
 
 
 def cube(n=40):

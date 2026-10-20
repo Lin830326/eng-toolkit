@@ -301,7 +301,7 @@ def _parse_selector(rs: Resolver, raw: Any, pointer: str) -> brep.EdgeSelector:
     try:
         selector = brep.parse_edge_selector(raw)
     except ToolFailure as exc:
-        raise _bad(pointer, exc.message, [*brep.EDGE_TERMS, "of:<feature name>"]) from exc
+        raise _bad(pointer, exc.message, [*brep.EDGE_TERMS, "of:<feature name>"], **{k: v for k, v in exc.details.items() if k == "limit"}) from exc
     _of_terms(rs, selector, pointer)
     return selector
 
@@ -310,7 +310,7 @@ def _parse_face_selector(rs: Resolver, raw: Any, pointer: str) -> brep.FaceSelec
     try:
         selector = brep.parse_face_selector(raw)
     except ToolFailure as exc:
-        raise _bad(pointer, exc.message, [*brep.FACE_TERMS, "of:<feature name>"]) from exc
+        raise _bad(pointer, exc.message, [*brep.FACE_TERMS, "of:<feature name>"], **{k: v for k, v in exc.details.items() if k == "limit"}) from exc
     _of_terms(rs, selector, pointer)
     return selector
 
@@ -520,8 +520,8 @@ KINDS: dict[str, Kind] = {
     "plane": Kind("PLANE", _enum_kind(PLANES), str),
     "uv": Kind("UV", _enum_kind(("u", "v")), str),
     "depth": Kind("DEPTH", _parse_depth, lambda v: "thru" if v is None else _length_text(v)),
-    "selector": Kind("SEL", _parse_selector, lambda s: " & ".join(s.terms)),
-    "fselector": Kind("FSEL", _parse_face_selector, lambda s: " & ".join(s.terms)),
+    "selector": Kind("SEL", _parse_selector, lambda s: " or ".join(" & ".join(group) for group in s.groups)),
+    "fselector": Kind("FSEL", _parse_face_selector, lambda s: " or ".join(" & ".join(group) for group in s.groups)),
     "count": Kind("INT", _parse_count, int),
     "ref": Kind("NAME", _parse_ref, str),
     "path_text": Kind("PATH", _parse_path_text, str),
@@ -804,7 +804,8 @@ def grammar_text() -> str:
         f"Edge selectors join terms with &: {terms}. |x = straight edges along x; >x = edges in the +x face of the part's bounding "
         "box; convex and concave = outside and inside corners (a cylinder seam is neither). "
         f"Face selectors (shell): {faces}; >z = the top face. "
-        "Both accept of:NAME = what the earlier body, hole, pattern or mirror NAME created, e.g. \"of:boss & circle\"."
+        "Both accept of:NAME = what the earlier body, hole, pattern or mirror NAME created, e.g. \"of:boss & circle\". "
+        "Both union up to 8 groups with lowercase ' or '; & binds tighter; no parentheses."
     )
     return "\n".join(lines)
 

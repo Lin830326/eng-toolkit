@@ -348,6 +348,7 @@ ISO 286 孔軸配合查詢。輸入：`nominal`（公稱尺寸，3–500 mm，�
 * 切到什麼都不剩、或與不相交的實體取交集，回 `geometry.build_failed` 並指出該 feature。
 
 **邊選擇器**是以 `&` 相交的詞：`all`；`|x` `|y` `|z`（平行該軸的直線邊）；`>x` `<x` `>y` `<y` `>z` `<z`（位於零件外框該方向極值面上的邊）；`convex`（外角）與 `concave`（內角），由相鄰兩面的二面角判斷，平滑相接（例如圓柱的接縫線，兩側是同一個面）兩者都不是，所以 `|z & convex` 只會選到外緣的四條豎邊，不會選到孔的接縫線；`line`（直線邊）與 `circle`（圓邊）。`of:名稱` 選出較前面的 body、hole、pattern 或 mirror feature 所建立的邊（落在它的工具形狀表面、且先前不存在的邊）；面選擇器（`shell` 用）有 `all` `>x` `<x` `>y` `<y` `>z` `<z` `plane` `cylinder` 與 `of:名稱`，`>z` 是頂面。沒有任何邊符合時回 `geometry.empty_selection`，`details.matches_per_term` 列出每個詞各單獨符合幾條，方便修正選擇器。
+邊與面選擇器都可用小寫 ` or ` 聯集最多 8 組非空條件，`&` 優先且不支援括號；例如 `>z or <z` 可讓 `shell` 同時移除頂面與底面，重複選到的面或邊只計一次。
 
 ```json
 {"params":{"L":"100 mm","W":"50 mm","T":"20 mm","d":"10 mm"},"features":[{"op":"box","name":"body","size":["$L","$W","$T"]},{"op":"hole","name":"bore","at":[["$L / 4","$W / 2","$T"]],"axis":"-z","diameter":"$d","depth":"thru","fit":"H7"},{"op":"fillet","name":"corners","edges":"|z & convex","radius":"2 mm"}]}
