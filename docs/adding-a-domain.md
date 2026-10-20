@@ -10,7 +10,7 @@ people can add domains on separate branches and the branches stay disjoint.
 |---|---|
 | `eng_toolkit/domains/<name>/__init__.py` | `DOMAIN = DomainInfo(name=..., title=..., description=..., engines=(<dist names>), server=..., tools=(<tool names without the namespace>))` |
 | `eng_toolkit/domains/<name>/tools.py` (any module names) | the FastMCP server and its tools; wrap each tool body in `runner.run_tool`, parse every quantity with `units.parse_quantity` |
-| `eng_toolkit/domains/<name>/engines.py` | `ENGINES = (Engine("<dist>", "<license>", <tier>, "<role>", ("<name>",), optional=True, extra="<extra>"), ...)` for each engine the domain adds; imports only `eng_toolkit.licenses` |
+| `eng_toolkit/domains/<name>/engines.py` | `ENGINES = (Engine("<dist>", "<license>", <tier>, "<role>", ("<name>",), optional=True, extra="<extra>"), ...)` for each engine the domain adds; imports only `eng_toolkit.licenses`; `EXTERNAL_TOOLS = (NGSPICE, ...)` for each program the user installs that the domain starts as a separate process (descriptors in `eng_toolkit.external_catalog`, or an inline `ExternalTool`; see `docs/external/design.md`) |
 | `tests/test_<name>_*.py` | tests; keep numbers in hand calculations, not in the tool under test |
 | `docs/<name>-design.md` | decisions, alternatives, what is not verified |
 

@@ -24,7 +24,9 @@ from pydantic import Field
 from eng_toolkit import __version__
 from eng_toolkit.contract import Provenance, ToolResult, inputs_hash
 from eng_toolkit.domains import all_domains
+from eng_toolkit.external import probe as probe_external
 from eng_toolkit.licenses import (
+    EXTERNAL,
     KNOWN,
     POLICY,
     TIER_FORBIDDEN,
@@ -208,6 +210,14 @@ def toolkit_doctor(
             }
         )
 
+    # Programs the user installs themselves and the toolkit starts as separate processes
+    external_tools = []
+    for tool in EXTERNAL.values():
+        row = probe_external(tool)
+        if not row["found"] and not tool.optional:
+            hard_failures.append(f"program '{tool.name}' was not found: {row.get('reason')}")
+        external_tools.append(row)
+
     # Workspace
     ws = Workspace()
     ws_ok = ws.is_writable()
@@ -266,6 +276,7 @@ def toolkit_doctor(
         "python": {"version": platform.python_version(), "executable": sys.executable, "ok": py_ok},
         "platform": platform.platform(),
         "dependencies": deps,
+        "external_tools": external_tools,
         "workspace": {"root": str(ws.root), "writable": ws_ok},
         "file_reads": {
             "restricted": read_dirs() is not None,

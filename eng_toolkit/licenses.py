@@ -44,6 +44,43 @@ class Engine:
     extra: str = ""  # the pyproject extra that installs it; "" = core dependency
 
 
+@dataclass(frozen=True)
+class ExternalTool:
+    """A program the user installs themselves and the toolkit starts as a separate process (never imported, linked or shipped).
+
+    One descriptor per program; ``eng_toolkit.external`` finds it (``env_var``, then ``PATH``, then ``locations``), runs it with
+    limits and probes its version.  A domain registers its descriptors in its own ``engines.py`` as
+    ``EXTERNAL_TOOLS = (ExternalTool(...),)``.  ``tier`` is ``gpl-isolated`` for a GPL program (running it as a separate process,
+    handing it files and reading files back, is the only way the toolkit may use it) and ``permissive`` otherwise.
+    The doctor reports whether it is found and never fails when an optional one is not.
+
+    ``locations`` are directories to look in after ``PATH``: ``~`` and environment variables are expanded, ``*`` matches one path
+    component (the highest version wins), and a pattern with an unset variable is skipped.  ``path_additions`` are directories put
+    on the child's ``PATH``, written relative to the folder holding the program with ``{bin}``: ``{bin}/../lib``.  Everything else
+    the parent's environment holds is dropped, except the names in ``keep_env``; ``env`` gives fixed variables for the child.
+    ``version_regex`` is searched in what ``version_args`` prints (the exit code is not looked at: CalculiX exits 201 for ``-v``).
+    """
+
+    name: str
+    license: str
+    tier: str
+    role: str
+    env_var: str  # ENG_TOOLKIT_<NAME>: the full path of the program; wins over everything else
+    executables: tuple[str, ...]  # exact file names, in the order to try them in each directory
+    project: str  # where the user gets it (a page, never a download command)
+    domains: tuple[str, ...] = field(default_factory=tuple)
+    optional: bool = True
+    locations: tuple[str, ...] = field(default_factory=tuple)
+    path_additions: tuple[str, ...] = field(default_factory=tuple)
+    keep_env: tuple[str, ...] = field(default_factory=tuple)
+    env: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    version_args: tuple[str, ...] = ("--version",)
+    version_regex: str = r"(\d+(?:\.\d+)+)"
+
+
+EXTERNAL: dict[str, ExternalTool] = {}
+
+
 def tier_explained_by_bundle(engine: Engine, detected: str) -> bool:
     """True when a permissive wrapper is declared ``lgpl-dynamic`` because its wheel bundles LGPL code.
 
@@ -210,7 +247,7 @@ def scan_environment() -> list[dict[str, str]]:
 def register_domain_engines() -> list[str]:
     """Add the engines each domain declares to :data:`KNOWN`; return the distribution names added.
 
-    A domain declares its engines in its own ``engines.py`` as ``ENGINES = (Engine(...), ...)``, so adding a domain
+    A domain declares its engines in its own ``engines.py`` as ``ENGINES = (Engine(...), ...)`` and the programs it starts as ``EXTERNAL_TOOLS = (ExternalTool(...), ...)`` (they join :data:`EXTERNAL`; the return value lists Python distributions only), so adding a domain
     edits no shared table.  The file is loaded by path, without importing the domain package (which would pull in the
     domain's server and its engines, and could form an import cycle with this module).  Declaring an engine that
     ``KNOWN`` already holds is fine when the declaration is identical; a different one is an error, because two
@@ -237,6 +274,12 @@ def register_domain_engines() -> list[str]:
                     added.append(engine.dist)
                 elif have != engine:
                     raise ValueError(f"domain {name!r} declares {engine.dist!r} differently from the registered engine: {have} vs {engine}")
+            for tool in getattr(module, "EXTERNAL_TOOLS", ()):
+                have_tool = EXTERNAL.get(tool.name)
+                if have_tool is None:
+                    EXTERNAL[tool.name] = tool
+                elif have_tool != tool:
+                    raise ValueError(f"domain {name!r} declares the program {tool.name!r} differently from the registered one: {have_tool} vs {tool}")
     return added
 
 
@@ -251,7 +294,9 @@ __all__ = [
     "TIER_LGPL",
     "TIER_PERMISSIVE",
     "TIER_UNKNOWN",
+    "EXTERNAL",
     "Engine",
+    "ExternalTool",
     "classify_license",
     "install_hint",
     "installed_license",
