@@ -15,6 +15,7 @@ Definitions
 from __future__ import annotations
 
 import math
+from fractions import Fraction
 from typing import Annotated, Any
 
 import numpy as np
@@ -54,11 +55,19 @@ SNR_SLOPE, SNR_OFFSET = 6.02, 1.76
 EXACT_SLOPE, EXACT_OFFSET = 20.0 * math.log10(2.0), 10.0 * math.log10(1.5)
 
 
+MAX_ALIAS_RATIO = 2.0 ** 40  # f/fs above this: one ulp of f is more than 1e-4 of fs, the alias would be noise
+
+
 def alias_of(f: float, fs: float) -> tuple[float, int, bool]:
-    """(alias frequency, folding zone, spectrum inverted) of a tone ``f`` Hz sampled at ``fs`` Hz."""
-    alias = abs(f - fs * math.floor(f / fs + 0.5))
-    zone = int(math.floor(f / (fs / 2.0)))
-    return alias, zone, bool(zone % 2 == 1)
+    """(alias frequency, folding zone, spectrum inverted) of a tone ``f`` Hz sampled at ``fs`` Hz, by exact rational arithmetic on the two floats.
+
+    ``alias = |f - fs round(f/fs)|`` computed as the exact remainder of f modulo fs folded to [0, fs/2]; no cancellation between large products.
+    """
+    exact_f, exact_fs = Fraction(f), Fraction(fs)
+    rem = exact_f % exact_fs
+    alias = min(rem, exact_fs - rem)
+    zone = int((exact_f / (exact_fs / 2)).__floor__())
+    return float(alias), zone, bool(zone % 2 == 1)
 
 
 def _need(raw: Any, name: str, op: str) -> None:
@@ -130,6 +139,12 @@ def sampling(
             fs = sample_rate_hz(sample_rate)
             if f < 0.0 or f > 1e15:
                 raise UnitsError("input.invalid" if f < 0.0 else "input.out_of_range", f"'frequency' = {f:g} Hz must be between 0 and 1e15 Hz", {"param": "frequency"})
+            if f / fs > MAX_ALIAS_RATIO:
+                raise UnitsError(
+                    "input.out_of_range",
+                    f"the tone is {f / fs:.3g} sample rates up: a relative error of 1e-16 in the frequency is then more than 1e-4 of a sample rate, so the alias is not determined (limit {MAX_ALIAS_RATIO:.3g})",
+                    {"param": "frequency", "limit_ratio": MAX_ALIAS_RATIO},
+                )
             alias, zone, inverted = alias_of(f, fs)
             nyq = fs / 2.0
             aliased = f > nyq
@@ -202,7 +217,7 @@ def sampling(
                 if level < -3.0:
                     warnings.append(f"the tone is {-level:g} dB below full scale: the SNR is lowered by the same amount")
             if sinad:
-                level_for_enob = level if n_bits else 0.0
+                level_for_enob = level
                 enob = (sinad - SNR_OFFSET - level_for_enob) / SNR_SLOPE
                 values["enob_bits"] = plain(enob, label="enob_bits")
                 data["enob"] = {"sinad_db": sinad, "enob_bits": enob, "formula": "ENOB = (SINAD - 1.76 - level_dBFS)/6.02, the inverse of the SNR formula", "level_dbfs_used": level_for_enob}

@@ -216,12 +216,16 @@ def _poly_delay(c: np.ndarray, w: np.ndarray) -> np.ndarray:
 def group_delay_sos(sos: np.ndarray, w: float) -> tuple[float, bool]:
     """Group delay in samples at ``w`` rad/sample, analytic: sum over sections of (numerator delay - denominator delay).
 
-    Exactly on a zero of the unit circle the delay is 0/0; the value is then taken 1e-7 rad inside and ``nudged`` is True.
+    Exactly on a zero of the unit circle the delay is 0/0.  "On a zero" is judged against the size of the section's own coefficients
+    (|B(e^jw)| below 1e-9 of sum |b_k|), so a section that merely has a small gain is not mistaken for one; the value is then taken
+    1e-7 rad inside and ``nudged`` is True.
     """
     nudged = False
     wv = np.array([float(w)])
+    x = np.exp(-1j * float(w))
     for s in sos:
-        if abs(np.polyval(s[:3][::-1], np.exp(-1j * w))) < 1e-9:
+        scale = float(np.sum(np.abs(s[:3])))
+        if scale > 0.0 and abs(np.polyval(s[:3][::-1], x)) < 1e-9 * scale:
             nudged = True
     if nudged:
         wv = np.array([w - 1e-7 if w > 1e-6 else w + 1e-7])
@@ -231,6 +235,33 @@ def group_delay_sos(sos: np.ndarray, w: float) -> tuple[float, bool]:
         ta, _ = _poly_delay(s[3:], wv)
         total += float(tb[0] - ta[0])
     return total, nudged
+
+
+def group_delay_roots(zeros: np.ndarray, poles: np.ndarray, w: float) -> tuple[float, bool]:
+    """Group delay (samples) of a filter given by its z-plane roots: sum over zeros of -Re(z x/(1 - z x)) plus over poles of Re(p x/(1 - p x)), x = e^{-jw}.
+
+    Uses the roots themselves (accurate to rounding of each root), not the polynomial coefficients, so a pole 1e-7 from the unit circle does not lose digits to
+    cancellation.  On a zero of the unit circle (|1 - z x| < 1e-9) the value is taken 1e-7 rad inside and ``nudged`` is True.
+    """
+    nudged = False
+    w_eval = float(w)
+    if zeros.size and float(np.min(np.abs(1.0 - zeros * np.exp(-1j * w_eval)))) < 1e-9:
+        nudged = True
+        w_eval = w_eval - 1e-7 if w_eval > 1e-6 else w_eval + 1e-7
+    x = np.exp(-1j * w_eval)
+    tau = float(np.sum(np.real(poles * x / (1.0 - poles * x)))) - float(np.sum(np.real(zeros * x / (1.0 - zeros * x))))
+    return tau, nudged
+
+
+def dc_gain(sos: np.ndarray) -> float | None:
+    """H(1) = product over the sections of sum(b)/sum(a); None when a pole sits at z = 1 (infinite DC gain)."""
+    gain = 1.0
+    for s in sos:
+        den = float(np.sum(s[3:]))
+        if den == 0.0:
+            return None
+        gain *= float(np.sum(s[:3])) / den
+    return gain if math.isfinite(gain) else None
 
 
 def unwrapped_phase(h: np.ndarray) -> np.ndarray:
@@ -388,6 +419,7 @@ class IIRDesign:
     analog_poles: np.ndarray
     analog_zeros: np.ndarray
     analog_gain: float
+    dc_gain: float = 1.0
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -405,13 +437,17 @@ def build(family: str, response: str, n: int, edges: Edges, ripple_db: float = 0
     zeros_full, poles_full = full_roots(*zeros_z), full_roots(*poles_z)
     b = gain_z * np.real(np.poly(zeros_full))
     a = np.real(np.poly(poles_full))
+    dc = gain_a * float(np.real(np.prod(-zeros_a) / np.prod(-poles_a))) if zeros_a.size else gain_a * float(np.real(1.0 / np.prod(-poles_a)))
+    for name, arr in (("sections", sos), ("b", b), ("a", a), ("poles", poles_full), ("zeros", zeros_full)):
+        if not np.all(np.isfinite(arr)):
+            raise OverflowError(f"the {name} of this design are not finite")
     return IIRDesign(
         family, response, n, ripple_db, atten_db, edges, sos, np.atleast_1d(b), np.atleast_1d(a), zeros_full, poles_full, gain_z,
-        poles_a, zeros_a, gain_a,
+        poles_a, zeros_a, gain_a, dc_gain=dc,
     )
 
 
 __all__ = [
-    "Edges", "IIRDesign", "IIR_FAMILIES", "RESPONSES", "ba_response", "bilinear", "build", "edges_from_hz", "edges_to_hz", "group_delay_sos",
+    "Edges", "IIRDesign", "IIR_FAMILIES", "RESPONSES", "ba_response", "bilinear", "build", "dc_gain", "group_delay_roots", "edges_from_hz", "edges_to_hz", "group_delay_sos",
     "lowpass_equivalent", "order_equation", "prototype", "scaled_edges", "sos_response", "to_sos", "transform", "unit_point_scale", "unwrapped_phase",
 ]

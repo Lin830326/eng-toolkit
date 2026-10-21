@@ -90,6 +90,10 @@ def parabolic(values: np.ndarray, k: int) -> tuple[float, float]:
     return delta, math.exp(b - 0.25 * (a - c) * delta)
 
 
+def sp_freq(sp: Spectrum, k: int) -> float:
+    return k * sp.df
+
+
 def find_peaks(sp: Spectrum, limit: int, threshold_db: float) -> list[dict]:
     amp = sp.amp
     if len(amp) < 3:
@@ -106,6 +110,11 @@ def find_peaks(sp: Spectrum, limit: int, threshold_db: float) -> list[dict]:
                 "bin_amplitude": float(amp[k]), "offset_bins": delta,
             }
         )
+    last = len(amp) - 1  # the last bin (Nyquist for an even segment length) has no right neighbour: a peak if it beats the left one; no interpolation
+    if amp[last] > amp[last - 1] and amp[last] >= floor and amp[last] > 0.0:
+        out.append(
+            {"frequency_hz": float(sp_freq(sp, last)), "amplitude": float(amp[last]), "bin": last, "bin_frequency_hz": float(sp_freq(sp, last)), "bin_amplitude": float(amp[last]), "offset_bins": 0.0}
+        )
     if amp[0] > amp[1] and amp[0] >= floor and amp[0] > 0.0:  # a DC component
         out.append({"frequency_hz": 0.0, "amplitude": float(amp[0]), "bin": 0, "bin_frequency_hz": 0.0, "bin_amplitude": float(amp[0]), "offset_bins": 0.0})
     out.sort(key=lambda p: -p["amplitude"])
@@ -119,8 +128,15 @@ def adc_metrics(sp: Spectrum, harmonics: int, hw: int, full_scale: float) -> tup
     if nb < 4 * (hw + 1):
         raise ValueError("the record is too short for converter metrics with this window (fewer than about 8 bins per lobe)")
     low = hw + 1
-    k0 = int(low + np.argmax(amp[low:]))
-    if k0 == nb - 1 or k0 == 0:
+    k0 = 1 + int(np.argmax(amp[1:]))  # the strongest bin other than DC, wherever it is
+    if float(amp[k0]) <= 0.0:
+        raise ValueError("the record has no signal (every non-DC bin is zero): there is no fundamental to analyse")
+    if k0 < 2 * hw + 1:
+        raise ValueError(
+            f"the strongest tone is at bin {k0} ({k0 * sp.df:g} Hz), too close to DC for the {sp.window} window: its lobe (+-{hw} bins) overlaps the DC lobe (bins 0..{hw}), "
+            f"so a converter measurement is not possible; record a longer time, use a higher tone frequency or a window with a narrower main lobe"
+        )
+    if k0 == nb - 1:
         delta = 0.0
     else:
         delta, _ = parabolic(amp, k0)
@@ -135,6 +151,8 @@ def adc_metrics(sp: Spectrum, harmonics: int, hw: int, full_scale: float) -> tup
         warnings.append("the fundamental's lobe touches the DC lobe: the tone is too close to 0 Hz for this window")
     taken |= dc | fund
     p_sig = float(power[fund].sum())
+    if not p_sig > 0.0:
+        raise ValueError("no signal power found in the fundamental's lobe: there is no fundamental to analyse")
     harm_rows, harm_mask, skipped = [], np.zeros(nb, dtype=bool), []
     for h in range(2, harmonics + 1):
         pos = (h * f0 / sp.df) % length
@@ -165,8 +183,6 @@ def adc_metrics(sp: Spectrum, harmonics: int, hw: int, full_scale: float) -> tup
         "lobe_half_width_bins": hw, "harmonics": harm_rows, "harmonics_skipped": skipped,
         "excluded_bins": {"dc_lobe": int(dc.sum()), "fundamental_lobe": int(fund.sum()), "harmonic_lobes": int(harm_mask.sum()), "bins_in_noise": int((~taken).sum()), "total": nb},
     }
-    if p_sig <= 0.0:
-        raise ValueError("no signal power found")
     floor_ratio = 1e-30
     if p_noise > p_sig * floor_ratio:
         out["snr_db"] = 10.0 * math.log10(p_sig / p_noise)

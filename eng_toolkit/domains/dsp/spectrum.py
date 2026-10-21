@@ -37,6 +37,7 @@ from eng_toolkit.domains.dsp._server import server
 from eng_toolkit.units import UnitsError
 
 HZ = "hertz"
+WELCH_WORK_LIMIT = 1 << 26  # segments x segment length: total FFT input values (about 10 s)
 
 
 def _table(s: sp.Spectrum, rows: int) -> tuple[list[np.ndarray], bool]:
@@ -107,6 +108,13 @@ def spectrum(
             raise UnitsError("input.invalid", f"'segment_length' = {seg} is too short; use at least 8 samples", {"param": "segment_length"})
         noverlap = 0 if seg == n else int(round(seg * overlap / 100.0))
         noverlap = min(noverlap, seg - 1)
+        n_segments = (n - noverlap) // (seg - noverlap)
+        if n_segments * seg > WELCH_WORK_LIMIT:
+            raise UnitsError(
+                "input.out_of_range",
+                f"{n_segments} segments of {seg} samples ({n_segments * seg:.3g} FFT input values) is above the limit of {WELCH_WORK_LIMIT:.3g}: lower the overlap, shorten the segments or shorten the record",
+                {"param": "overlap_percent" if noverlap else "segment_length", "segments": n_segments, "limit_fft_values": WELCH_WORK_LIMIT},
+            )
         warnings: list[str] = []
         s = sp.spectrum(x, fs, wname, seg, noverlap, bool(remove_mean))
         used = (s.n_seg - 1) * s.hop + seg

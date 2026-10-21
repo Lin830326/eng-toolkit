@@ -44,8 +44,10 @@ def fails(tool, error_family: str, param: str | None = None, **kwargs) -> ToolRe
     result = call(tool, **kwargs)
     assert result.ok is False and result.value is None, result.values
     assert result.error.family == error_family, result.error
+    assert result.error.family != "engine.failure", result.error
+    assert str(result.error.details.get("param", "")).startswith("/"), result.error  # every refusal names its parameter as a JSON pointer
     if param is not None:
-        assert result.error.details.get("param") == param, result.error
+        assert result.error.details.get("param") == "/" + param.lstrip("/"), result.error
     assert result.warnings == []
     return result
 

@@ -125,7 +125,7 @@ HOSTILE = [
     ("dsp_spectrum", {"samples": SAMPLES, "sample_rate": "1 kHz", "overlap_percent": 100.0}, "input.invalid"),
     ("dsp_spectrum", {"samples": SAMPLES, "sample_rate": "-1 kHz"}, "input.invalid"),
     ("dsp_spectrum", {"samples": SAMPLES, "sample_rate": "1 s"}, "units.dimension_mismatch"),
-    ("dsp_spectrum", {"samples": SAMPLES, "sample_rate": "1 kHz", "segment_length": 10 ** 9}, "input.invalid"),
+    ("dsp_spectrum", {"samples": SAMPLES, "sample_rate": "1 kHz", "segment_length": 10 ** 9}, "input.out_of_range"),
     ("dsp_spectrum", {"samples": "__import__('os').system('echo pwned')", "sample_rate": "1 kHz"}, "input.invalid"),
     ("dsp_spectrum", {"samples": "[" * 4000 + "]" * 4000, "sample_rate": "1 kHz"}, "input.invalid"),
     ("dsp_spectrum", {"samples": "x" * 101_000_000, "sample_rate": "1 kHz"}, "input.out_of_range"),
@@ -158,6 +158,7 @@ async def test_hostile_inputs_are_refused_cleanly(tool, args, family):
     assert parsed.ok is False and parsed.value is None and parsed.error is not None
     assert parsed.error.family == family, (tool, parsed.error)
     assert len(parsed.error.message) < 1500  # a huge input is never echoed back
+    assert parsed.error.details["param"].startswith("/"), parsed.error  # every refusal names its parameter as a JSON pointer
     assert parsed.warnings == []
 
 
