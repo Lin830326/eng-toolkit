@@ -57,34 +57,49 @@ def choice(value: Any, *, name: str, allowed: tuple[str, ...]) -> str:
     return key
 
 
+ABSURD = 1e6  # a number outside its range by this much (or beyond float range) is "out of range" rather than "invalid"
+
+
+def _as_float(value: Any, name: str) -> float:
+    try:
+        return float(value)
+    except OverflowError:
+        raise UnitsError("input.out_of_range", f"'{name}' is far outside the range of a double-precision number", {"param": name}) from None
+
+
 def plain_number(value: Any, *, name: str, lo: float, hi: float, lo_open: bool = False, range_error: bool = False) -> float:
-    """A JSON number in ``[lo, hi]``.  Outside is ``input.invalid`` (or ``input.out_of_range`` with ``range_error``); NaN and infinity never pass."""
+    """A JSON number in ``[lo, hi]``.  NaN, infinity and non-numbers are ``input.invalid``; outside the range is ``input.invalid`` for an
+    ordinary wrong value and ``input.out_of_range`` for an absurd magnitude (above 1e6, or ``range_error``)."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise UnitsError("input.invalid", f"'{name}' must be a plain number, got {str(value)[:40]!r}", {"param": name})
-    number = float(value)
+    number = _as_float(value, name)
     if not math.isfinite(number):
         raise UnitsError("input.invalid", f"'{name}' is not finite", {"param": name})
     ok = (number > lo if lo_open else number >= lo) and number <= hi
     if not ok:
-        family = "input.out_of_range" if range_error else "input.invalid"
+        family = "input.out_of_range" if (range_error or abs(number) > ABSURD) else "input.invalid"
         raise UnitsError(family, f"'{name}' must be in {'(' if lo_open else '['}{lo:g}, {hi:g}], got {number:g}", {"param": name, "received": number, "min": lo, "max": hi})
     return number
 
 
 def whole_number(value: Any, *, name: str, lo: int, hi: int, range_error: bool = True) -> int:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise UnitsError("input.invalid", f"'{name}' must be a whole number, got {str(value)[:40]!r}", {"param": name})
-    if float(value) != int(value):
-        raise UnitsError("input.invalid", f"'{name}' must be a whole number, got {value:g}", {"param": name})
-    n = int(value)
+    number = _as_float(value, name)
+    if not math.isfinite(number):
+        raise UnitsError("input.invalid", f"'{name}' must be a whole number, got {str(value)[:40]!r}", {"param": name})
+    if number != int(number):
+        raise UnitsError("input.invalid", f"'{name}' must be a whole number, got {number:g}", {"param": name})
+    n = int(value) if isinstance(value, int) else int(number)
     if not lo <= n <= hi:
-        raise UnitsError("input.out_of_range" if range_error else "input.invalid", f"'{name}' must be between {lo} and {hi}, got {n}", {"param": name, "min": lo, "max": hi, "received": n})
+        family = "input.out_of_range" if (range_error or abs(n) > ABSURD) else "input.invalid"
+        raise UnitsError(family, f"'{name}' must be between {lo} and {hi}, got {str(n)[:30]}", {"param": name, "min": lo, "max": hi})
     return n
 
 
 # ----------------------------------------------------------------------------------------------- frequencies with units
 
-_FREQ_RE = re.compile(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([^\d\s+\-.].*)?")
+_FREQ_RE = re.compile(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(1/s|[^\d\s+\-.].*)?")
 _TWO_PI = 2.0 * math.pi
 # the whole table of accepted units; case matters only where it must (mHz is milli, MHz is mega)
 _FREQ_UNITS = {
@@ -118,7 +133,7 @@ def parse_frequency(raw: Any, *, name: str) -> float:
         )
     number = float(number_text)
     if not math.isfinite(number):
-        raise UnitsError("input.invalid", f"'{name}' is not finite", {"param": name})
+        raise UnitsError("input.out_of_range", f"'{name}' is far outside the range of a double-precision number", {"param": name})
     if unit not in _FREQ_UNITS:
         if unit in _OTHER_UNITS or unit.lower() in {u.lower() for u in _OTHER_UNITS}:
             hint = " (a period is not a rate: give 1/T in Hz)" if unit in ("s", "ms", "us", "ns") else ""
@@ -128,7 +143,7 @@ def parse_frequency(raw: Any, *, name: str) -> float:
         raise UnitsError("units.parse_error", f"'{name}' = {raw.strip()[:40]!r}: unknown frequency unit {unit[:20]!r}; use Hz, kHz, MHz, GHz, mHz, rad/s, krad/s or Mrad/s", {"param": name})
     hertz = number * _FREQ_UNITS[unit]
     if not math.isfinite(hertz):
-        raise UnitsError("input.invalid", f"'{name}' is not finite", {"param": name})
+        raise UnitsError("input.out_of_range", f"'{name}' is far outside the range of a double-precision number", {"param": name})
     return hertz
 
 
@@ -187,7 +202,7 @@ def _bad_constant(token: str):
     raise UnitsError("input.invalid", f"the sample list contains {token}; NaN and infinity are not allowed", {"param": "samples"})
 
 
-def array_from_json(text: Any, *, param: str, min_len: int = 1) -> np.ndarray:
+def array_from_json(text: Any, *, param: str, min_len: int = 1, samples: bool = False) -> np.ndarray:
     """A 1-D float array from JSON text such as '[0.1, 2, -3e-2]'; every kind of bad input is a clean ``input.*`` error."""
     if not isinstance(text, str):
         raise UnitsError("input.invalid", f"'{param}' must be JSON text such as '[0.1, 0.2]', got {type(text).__name__}", {"param": param})
@@ -213,15 +228,21 @@ def array_from_json(text: Any, *, param: str, min_len: int = 1) -> np.ndarray:
         raise UnitsError("input.invalid", f"'{param}' must be a flat list of numbers: {str(exc)[:80]}", {"param": param}) from None
     if arr.ndim != 1 or arr.dtype.kind not in "iuf":
         raise UnitsError("input.invalid", f"'{param}' must be a flat list of plain numbers (no text, booleans, nulls or nested lists)", {"param": param})
-    return finite_array(arr.astype(float), param=param)
+    return finite_array(arr.astype(float), param=param, samples=samples)
 
 
-def finite_array(arr: np.ndarray, *, param: str) -> np.ndarray:
+SAMPLE_ABS_MIN = 1e-100  # a record whose largest sample is below this (but not zero) has squares that underflow
+
+
+def finite_array(arr: np.ndarray, *, param: str, samples: bool = False) -> np.ndarray:
     bad = ~np.isfinite(arr)
     if bad.any():
         raise UnitsError("input.invalid", f"'{param}' contains a value that is not finite (first at index {int(np.argmax(bad))})", {"param": param, "index": int(np.argmax(bad))})
-    if float(np.max(np.abs(arr))) > SAMPLE_ABS_MAX:
+    peak = float(np.max(np.abs(arr))) if arr.size else 0.0
+    if peak > SAMPLE_ABS_MAX:
         raise UnitsError("input.out_of_range", f"'{param}' contains a value of magnitude above {SAMPLE_ABS_MAX:g}", {"param": param, "limit": SAMPLE_ABS_MAX})
+    if samples and 0.0 < peak < SAMPLE_ABS_MIN:
+        raise UnitsError("input.out_of_range", f"'{param}' has a largest magnitude of {peak:g}, below {SAMPLE_ABS_MIN:g}: the squares used for power and energy would underflow; rescale the data (the tools are linear)", {"param": param, "limit": SAMPLE_ABS_MIN})
     return arr
 
 
@@ -273,7 +294,7 @@ def read_samples(handle: JobHandle, inline: Any, file: Any, *, param: str = "sam
     if not has_inline and not has_file:
         raise UnitsError("input.missing", f"'{param}' (a JSON list of numbers) or '{file_param}' (a CSV file) is required", {"param": param})
     if has_inline:
-        return Samples(array_from_json(inline, param=param, min_len=min_len), None, "inline")
+        return Samples(array_from_json(inline, param=param, min_len=min_len, samples=True), None, "inline")
     if not isinstance(file, str):
         raise UnitsError("input.invalid", f"'{file_param}' must be a path as text", {"param": file_param})
     path = handle.input_file(file, param=file_param, extensions=(".csv", ".txt"), max_bytes=MAX_FILE_BYTES)
@@ -285,7 +306,7 @@ def read_samples(handle: JobHandle, inline: Any, file: Any, *, param: str = "sam
     if len(cols[0]) < min_len:
         raise UnitsError("input.invalid", f"{file_param} has {len(cols[0])} value(s); at least {min_len} are needed", {"param": file_param})
     if len(cols) == 1:
-        return Samples(finite_array(cols[0], param=file_param), None, "file")
+        return Samples(finite_array(cols[0], param=file_param, samples=True), None, "file")
     t, x = cols
     finite_array(t, param=file_param)
     if len(t) < 2:
@@ -299,7 +320,7 @@ def read_samples(handle: JobHandle, inline: Any, file: Any, *, param: str = "sam
     fs = 1.0 / mean_dt
     if not RATE_RANGE[0] <= fs <= RATE_RANGE[1]:
         raise UnitsError("input.out_of_range", f"{file_param}: the time column implies a sample rate of {fs:g} Hz, outside {RATE_RANGE[0]:g} .. {RATE_RANGE[1]:g} Hz", {"param": file_param})
-    return Samples(finite_array(x, param=file_param), fs, "file (time,value; time read as seconds)", float(t[0]))
+    return Samples(finite_array(x, param=file_param, samples=True), fs, "file (time,value; time read as seconds)", float(t[0]))
 
 
 def resolve_rate(samples: Samples, raw_rate: Any, *, required: bool = True, name: str = "sample_rate") -> float | None:
@@ -368,8 +389,29 @@ def csv_text(header: list[str], columns: list[Any]) -> str:
     return "\n".join(out) + "\n"
 
 
+def pointer_details(details: dict[str, Any] | None) -> dict[str, Any]:
+    """``details`` with ``param`` as a JSON pointer (``/order``); a failure that names no parameter gets ``/inputs``."""
+    out = dict(details or {})
+    name = out.get("param")
+    out["param"] = "/" + name.lstrip("/") if isinstance(name, str) and name.strip("/") else "/inputs"
+    return out
+
+
 def run(tool_name: str, inputs: dict[str, Any], compute) -> ToolResult:
-    return run_tool(tool_name=tool_name, engine=ENGINE, version=__version__, inputs=inputs, compute=compute, engines=("numpy",), standing_warnings=STANDING)
+    """Run a tool body under the runner.  Every refusal carries ``details.param`` as a JSON pointer, and a numerical overflow or singularity
+    inside the computation is an ``input.out_of_range`` refusal (the inputs are beyond what double precision supports), never ``engine.failure``."""
+
+    def guarded(handle: JobHandle) -> Computed:
+        try:
+            return compute(handle)
+        except ToolFailure as exc:
+            raise ToolFailure(exc.family, exc.message, pointer_details(exc.details)) from None
+        except (ArithmeticError, np.linalg.LinAlgError) as exc:
+            raise ToolFailure(
+                "input.out_of_range", f"the computation overflowed or became singular ({type(exc).__name__}) for these inputs: they are outside what double precision supports", {"param": "/inputs"}
+            ) from None
+
+    return run_tool(tool_name=tool_name, engine=ENGINE, version=__version__, inputs=inputs, compute=guarded, engines=("numpy",), standing_warnings=STANDING)
 
 
 def db(value: float) -> float:

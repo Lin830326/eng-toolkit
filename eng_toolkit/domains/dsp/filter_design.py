@@ -200,8 +200,28 @@ def filter_design(
                 if fam == "butterworth" and (rp or rs):
                     warnings.append("ripple and attenuation are ignored by a Butterworth design given an order and a cutoff")
                 edges = iir.edges_from_hz(resp, cut, fs)
-            d = iir.build(fam, resp, n, edges, rp if fam == "chebyshev1" else 0.0, rs if fam == "chebyshev2" else 0.0)
+            edge_param = "passband_edge" if spec_mode else "cutoff"
+            try:
+                d = iir.build(fam, resp, n, edges, rp if fam == "chebyshev1" else 0.0, rs if fam == "chebyshev2" else 0.0)
+            except (ArithmeticError, np.linalg.LinAlgError, RuntimeError) as exc:
+                raise UnitsError(
+                    "input.out_of_range",
+                    f"this design cannot be represented in double precision ({type(exc).__name__}): an edge too close to 0 Hz or to the Nyquist frequency for order {n}; "
+                    "lower the order, move the edge or change the sample rate",
+                    {"param": edge_param},
+                ) from None
             edge_hz = iir.edges_to_hz(d.edges, fs)
+            target_db = {"butterworth": -3.0102999566398, "chebyshev1": -rp, "chebyshev2": -rs}[fam]
+            worst = max(
+                abs(db(complex(iir.sos_response(d.sos, np.array([2.0 * math.pi * f / fs]))[0])) - target_db) for f in edge_hz
+            )
+            if not worst <= 1e-4:
+                raise UnitsError(
+                    "input.out_of_range",
+                    f"this design cannot be represented in double precision: the second-order sections give a gain {worst:.3g} dB away from the design value at an edge "
+                    f"(an edge too close to 0 Hz or to the Nyquist frequency for order {n}); lower the order, move the edge or change the sample rate",
+                    {"param": edge_param, "edge_gain_error_db": worst},
+                )
             radii = np.abs(d.poles)
             max_r = float(radii.max())
             roots_ba = np.roots(d.a) if len(d.a) > 1 else np.zeros(0)
@@ -219,9 +239,16 @@ def filter_design(
             gd_freqs = sorted({round(f, 9) for f in edge_hz + pass_hz + stop_hz + [nyq / 8.0, nyq / 4.0, nyq / 2.0]})[:12]
             gd_rows = []
             for f in gd_freqs:
-                tau, nudged = iir.group_delay_sos(d.sos, 2.0 * math.pi * f / fs)
+                tau, nudged = iir.group_delay_roots(d.zeros, d.poles, 2.0 * math.pi * f / fs)
                 gd_rows.append({"frequency_hz": f, "group_delay_samples": tau, "group_delay_s": tau / fs, **({"note": "on a zero of the unit circle: taken 1e-7 rad inside"} if nudged else {})})
-            h_tab = iir.sos_response(d.sos, w_grid)
+            with np.errstate(all="ignore"):
+                h_tab = iir.sos_response(d.sos, w_grid)
+            if not np.all(np.isfinite(h_tab)):
+                raise UnitsError(
+                    "input.out_of_range",
+                    f"this design cannot be represented in double precision: a pole rounds onto the unit circle (an edge too close to 0 Hz or to the Nyquist frequency for order {n})",
+                    {"param": edge_param},
+                )
             mag_db = 20.0 * np.log10(np.maximum(np.abs(h_tab), 1e-15))
             phase_deg = np.degrees(iir.unwrapped_phase(h_tab))
             data.update(
@@ -241,7 +268,8 @@ def filter_design(
                         "max_pole_radius_of_direct_form_polynomial": max_r_ba, "ba_vs_sos_max_response_error": ba_err,
                     },
                     "spec_checks": checks, "group_delay": gd_rows,
-                    "dc_gain_db": db(complex(iir.sos_response(d.sos, np.array([1e-9]))[0])),
+                    "dc_gain": d.dc_gain, "dc_gain_db": db(d.dc_gain),
+                    "dc_gain_definition": "H(z = 1) = H_analogue(s = 0) = gain x prod(-zeros)/prod(-poles) of the analogue roots (no cancellation); -300 dB stands for an exact zero",
                 }
             )
             values["order"] = plain(float(n), label="order")
@@ -261,7 +289,7 @@ def filter_design(
                 raise UnitsError("input.missing", "fir_kaiser needs 'kaiser_beta' or 'stopband_attenuation_db' (beta follows from the attenuation)", {"param": "kaiser_beta"})
             if spec_mode:
                 try:
-                    plan = fir.plan_from_spec(window, resp, pass_hz, stop_hz, fs, rs, beta_in)
+                    plan = fir.plan_from_spec(window, resp, pass_hz, stop_hz, fs, rs, beta_in, rp)
                 except ValueError as exc:
                     raise UnitsError("input.invalid", str(exc), {"param": "stopband_edge"}) from None
                 if plan.taps > MAX_TAPS:
@@ -311,6 +339,11 @@ def filter_design(
                 phase_deg[-1] = phase_deg[-2]
             f_fine = np.array([e for e in set(p_edges + s_edges + cutoffs)])
             edge_gain = [{"frequency_hz": float(f), "gain_db": db(complex(np.polyval(h[::-1], np.exp(-1j * 2.0 * math.pi * f / fs)))) } for f in sorted(f_fine)]
+            if rp > 0.0 and "passband_max_deviation_db" in meas and meas["passband_max_deviation_db"] > rp * (1.0 + 1e-6):
+                warnings.append(f"the measured largest passband deviation {meas['passband_max_deviation_db']:.4g} dB exceeds the {rp:g} dB asked for")
+            data["meets_specification"] = bool(
+                (rs == 0.0 or meas.get("stopband_attenuation_db", rs) >= rs - 1e-9) and (rp == 0.0 or meas.get("passband_max_deviation_db", 0.0) <= rp * (1.0 + 1e-6))
+            )
             req_atten = rs if rs > 0.0 else None
             if req_atten is not None and "stopband_attenuation_db" in meas and meas["stopband_attenuation_db"] < req_atten - 1e-9:
                 warnings.append(f"the measured stopband attenuation {meas['stopband_attenuation_db']:.1f} dB is below the {req_atten:g} dB asked for")

@@ -84,7 +84,11 @@ def _sections(text: Any) -> np.ndarray:
         raise UnitsError("input.out_of_range", f"'sos' has a coefficient of magnitude above {COEF_MAX:g}", {"param": "sos", "limit": COEF_MAX})
     if np.any(arr[:, 3] == 0.0):
         raise UnitsError("input.invalid", "'sos' has a section whose a0 is 0", {"param": "sos"})
-    return arr / arr[:, 3:4]
+    with np.errstate(all="ignore"):
+        normalised = arr / arr[:, 3:4]
+    if not np.all(np.isfinite(normalised)):
+        raise UnitsError("input.out_of_range", "'sos' has a section whose a0 is so small that dividing by it overflows (the sections are normalised to a0 = 1)", {"param": "sos"})
+    return normalised
 
 
 @server.tool(
@@ -155,7 +159,10 @@ def filter_apply(
                 raise UnitsError("input.invalid", "'a[0]' must not be 0", {"param": "a"})
             if len(a_arr) > 1 and len(b_arr) > MAX_IIR_ORDER + 1:
                 raise UnitsError("input.out_of_range", f"an IIR filter (with 'a') may have at most {MAX_IIR_ORDER + 1} numerator coefficients, got {len(b_arr)}", {"param": "b", "limit": MAX_IIR_ORDER + 1})
-            b_arr, a_arr = ap.normalise(b_arr, a_arr)
+            with np.errstate(all="ignore"):
+                b_arr, a_arr = ap.normalise(b_arr, a_arr)
+            if not (np.all(np.isfinite(b_arr)) and np.all(np.isfinite(a_arr))):
+                raise UnitsError("input.out_of_range", "'a[0]' is so small that dividing by it overflows (the filter is normalised to a[0] = 1)", {"param": "a"})
             if len(a_arr) > 1 and max(len(a_arr), len(b_arr)) - 1 > 8:
                 warnings.append(f"direct-form IIR of order {max(len(a_arr), len(b_arr)) - 1}: coefficient rounding can move the poles; prefer second-order sections")
             source = "direct form (b, a)"
@@ -253,9 +260,11 @@ def filter_apply(
             raise UnitsError("input.out_of_range", f"{exc}: the output left the representable range, so no result is returned", {"param": "allow_unstable"}) from None
         if not np.all(np.isfinite(y)) or float(np.max(np.abs(y))) > 1e150:
             raise UnitsError("input.out_of_range", "the output left the representable range (the filter's gain or instability is too large)", {"param": "allow_unstable"})
-        with np.errstate(all="ignore"):
-            dc_value = complex(ap.response_at(sos_arr, b_arr, a_arr, np.array([1e-9]))[0])
-        dc_gain = dc_value if math.isfinite(dc_value.real) and math.isfinite(dc_value.imag) else None
+        if sos_arr is not None:
+            dc_gain = iir.dc_gain(sos_arr)
+        else:
+            den = float(np.sum(a_arr))
+            dc_gain = float(np.sum(b_arr)) / den if den != 0.0 and math.isfinite(float(np.sum(b_arr)) / den) else None  # H(z = 1) = sum(b)/sum(a)
         in_stats, out_stats = ap.stats(x), ap.stats(y)
         rms_gain = out_stats["rms"] / in_stats["rms"] if in_stats["rms"] > 0 else None
         values: dict[str, QuantityOut] = {
@@ -280,7 +289,7 @@ def filter_apply(
         data: dict[str, Any] = {
             "samples": n, "sample_rate_hz": fs, "source": data_in.source, "filter": source, "zero_phase": zero_phase, "edge_handling": edge,
             "stability": {**stab, "method": "roots of the denominator(s)"},
-            "input": in_stats, "output": out_stats, "dc_gain": None if dc_gain is None else dc_gain.real, "delay": delay_info,
+            "input": in_stats, "output": out_stats, "dc_gain": dc_gain, "dc_gain_definition": "H(z = 1): product over sections of sum(b)/sum(a); null when a pole is at z = 1", "delay": delay_info,
             "structure": "transposed direct form II, pure Python recursion" if not is_fir else "convolution (FFT for long filters)",
             "table": {"file": "filtered.csv", "rows": n, "columns": header},
             "design_job_id": design_job,

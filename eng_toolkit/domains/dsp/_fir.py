@@ -84,7 +84,7 @@ class Plan:
 
 
 def plan_from_spec(
-    family_window: str, response: str, pass_hz: list[float], stop_hz: list[float], fs: float, attenuation_db: float, beta_given: float
+    family_window: str, response: str, pass_hz: list[float], stop_hz: list[float], fs: float, attenuation_db: float, beta_given: float, ripple_db: float = 0.0, extra_db: float = 0.0
 ) -> Plan:
     """Taps, beta and -6 dB cut-offs from the pass/stop edges and the attenuation (see the module docstring for the formulas)."""
     notes: list[str] = []
@@ -116,8 +116,19 @@ def plan_from_spec(
     d_omega = 2.0 * math.pi * narrow / fs
     beta = 0.0
     if family_window == "kaiser":
-        beta = beta_given if beta_given > 0.0 else win.kaiser_beta(attenuation_db)
-        a_eff = attenuation_db if attenuation_db > 0.0 else win.kaiser_attenuation(beta)
+        # a windowed design has one tolerance for both bands, delta = min(delta_p, delta_s), A = -20 log10(delta):
+        # delta_s = 10^(-Rs/20), and a passband deviation of at most Rp dB means delta_p = 1 - 10^(-Rp/20)
+        a_eff = attenuation_db
+        if ripple_db > 0.0:
+            delta_p = 1.0 - 10.0 ** (-ripple_db / 20.0)
+            a_ripple = -20.0 * math.log10(delta_p)
+            if a_ripple > a_eff:
+                notes.append(f"the passband tolerance ({ripple_db:g} dB, delta = {delta_p:.3g}) is tighter than the stopband one: the design is sized for A = {a_ripple:.1f} dB (delta = min(delta_p, delta_s))")
+            a_eff = max(a_eff, a_ripple)
+        a_eff += extra_db
+        beta = beta_given if beta_given > 0.0 else win.kaiser_beta(a_eff)
+        if a_eff <= 0.0:
+            a_eff = win.kaiser_attenuation(beta)
         taps = win.kaiser_order(a_eff, d_omega) + 1
     else:
         c, reach = WINDOW_TABLE[family_window]

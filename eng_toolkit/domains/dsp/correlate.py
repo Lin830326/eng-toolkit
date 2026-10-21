@@ -173,7 +173,10 @@ def correlate(
             lag = (min(n // 2, MAX_LAG) if lag_in == 0 else lag_in)
             if lag >= n:
                 raise UnitsError("input.invalid", f"'max_lag' = {lag} must be below the record length {n}", {"param": "max_lag"})
-            c = autocovariance(centered if remove_mean else x, lag)
+            signal = centered if remove_mean else x
+            top = float(np.max(np.abs(signal)))
+            signal = signal / top if top > 0.0 else signal  # r is scale free: scale first so the squares neither overflow nor underflow
+            c = autocovariance(signal, lag)
             if c[0] <= 0.0:
                 data["autocorrelation"] = "not applicable (the record has no variance after removing the mean)" if remove_mean else "not applicable (all zeros)"
             else:
@@ -181,7 +184,7 @@ def correlate(
                 lags = np.arange(lag + 1, dtype=float)
                 cols = [lags] + ([lags / fs] if fs else []) + [r]
                 artifacts.append(handle.write_text("autocorrelation.csv", csv_text(["lag_samples"] + (["lag_s"] if fs else []) + ["r"], cols), fmt="csv"))
-                per = dominant_period(centered if remove_mean else x, lag)
+                per = dominant_period(signal, lag)
                 data["autocorrelation"] = {"max_lag": lag, "definition": "r[k] = sum (x[n]-mean)(x[n+k]-mean) / sum (x[n]-mean)^2 (biased estimate)", "table": {"file": "autocorrelation.csv", "rows": lag + 1}}
                 if per["found"]:
                     period = per["lag_refined_samples"]
@@ -203,9 +206,11 @@ def correlate(
             y = b.x
             ny = len(y)
             xs, ys = (x - mean, y - float(np.mean(y))) if remove_mean else (x, y)
+            sx, sy = float(np.max(np.abs(xs))), float(np.max(np.abs(ys)))
+            if sx <= 0.0 or sy <= 0.0:
+                raise UnitsError("input.invalid", "a record with no variance (constant, or all zeros after removing the mean) has no cross-correlation", {"param": "samples_b" if sx > 0.0 else "samples"})
+            xs, ys = xs / sx, ys / sy  # each record scaled by its own peak: the energies and their product can neither overflow nor underflow; rho is unchanged
             ex, ey = float(np.sum(xs * xs)), float(np.sum(ys * ys))
-            if ex <= 0.0 or ey <= 0.0:
-                raise UnitsError("input.invalid", "a record with no variance (constant, or all zeros after removing the mean) has no cross-correlation", {"param": "samples_b" if ex > 0.0 else "samples"})
             full = min(max(n, ny) - 1, MAX_LAG)
             lag = full if lag_in == 0 else min(lag_in, max(n, ny) - 1)
             if lag_in and lag_in > max(n, ny) - 1:
