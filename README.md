@@ -513,6 +513,15 @@ fem_static(model_path=".../bar.step", element_size="2.5 mm", youngs_modulus="210
 
 ---
 
+### Structural analysis (`structures`)
+
+`structures_section`, `structures_truss`, `structures_frame`, `structures_modal`,
+`structures_column` and `structures_stress` provide section properties, 2D/3D trusses,
+2D frame statics and modes, Euler/Johnson/secant column estimates, and Mohr/Hooke
+stress-strain calculations. Inputs carry units; frame stations and mode shapes are
+CSV artifacts. Uses NumPy and Pint only. Linear textbook estimates are unreviewed,
+with no design-code or P-delta checks. See [formats, formulas and limits](docs/structures/design.md).
+
 ## 輸入規則：每個物理量都要帶單位
 
 接受 `"100 mm"`、`"210 bar"`、`"40 cP"`（MCP schema 為單一字串）；也接受 JSON 字串 `'{"value": 100, "unit": "mm"}'`。
