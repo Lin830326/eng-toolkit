@@ -564,6 +564,18 @@ and buck/boost/buck-boost converters. Unit-checked results include model limits,
 loss budgets and CSV curves. Uses NumPy and Pint; all estimates are unreviewed.
 See [formulas, sources, input formats and verification](docs/electric/design.md).
 
+### SVG charts of tables (`plot`)
+
+`plot_xy`, `plot_panels` and `plot_bar` turn tables — the CSV artifacts of the other
+tools (`filter_response.csv`, frame stations, channel profiles, rainflow cycles) or
+inline JSON series — into deterministic, self-contained SVG charts: line, scatter,
+step and stem plots with log axes, a right axis, reference lines, a shaded band and
+fill to zero; 2-6 stacked panels sharing x (Bode magnitude + phase); grouped or
+stacked bars and histograms. Every label is escaped plain text, the SVG has no
+scripts or external references, and `plot_data.json` records the ticks and the
+data-to-pixel mapping. Large series are min/max decimated with extrema kept. NumPy
+only; results are unreviewed. See [layout, caps, escaping and limits](docs/plot/design.md).
+
 ## 輸入規則：每個物理量都要帶單位
 
 接受 `"100 mm"`、`"210 bar"`、`"40 cP"`（MCP schema 為單一字串）；也接受 JSON 字串 `'{"value": 100, "unit": "mm"}'`。
