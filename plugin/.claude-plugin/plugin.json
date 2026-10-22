@@ -1,0 +1,8 @@
+{
+  "name": "eng-toolkit",
+  "version": "0.1.0",
+  "description": "Skills and slash commands that teach an AI how to use the eng-toolkit engineering MCP server (79 unit-aware, deterministic calculation tools): structural checks, DFM review and the tool map for every domain.",
+  "author": { "name": "Lin830326" },
+  "license": "MIT",
+  "keywords": ["engineering", "mcp", "structures", "dfm", "cad", "simulation"]
+}

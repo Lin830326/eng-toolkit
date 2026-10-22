@@ -1,0 +1,11 @@
+{
+  "name": "eng-toolkit-marketplace",
+  "owner": { "name": "Lin830326" },
+  "plugins": [
+    {
+      "name": "eng-toolkit",
+      "source": "./plugin",
+      "description": "Workflow skills and slash commands for the eng-toolkit engineering MCP server."
+    }
+  ]
+}

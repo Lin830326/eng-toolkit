@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'eng-toolkit reminder: if this request needs an engineering number (structures, fluids, thermal, machine elements, signals, circuits, CAD/DFM, tolerances), load the eng-toolkit skill and compute with the mcp__eng-toolkit__ tools (search for them with ToolSearch if they are deferred) instead of hand arithmetic; say which tool produced each number.'"
+          }
+        ]
+      }
+    ]
+  }
+}
