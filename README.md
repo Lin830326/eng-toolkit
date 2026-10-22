@@ -522,6 +522,16 @@ stress-strain calculations. Inputs carry units; frame stations and mode shapes a
 CSV artifacts. Uses NumPy and Pint only. Linear textbook estimates are unreviewed,
 with no design-code or P-delta checks. See [formats, formulas and limits](docs/structures/design.md).
 
+### Fluid systems (`fluids`)
+
+`fluids_pipe_network`, `fluids_pump_system`, `fluids_open_channel`,
+`fluids_compressible`, `fluids_surge` and `fluids_external_flow` cover looped
+networks, pump operating points, channel profiles, ideal-gas relations, single-pipe
+water hammer and external drag. Inputs carry units and accept caller fluid
+properties. Channel profiles and surge histories include CSV artifacts. Uses
+NumPy and Pint only; all estimates are unreviewed. See the
+[formulas, record formats, sources and validity limits](docs/fluids/design.md).
+
 ## 輸入規則：每個物理量都要帶單位
 
 接受 `"100 mm"`、`"210 bar"`、`"40 cP"`（MCP schema 為單一字串）；也接受 JSON 字串 `'{"value": 100, "unit": "mm"}'`。
