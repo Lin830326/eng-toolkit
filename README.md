@@ -545,6 +545,15 @@ Inputs carry units; curve, cycle and crack-growth tables are CSV artifacts.
 Uses NumPy and Pint only. Empirical estimates are unreviewed and do not certify
 components. See [methods, sources, formats and limits](docs/fatigue/design.md).
 
+### Electrical machines, power and drives (`electric`)
+
+`electric_transformer`, `electric_induction_motor`, `electric_pm_dc_motor`,
+`electric_power_flow`, `electric_drive_sizing` and `electric_converter` calculate
+steady-state machines, three-phase phasors/faults, motion-cycle drive requirements
+and buck/boost/buck-boost converters. Unit-checked results include model limits,
+loss budgets and CSV curves. Uses NumPy and Pint; all estimates are unreviewed.
+See [formulas, sources, input formats and verification](docs/electric/design.md).
+
 ## 輸入規則：每個物理量都要帶單位
 
 接受 `"100 mm"`、`"210 bar"`、`"40 cP"`（MCP schema 為單一字串）；也接受 JSON 字串 `'{"value": 100, "unit": "mm"}'`。
