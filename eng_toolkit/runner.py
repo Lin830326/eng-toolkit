@@ -49,6 +49,25 @@ class Computed:
     artifacts: list[Artifact] = field(default_factory=list)
 
 
+def clean_text(text: str) -> str:
+    """Replace lone UTF-16 surrogates (which no UTF-8 file or JSON consumer accepts) with U+FFFD; valid pairs are kept."""
+    try:
+        text.encode("utf-8")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+
+
+def _clean(obj: Any) -> Any:
+    if isinstance(obj, str):
+        return clean_text(obj)
+    if isinstance(obj, dict):
+        return {(clean_text(k) if isinstance(k, str) else k): _clean(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_clean(v) for v in obj]
+    return obj
+
+
 def run_tool(
     *,
     tool_name: str,
@@ -61,6 +80,7 @@ def run_tool(
     engines: tuple[str, ...] = (),
 ) -> ToolResult:
     ws = workspace or Workspace()
+    inputs = _clean(inputs)  # a lone surrogate in a caller string must not crash the contract (inputs.json, hashing, results)
     job = ws.new_job(tool_name)
     handle = JobHandle(job)
     artifacts: list[Artifact] = [job.write_inputs(inputs)]
@@ -104,7 +124,12 @@ def run_tool(
         )
 
     result.data = {**result.data, "job_id": job.job_id, "job_dir": str(job.dir)}
-    job.finalize(result.model_dump(mode="json"))
+    dumped = result.model_dump(mode="json")
+    cleaned = _clean(dumped)
+    if cleaned != dumped:  # messages or data that echoed a caller string with a lone surrogate
+        result = type(result).model_validate(cleaned)
+        dumped = cleaned
+    job.finalize(dumped)
     return result
 
 
