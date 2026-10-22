@@ -69,7 +69,11 @@ class Job:
         return Artifact(path=str(path), format=fmt, sha256=digest)
 
     def write_text(self, filename: str, text: str, *, fmt: str) -> Artifact:
-        return self.write_bytes(filename, text.encode("utf-8"), fmt=fmt)
+        try:
+            payload = text.encode("utf-8")
+        except UnicodeEncodeError:  # lone surrogate: keep the artifact writable, as U+FFFD
+            payload = text.encode("utf-16", "surrogatepass").decode("utf-16", "replace").encode("utf-8")
+        return self.write_bytes(filename, payload, fmt=fmt)
 
     def write_json(self, filename: str, obj: Any) -> Artifact:
         text = json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n"
