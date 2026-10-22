@@ -23,6 +23,7 @@ from eng_toolkit.domains.geometry import convert as conversion
 from eng_toolkit.domains.geometry import dfm
 from eng_toolkit.domains.geometry import part as partspec
 from eng_toolkit.domains.geometry import queries as grammar
+from eng_toolkit.domains.geometry import view as viewer
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.licenses import install_hint
 from eng_toolkit.runner import Computed, JobHandle, run_tool
@@ -32,7 +33,8 @@ ENGINE_MEASURE = "eng_toolkit.geometry.measure"
 ENGINE_MAKE_PART = "eng_toolkit.geometry.make_part"
 ENGINE_CHECK_DFM = "eng_toolkit.geometry.check_dfm"
 ENGINE_CONVERT = "eng_toolkit.geometry.convert"
-TOOL_NAMES: tuple[str, ...] = ("measure", "make_part", "check_dfm", "convert")
+ENGINE_VIEW = "eng_toolkit.geometry.view"
+TOOL_NAMES: tuple[str, ...] = ("measure", "make_part", "check_dfm", "convert", "view")
 MAX_INVENTORY_LIMIT = 500
 PART_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 PART_FORMATS: tuple[str, ...] = ("step", "glb", "stl", "brep")  # the order the files are written in
@@ -861,4 +863,87 @@ def convert(
     )
 
 
-__all__ = ["TOOL_NAMES", "check_dfm", "convert", "make_part", "measure", "server"]
+VIEW_DESCRIPTION = (
+    "Write a solid 3D CAD file (.step .stp .iges .igs .brep, millimetres) as a coloured GLB for web, AR and CAD viewers: one "
+    "material per colour, each primitive's extras list its face ids (F<n>, as in geometry_measure) with their triangle ranges, "
+    "the node's extras hold the legend; B-rep edges as lines if show_edges. color_by: 'none' (grey), 'face_kind' (plane, "
+    "cylinder, cone, sphere, torus, bspline, other), 'dfm' (worst geometry_check_dfm finding per face: error red, warn orange, "
+    "info blue; process, tool_axis, limits as there) or 'highlight' (faces in highlight, e.g. 'F3,F7'). GLB is metres, +Y up. "
+    "Also writes view.json (face -> colour -> finding ids). Returns triangle_count, face_count, highlighted_face_count, "
+    "finding_count. Shells, loose faces and .stl are refused. "
+    f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')})."
+)
+
+
+@server.tool(name="view", description=VIEW_DESCRIPTION)
+def view(
+    model_path: Annotated[str, Field(description="Path to the solid model: .step .stp .iges .igs or .brep")],
+    color_by: Annotated[str, Field(description="'none', 'face_kind', 'dfm' or 'highlight'; anything else is refused")] = "face_kind",
+    highlight: Annotated[
+        str, Field(description="color_by 'highlight' only: face ids as in geometry_measure, e.g. 'F3,F7'; an unknown id is refused")
+    ] = "",
+    process: Annotated[str, Field(description="color_by 'dfm' only: 'cnc_milling' or 'sheet_metal', as in geometry_check_dfm")] = "cnc_milling",
+    tool_axis: Annotated[str, Field(description="color_by 'dfm', cnc_milling: spindle axis, one of +x -x +y -y +z -z")] = "+z",
+    limits: Annotated[
+        str, Field(description='color_by \'dfm\' only: JSON limits as in geometry_check_dfm, e.g. {"min_wall": "1 mm"}. Empty = defaults')
+    ] = "",
+    max_seconds: Annotated[
+        int, Field(description="Wall-clock budget in seconds, 1 to 600; default 120. A running OpenCASCADE call cannot be interrupted")
+    ] = 120,
+    mesh_deflection: Annotated[str, Field(description="Chord error of the tessellation, 0.001 mm to 100 mm, e.g. '0.01 mm'")] = "0.01 mm",
+    name: Annotated[
+        str, Field(description="Stem of the GLB file and node name: 1 to 64 letters, digits, '_' or '-'. Empty = the input file's stem")
+    ] = "view",
+    show_edges: Annotated[bool, Field(description="Add the B-rep edges as a line primitive (GL_LINES) so CAD edges stay visible")] = True,
+) -> ToolResult:
+    deadline = dfm.Deadline(max(1, min(max_seconds, 600)))
+    inputs = {
+        "model_path": model_path,
+        "color_by": color_by,
+        "highlight": highlight,
+        "process": process,
+        "tool_axis": tool_axis,
+        "limits": limits,
+        "max_seconds": max_seconds,
+        "mesh_deflection": mesh_deflection,
+        "name": name,
+        "show_edges": show_edges,
+    }
+
+    def compute(job: JobHandle) -> Computed:
+        try:
+            return viewer.view(
+                job,
+                model_path=model_path,
+                color_by=color_by,
+                highlight=highlight,
+                process=process,
+                tool_axis=tool_axis,
+                limits=limits,
+                max_seconds=max_seconds,
+                mesh_deflection=mesh_deflection,
+                name=name,
+                show_edges=show_edges,
+                deadline=deadline,
+            )
+        except ToolFailure as exc:  # every refusal names its parameter as a JSON pointer
+            details = {**exc.details, "param": viewer.pointer(exc.details, exc.family)}
+            raise ToolFailure(exc.family, exc.message, details) from None
+        except (ArithmeticError, FloatingPointError) as exc:
+            raise ToolFailure("input.out_of_range", f"model_path: a number is outside the supported range ({exc})", {"param": "/model_path"}) from None
+
+    return run_tool(
+        tool_name="geometry_view",
+        engine=ENGINE_VIEW,
+        version=__version__,
+        inputs=inputs,
+        compute=compute,
+        engines=("cadquery-ocp-novtk", "numpy"),
+        standing_warnings=(
+            "The colours are this toolkit's coding of the geometry (face kind) or of rule-of-thumb DFM findings, not an engineering "
+            "approval; a neutral face is not a checked face. Face ids belong to this file's bytes (face_ids_valid_for).",
+        ),
+    )
+
+
+__all__ = ["TOOL_NAMES", "check_dfm", "convert", "make_part", "measure", "server", "view"]

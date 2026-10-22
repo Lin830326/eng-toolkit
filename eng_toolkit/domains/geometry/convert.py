@@ -33,7 +33,8 @@ NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 DEFLECTION_MM = (0.001, 100.0)
 MAX_ABS_MM = 1.0e6  # a coordinate beyond 1 km is a unit mistake; also keeps float32 mesh files meaningful
 MAX_INPUT_BYTES = 100 * 1024 * 1024
-MAX_TRIANGLES = 2_000_000
+MAX_TRIANGLES = 2_000_000  # an STL read as input (pure NumPy, about 100 bytes per triangle)
+MAX_TESSELLATION_TRIANGLES = 600_000  # a B-rep tessellated by OpenCASCADE, which holds about 6.6 kB per triangle while meshing
 MAX_SIZE_PER_DEFLECTION = 5.0e6  # bounding-box diagonal over deflection: guards the time of the tessellation
 READBACK_TOLERANCE = 1e-6
 FLOAT32_RELATIVE = 2.0**-24  # half a unit in the last place of a float32 mantissa
@@ -521,7 +522,21 @@ def _mesh_output(
                 "the mesh would take too long and be too large. Use a coarser deflection",
                 {"param": "mesh_deflection", "size_mm": size_diagonal, "maximum_ratio": MAX_SIZE_PER_DEFLECTION},
             )
+        expected = brep.estimate_triangles(solid, deflection_mm).total
+        if expected > MAX_TESSELLATION_TRIANGLES:  # refused before OpenCASCADE allocates the mesh
+            raise ToolFailure(
+                "input.out_of_range",
+                f"mesh_deflection: about {expected:,} triangles are expected at {deflection_mm:g} mm (estimated before meshing); the limit "
+                f"for tessellating a B-rep is {MAX_TESSELLATION_TRIANGLES:,} (about 4 GB of meshing memory). Use a coarser mesh_deflection",
+                {"param": "mesh_deflection", "triangles": expected, "estimated": True, "limit": MAX_TESSELLATION_TRIANGLES},
+            )
         mesh = brep.triangulate(solid, deflection_mm)
+        if len(mesh.triangles) > MAX_TESSELLATION_TRIANGLES:
+            raise ToolFailure(
+                "input.too_large",
+                f"the mesh has {len(mesh.triangles)} triangles; the limit for tessellating a B-rep is {MAX_TESSELLATION_TRIANGLES}. Use a coarser mesh_deflection",
+                {"param": "mesh_deflection", "triangles": int(len(mesh.triangles)), "limit": MAX_TESSELLATION_TRIANGLES},
+            )
         if len(mesh.triangles) == 0:
             raise ToolFailure("geometry.empty_mesh", "the model produced no triangles (no face could be tessellated)", {})
     assert mesh is not None
