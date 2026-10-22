@@ -12,6 +12,7 @@ Modelling (``make_*``, :func:`combine`, :func:`fillet`, :func:`chamfer`, :func:`
 (:func:`write_step`, :func:`write_brep`, :func:`write_mesh`) are what the part spec language in
 ``domains/geometry/part.py`` builds on.  :func:`project` turns a solid into the 2D lines, arcs, ellipses and
 polylines of one of the seven fixed views (:data:`VIEW_FRAMES`), hidden lines removed exactly.
+:func:`tessellate_faces` keeps face and edge identity in a tessellation (for coloured viewer files).
 """
 
 from eng_toolkit.brep._dfm import (
@@ -81,6 +82,7 @@ from eng_toolkit.brep._types import (
     Solid,
     Vec3,
 )
+from eng_toolkit.brep._view import Closure, EdgePolyline, FaceMesh, TriangleEstimate, closure, estimate_triangles, tessellate_faces
 from eng_toolkit.brep._write import write_brep, write_mesh, write_step
 from eng_toolkit.errors import EngineUnavailable
 
@@ -94,16 +96,19 @@ __all__ = [
     "WELD_EPS_MM",
     "Arc2",
     "Circle2",
+    "Closure",
     "Created",
     "CylinderFact",
     "EdgeFact",
     "Ellipse2",
     "EdgeMatch",
+    "EdgePolyline",
     "EdgeSelector",
     "EngineUnavailable",
     "Entity",
     "FaceAccess",
     "FaceInfo",
+    "FaceMesh",
     "FaceSelector",
     "FacingPair",
     "FaceRef",
@@ -128,17 +133,20 @@ __all__ = [
     "SketchPlane",
     "Slot2",
     "Solid",
+    "TriangleEstimate",
     "Vec3",
     "ViewFrame",
     "ViewName",
     "angle",
     "chamfer",
+    "closure",
     "check_path",
     "combine",
     "created_by",
     "cylinder_facts",
     "distance",
     "edge_facts",
+    "estimate_triangles",
     "face_access",
     "facing_pairs",
     "fillet",
@@ -165,6 +173,7 @@ __all__ = [
     "select_faces",
     "selector_features",
     "shell",
+    "tessellate_faces",
     "transform",
     "triangulate",
     "validity",
