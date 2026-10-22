@@ -532,6 +532,10 @@ properties. Channel profiles and surge histories include CSV artifacts. Uses
 NumPy and Pint only; all estimates are unreviewed. See the
 [formulas, record formats, sources and validity limits](docs/fluids/design.md).
 
+### Space frames, plates and foundations (`structures3d`)
+
+`structures3d_static`, `structures3d_modal`, `structures3d_buckling`, `structures3d_plate`, `structures3d_plate_stability`, and `structures3d_foundation` cover spatial frames, undamped modes, axial-force eigenbuckling, Kirchhoff plates, plate stability and bilateral Winkler beams. Unit-checked results include formulas, validity limits and CSV artifacts, with `review_status: "unreviewed"`. See [record formats, sources and verification](docs/structures3d/design.md).
+
 ## 輸入規則：每個物理量都要帶單位
 
 接受 `"100 mm"`、`"210 bar"`、`"40 cP"`（MCP schema 為單一字串）；也接受 JSON 字串 `'{"value": 100, "unit": "mm"}'`。
