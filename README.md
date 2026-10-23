@@ -514,6 +514,8 @@ fem_static(model_path=".../bar.step", element_size="2.5 mm", youngs_modulus="210
 ```
 面的選法是平面：`x = 0 mm`（落在該平面的所有邊界面）或 `normal +z at z = 20 mm`（還要外法向量朝 +z）；支承 `<面> [: ux uy uz | fixed]` 或 `point(x, y, z) : <自由度>`（最近的網格節點，須在一個元素大小內），載重 `force (Fx, Fy, Fz) on <面>`（總力依面積均勻分布）或 `pressure p on <面>`（正值壓向材料）；以 `;` 分隔。一個選不到任何面的選擇器、同時是支承又受力的面、留有剛體運動的支承，都回清楚的錯誤（`fem.empty_selection`、`fem.overlapping_selection`、`fem.not_constrained`）。**呼叫者從不提供 Gmsh 腳本或 CalculiX 輸入檔**，選擇器語言只允許字母、數字與少數符號，解析成數字後由工具自己寫輸入；元素數在網格前以 `6√2·體積/尺寸³` 估算，超過 6 萬個、或尺寸小於外框對角線的 1/1000 回 `input.too_large`。整面固定（`fixed`）會擋住該面的泊松收縮，應力與撓度與梁理論略有差異（警告會說明）。不含塑性、接觸、大位移、動態、溫度。數字的推導、容許誤差與限制見 [docs/fem/design.md](docs/fem/design.md)。
 
+- `fem_view`：把一次 `fem_static` 的結果（`result_dir` 為該工作目錄，會核對 `manifest.json` 的 sha256；或 `mesh_file` + `results_file`）畫成色彩對應的 GLB（網格表面，每個二次三角面分成 4 個三角形；von Mises、位移、各應力分量或主應力；可放大變形並畫出未變形輪廓），另寫 `legend.svg` 與 `view.json`；顏色是 CalculiX 的節點值（外插並平均），只顯示表面，不跑任何程式。說明見 [docs/fem/design.md](docs/fem/design.md#fem_view-a-static-result-as-a-colour-mapped-glb)。
+
 ---
 
 ### Numerical optimization and experiments (`optimize`)
