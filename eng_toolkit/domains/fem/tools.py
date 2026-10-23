@@ -55,6 +55,43 @@ def _invalid(message: str, **details: Any) -> UnitsError:
     return UnitsError("input.invalid", message, details)
 
 
+def _parameter_errors(compute):
+    """Normalize shared unit/file errors at the FEM boundary without changing their families."""
+    def checked(job):
+        try:
+            return compute(job)
+        except ToolFailure as exc:
+            param = str(exc.details.get("param", "/model_path")).split(" (", 1)[0]
+            if not param.startswith("/"):
+                param = "/" + param.replace("~", "~0").replace("/", "~1")
+            raise ToolFailure(exc.family, exc.message, {**exc.details, "param": param}) from None
+    return checked
+
+
+def _converted(quantity, unit, name: str) -> float:
+    try:
+        value = float(quantity.to(unit).magnitude)
+    except ArithmeticError:
+        raise UnitsError("input.out_of_range", f"{name}: conversion is outside the supported numeric range", {"param": f"/{name}"}) from None
+    if not math.isfinite(value) or (value == 0 and quantity.magnitude != 0):
+        raise UnitsError("input.out_of_range", f"{name}: conversion is not representable", {"param": f"/{name}"})
+    return value
+
+
+def _output_factor(unit, base: str, name: str) -> float:
+    factor = _converted(ureg.Quantity(1.0, base), unit, name)
+    if not 1e-30 <= factor <= 1e30:
+        raise UnitsError("input.out_of_range", f"{name}: conversion factor must be between 1e-30 and 1e30", {"param": f"/{name}"})
+    return factor
+
+
+def _output_value(value: float, factor: float, name: str) -> float:
+    converted = value * factor
+    if not math.isfinite(converted) or abs(converted) > 1e30 or (converted == 0 and value != 0):
+        raise UnitsError("input.out_of_range", f"{name}: converted result must be representable and at most 1e30 in magnitude", {"param": f"/{name}"})
+    return converted
+
+
 def _job_dir(job: JobHandle) -> Path:
     # JobHandle has no public accessor for its directory yet; the programs need one to run in.
     return Path(job._job.dir)  # noqa: SLF001
@@ -81,12 +118,12 @@ def _require_programs(*tools) -> None:
 
 def _length_unit(text: str, name: str):
     unit = parse_quantity(f"1 {text}", name=name, dimension="length").units
-    return unit, float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
+    return unit, _output_factor(unit, "millimeter", name)
 
 
 def _stress_unit(text: str, name: str):
     unit = parse_quantity(f"1 {text}", name=name, dimension="pressure").units
-    return unit, float(ureg.Quantity(1.0, "megapascal").to(unit).magnitude)
+    return unit, _output_factor(unit, "megapascal", name)
 
 
 def _q(value: float, unit: Any) -> QuantityOut:
@@ -99,10 +136,7 @@ def _count(value: int) -> QuantityOut:
 
 def _element_size_mm(text: str) -> float:
     qty = require_positive(parse_quantity(text, name="element_size", dimension="length"), name="element_size")
-    size = float(qty.to("millimeter").magnitude)
-    if not math.isfinite(size):
-        raise _invalid("element_size is not finite", param="element_size")
-    return size
+    return _converted(qty, "millimeter", "element_size")
 
 
 @dataclass
@@ -203,7 +237,7 @@ MESH_CONVENTIONS: dict[str, str] = {
         "mean ratio of the four corner nodes, 12 (3V)^(2/3) / (sum of the six squared edge lengths) (Liu and Joe): 1 for a regular tetrahedron, "
         "0 for a flat one. It is computed by the toolkit, not Gmsh's own SICN, which is a different number"
     ),
-    "min_jacobian_ratio": "smallest det J over an element (corners, midside points, centre) divided by its largest; 1 for straight edges, 0 or less = invalid",
+    "min_jacobian_ratio": "smallest sampled det J (corners, midside points, centre, all C3D10 and volume integration points) divided by its largest; 1 for straight edges, 0 or less = invalid. Sampling does not prove positivity everywhere",
     "meshed_volume": "volume of the quadratic elements (exact quadrature), compared with the exact B-rep volume",
     "units": "STEP and IGES carry their unit and are read in millimetres; BREP numbers are taken as millimetres",
 }
@@ -230,6 +264,7 @@ def mesh(
 ) -> ToolResult:
     inputs = {"model_path": model_path, "element_size": element_size, "output_unit": output_unit}
 
+    @_parameter_errors
     def compute(job: JobHandle) -> Computed:
         unit, per_mm = _length_unit(output_unit, "output_unit")
         size_mm = _element_size_mm(element_size)
@@ -237,12 +272,14 @@ def mesh(
         meshed = _mesh_model(job, model_path, size_mm)
         q, t = meshed.quality, meshed.mesh
         relative = (meshed.mesh_volume_mm3 - meshed.volume_mm3) / meshed.volume_mm3
+        mesh_volume = _output_value(meshed.mesh_volume_mm3, per_mm**3, "output_unit")
+        exact_volume = _output_value(meshed.volume_mm3, per_mm**3, "output_unit")
         artifact = _keep(job, meshed.msh_path, "mesh.msh", "msh")
         values = {
             "element_count": _count(len(t.tets)),
             "node_count": _count(len(t.nodes)),
-            "mesh_volume": _q(meshed.mesh_volume_mm3 * per_mm**3, unit**3),
-            "exact_volume": _q(meshed.volume_mm3 * per_mm**3, unit**3),
+            "mesh_volume": _q(mesh_volume, unit**3),
+            "exact_volume": _q(exact_volume, unit**3),
             "volume_relative_difference": QuantityOut(quantity=float(f"{relative:.6g}"), unit="dimensionless"),
             "min_quality": QuantityOut(quantity=float(f"{q.min_ratio:.6g}"), unit="dimensionless"),
             "mean_quality": QuantityOut(quantity=float(f"{q.mean_ratio:.6g}"), unit="dimensionless"),
@@ -311,7 +348,7 @@ CSV_COLUMNS = ("node", "x_mm", "y_mm", "z_mm", "ux_mm", "uy_mm", "uz_mm", "u_mag
 
 
 def _csv(mesh_: meshing.TetMesh, u: np.ndarray, s: np.ndarray, vm: np.ndarray) -> str:
-    mag = np.linalg.norm(u, axis=1)
+    mag = np.hypot.reduce(u, axis=1)
     table = np.column_stack([np.arange(1, len(mesh_.nodes) + 1), mesh_.nodes, u, mag, s, vm])
     rows = [",".join(CSV_COLUMNS)]
     rows += [f"{int(r[0])}," + ",".join(f"{v:.9g}" for v in r[1:]) for r in table]
@@ -365,11 +402,12 @@ def static(
         "output_stress_unit": output_stress_unit,
     }
 
+    @_parameter_errors
     def compute(job: JobHandle) -> Computed:
         length_unit, per_mm = _length_unit(output_length_unit, "output_length_unit")
         stress_unit, per_mpa = _stress_unit(output_stress_unit, "output_stress_unit")
         young = require_positive(parse_quantity(youngs_modulus, name="youngs_modulus", dimension="pressure"), name="youngs_modulus")
-        young_mpa = float(young.to("megapascal").magnitude)
+        young_mpa = _converted(young, "megapascal", "youngs_modulus")
         if not (math.isfinite(young_mpa) and MIN_YOUNG_MPA <= young_mpa <= MAX_YOUNG_MPA):
             raise UnitsError(
                 "input.out_of_range",
@@ -411,7 +449,7 @@ def static(
                     raise ToolFailure(
                         "fem.point_not_on_model",
                         f"the point selector {item.target.text!r} is {gap[nearest]:.4g} mm from the nearest mesh node, more than the element size ({size_mm:.4g} mm); it is not on the model",
-                        {"selector": item.target.text, "distance_mm": float(gap[nearest]), "element_size_mm": size_mm},
+                        {"param": "/supports", "selector": item.target.text, "distance_mm": float(gap[nearest]), "element_size_mm": size_mm},
                     )
                 fixed[nearest] |= np.array(item.dofs)
                 point_nodes[nearest] = item.text
@@ -453,7 +491,7 @@ def static(
         load_report: list[dict[str, Any]] = []
         loaded_facets: dict[int, str] = {}
         loaded_nodes: set[int] = set()
-        strain_scale = 0.0
+        traction = np.zeros((len(facets.corners), 3))
         for item in load_list:
             chosen = sel.select_facets(item.target, tetra.nodes, facets.corners, facets.mids, facets.normals, diagonal)
             if len(chosen) == 0:
@@ -466,11 +504,11 @@ def static(
                 share = scalar / total_area  # (f, 6)
                 contribution = share[:, :, None] * total[None, None, :]
                 resultant = total
-                strain_scale = max(strain_scale, float(np.linalg.norm(total)) / total_area / young_mpa)
+                traction[chosen] += total / total_area
             else:
                 contribution = -item.pressure_mpa * vector  # n is outward: positive pressure acts against it
                 resultant = contribution.sum(axis=(0, 1))
-                strain_scale = max(strain_scale, abs(item.pressure_mpa) / young_mpa)
+                traction[chosen] -= item.pressure_mpa * facets.normals[chosen]
             np.add.at(force, nodes6.ravel(), contribution.reshape(-1, 3))
             loaded_nodes.update(int(n) for n in nodes6.ravel())
             loaded_facets.update({int(f): item.text for f in chosen})
@@ -484,19 +522,22 @@ def static(
                     "resultant_n": [float(v) for v in resultant],
                 }
             )
+        strain_scale = float(np.hypot.reduce(traction, axis=1).max()) / young_mpa
         if strain_scale > MAX_NOMINAL_STRAIN:
             raise UnitsError(
                 "input.out_of_range",
                 f"the load is {strain_scale:.3g} times the Young's modulus as a stress on its face; a linear elastic analysis has no meaning at that size (the limit is {MAX_NOMINAL_STRAIN:g})",
-                {"nominal_strain": strain_scale, "max": MAX_NOMINAL_STRAIN},
+                {"param": "/loads", "nominal_strain": strain_scale, "max": MAX_NOMINAL_STRAIN},
             )
+        if not np.any(force):
+            raise _invalid("the combined loads produce zero nodal force", param="/loads")
         shared = sorted(set(support_facets) & set(loaded_facets))
         if shared:
             raise ToolFailure(
                 "fem.overlapping_selection",
                 f"{len(shared)} face(s) are both a support ({support_facets[shared[0]]!r}) and loaded ({loaded_facets[shared[0]]!r}): "
                 "a load on a support goes straight into the reaction and tells nothing. Select different faces",
-                {"facets": len(shared), "support": support_facets[shared[0]], "load": loaded_facets[shared[0]]},
+                {"param": "/loads", "facets": len(shared), "support": support_facets[shared[0]], "load": loaded_facets[shared[0]]},
             )
         on_load = sorted(n for n in point_nodes if n in loaded_nodes)
         if on_load:
@@ -505,7 +546,7 @@ def static(
                 "fem.overlapping_selection",
                 f"the point support {point_nodes[node]!r} was placed on node {node + 1} at {tuple(round(float(v), 6) for v in tetra.nodes[node])} mm, "
                 f"which belongs to a loaded face ({len(on_load)} such node(s)): a load on a support goes straight into the reaction. Move the point",
-                {"nodes": len(on_load), "example_node": node + 1, "support": point_nodes[node]},
+                {"param": "/supports", "nodes": len(on_load), "example_node": node + 1, "support": point_nodes[node]},
             )
 
         # ----- rigid body motion
@@ -515,7 +556,7 @@ def static(
                 "fem.not_constrained",
                 f"the supports do not hold the model: {len(free)} rigid-body motion(s) stay free ({'; '.join(free)}). "
                 "Prevent all of translation along x, y, z and rotation about x, y, z, for instance by fixing a face or with three non-collinear point supports",
-                {"free_motions": free},
+                {"param": "/supports", "free_motions": free},
             )
 
         # ----- solve
@@ -523,8 +564,12 @@ def static(
         u = solved.displacement
         stress = solved.stress
         vm = solver.von_mises(stress)
-        magnitude = np.linalg.norm(u, axis=1)
+        magnitude = np.hypot.reduce(u, axis=1)
+        solver.check_result("displacement magnitude (mm)", magnitude, solver.MAX_DISPLACEMENT_MM)
+        solver.check_result("von Mises stress (MPa)", vm, solver.MAX_STRESS_MPA)
         imax, ivm = int(np.argmax(magnitude)), int(np.argmax(vm))
+        max_displacement = _output_value(float(magnitude[imax]), per_mm, "output_length_unit")
+        max_von_mises = _output_value(float(vm[ivm]), per_mpa, "output_stress_unit")
 
         # ----- equilibrium
         applied = force.sum(axis=0)
@@ -533,21 +578,26 @@ def static(
         held = solved.dat.reaction_nodes
         node_reaction = solved.dat.reaction - force[held]  # per constrained node, in the print precision of CalculiX (seven digits)
         reaction = solved.dat.reaction_total - force[held].sum(axis=0)  # the total CalculiX summed itself before printing: more accurate than the sum of node_reaction
-        scale_force = float(np.linalg.norm(force, axis=1).sum())
+        scale_force = float(np.hypot.reduce(force, axis=1).sum())
         residual = reaction + applied
-        relative_force = float(np.linalg.norm(residual)) / scale_force
+        relative_force = float(np.hypot.reduce(residual)) / scale_force
         centre = tetra.nodes.mean(axis=0)
-        support_x = tetra.nodes[held] - centre
-        applied_x = tetra.nodes - centre
-        moment_residual = np.cross(support_x, node_reaction).sum(axis=0) + np.cross(applied_x, force).sum(axis=0)
-        scale_moment = float((np.linalg.norm(applied_x, axis=1) * np.linalg.norm(force, axis=1)).sum() + (np.linalg.norm(support_x, axis=1) * np.linalg.norm(node_reaction, axis=1)).sum())
-        relative_moment = float(np.linalg.norm(moment_residual)) / scale_moment if scale_moment > 0 else 0.0
+        support_x = (tetra.nodes[held] - centre) / diagonal
+        applied_x = (tetra.nodes - centre) / diagonal
+        moment_force_scale = max(scale_force, float(np.hypot.reduce(node_reaction, axis=1).max(initial=0)))
+        moment_force, moment_reaction = force / moment_force_scale, node_reaction / moment_force_scale
+        moment_residual = np.cross(support_x, moment_reaction).sum(axis=0) + np.cross(applied_x, moment_force).sum(axis=0)
+        scale_moment = float((np.hypot.reduce(applied_x, axis=1) * np.hypot.reduce(moment_force, axis=1)).sum() + (np.hypot.reduce(support_x, axis=1) * np.hypot.reduce(moment_reaction, axis=1)).sum())
+        relative_moment = float(np.hypot.reduce(moment_residual)) / scale_moment if scale_moment > 0 else 0.0
+        if not math.isfinite(relative_force) or not math.isfinite(relative_moment):
+            raise ToolFailure("fem.equilibrium_failed", "the equilibrium residual exceeds the representable range relative to the loads", {"param": "/loads"})
         if relative_force > EQUILIBRIUM_FORCE_TOL or relative_moment > EQUILIBRIUM_MOMENT_TOL:
             raise ToolFailure(
                 "fem.equilibrium_failed",
                 f"the reactions do not balance the applied load: force residual {relative_force:.3g} (limit {EQUILIBRIUM_FORCE_TOL:g}), moment residual {relative_moment:.3g} "
                 f"(limit {EQUILIBRIUM_MOMENT_TOL:g}); the result is discarded",
                 {
+                    "param": "/loads",
                     "applied_n": [float(v) for v in applied],
                     "reaction_n": [float(v) for v in reaction],
                     "force_residual_relative": relative_force,
@@ -575,8 +625,8 @@ def static(
         ]
 
         values = {
-            "max_displacement": _q(float(magnitude[imax]) * per_mm, length_unit),
-            "max_von_mises": _q(float(vm[ivm]) * per_mpa, stress_unit),
+            "max_displacement": _q(max_displacement, length_unit),
+            "max_von_mises": _q(max_von_mises, stress_unit),
             "applied_force_x": _q(float(applied[0]), "newton"),
             "applied_force_y": _q(float(applied[1]), "newton"),
             "applied_force_z": _q(float(applied[2]), "newton"),
@@ -652,7 +702,8 @@ VIEW_DESCRIPTION = (
     "Colour-mapped GLB of a fem_static result for a 3D viewer: the mesh surface (each 6-node facet as 4 triangles) coloured by the "
     "nodal field CalculiX wrote, optionally deformed. Give result_dir (the fem_static job directory; its manifest sha256s are "
     "checked) or mesh_file + results_file. field: von_mises, displacement, ux uy uz, s_xx s_yy s_zz s_xy s_yz s_zx, principal_max, "
-    "principal_min. colormap auto (sequential for magnitudes, diverging blue-grey-red for signed fields, light grey = 0). GLB is metres, +Y up; "
+    "principal_min. colormap auto (sequential for magnitudes, diverging blue-grey-red for signed fields, light grey = 0). Diverging ranges are "
+    "expanded symmetrically about zero. GLB is metres, +Y up, with local positions and a node translation preserving the model origin; "
     "COLOR_0 linear RGB, _FIELD holds the values. Also writes legend.svg and view.json. Returns triangle_count, field_max, "
     f"field_min, deformation_factor. Capped at {viewer.MAX_TRIANGLES:,} triangles. Only the surface is shown; nodal stresses are "
     "extrapolated and averaged, and unbounded at point loads and sharp corners. No Gmsh/CalculiX run."
@@ -666,7 +717,7 @@ def view(
     results_file: Annotated[str, Field(description="Without result_dir: the results.csv of the same fem_static run")] = "",
     field: Annotated[str, Field(description="von_mises (default), displacement, ux, uy, uz, s_xx, s_yy, s_zz, s_xy, s_yz, s_zx, principal_max or principal_min")] = "von_mises",
     colormap: Annotated[str, Field(description="'auto' (sequential for von_mises/displacement, diverging otherwise), 'sequential' or 'diverging'")] = "auto",
-    range: Annotated[str, Field(description="'auto' (surface min..max; diverging: symmetric about 0) or 'lo, hi' with units, e.g. '0 MPa, 250 MPa'")] = "auto",  # noqa: A002
+    range: Annotated[str, Field(description="'auto' or 'lo, hi' with units, e.g. '0 MPa, 250 MPa'; diverging ranges expand symmetrically about zero (light grey)")] = "auto",  # noqa: A002
     deformation_scale: Annotated[str, Field(description="'0' undeformed, 'auto' (largest displacement = 5 % of the diagonal) or a factor up to 1e4, e.g. '200'")] = "0",
     show_undeformed_edges: Annotated[bool, Field(description="When deformed, draw the undeformed feature edges as a grey line primitive")] = True,
     mesh_edges: Annotated[bool, Field(description="Draw the element edges of the surface as a line primitive")] = False,

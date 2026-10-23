@@ -188,7 +188,7 @@ def parse_loads(text: str) -> list[Load]:
             components = tuple(
                 _quantity(force[k], dimension="force", unit="newton", limit=MAX_FORCE_N, param="loads", clause=clause) for k in ("fx", "fy", "fz")
             )
-            if math.sqrt(sum(c * c for c in components)) > MAX_FORCE_N:
+            if math.hypot(*components) > MAX_FORCE_N:
                 raise UnitsError("input.out_of_range", f"loads: the force in {clause!r} exceeds {MAX_FORCE_N:g} N", {"param": "loads", "max": MAX_FORCE_N, "unit": "newton"})
             if not any(components):
                 raise _bad("loads", clause, "the force is zero")
@@ -226,5 +226,5 @@ def empty_selection(text: str, what: str, diagonal_mm: float) -> ToolFailure:
         f"the selector {text!r} ({what}) matches no face of the model: no boundary face lies in that plane"
         + (" with that normal" if "normal" in text else "")
         + f" (tolerance {max(PLANE_TOLERANCE * diagonal_mm, 1e-9):.3g} mm). Check the coordinate, its unit and the axis",
-        {"selector": text, "tolerance_mm": max(PLANE_TOLERANCE * diagonal_mm, 1e-9)},
+        {"param": "/supports" if what == "support" else "/loads", "selector": text, "tolerance_mm": max(PLANE_TOLERANCE * diagonal_mm, 1e-9)},
     )

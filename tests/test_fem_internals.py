@@ -159,7 +159,8 @@ def test_the_element_estimate_and_the_limits():
     assert M.check_before_meshing(10000.0, *bbox, 5.0) == pytest.approx(678.8225, abs=1e-3)
     with pytest.raises(ToolFailure) as caught:
         M.check_before_meshing(10000.0, *bbox, 1e-9)
-    assert caught.value.family == "input.too_large" and "8.49e+31" in caught.value.message
+    assert caught.value.family == "input.too_large" and caught.value.details["param"] == "/element_size"
+    assert "1/1000" in caught.value.message  # reject the size before evaluating h**3
     with pytest.raises(ToolFailure) as caught:
         M.check_before_meshing(10000.0, *bbox, 0.5)  # 6 sqrt(2) * 10000 / 0.125 = 679 000 elements
     assert caught.value.family == "input.too_large" and caught.value.details["estimated_elements"] > M.MAX_ELEMENTS
@@ -255,7 +256,7 @@ def test_the_deck_uses_only_the_closed_vocabulary_and_the_numbers_given():
     lines = deck.splitlines()
     assert "*ELEMENT, TYPE=C3D10, ELSET=EALL" in lines
     assert "1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10" in lines
-    assert "2.100000000000e+05, 3.000000000000e-01" in lines
+    assert tuple(float(x) for x in lines[lines.index("*ELASTIC") + 1].split(",")) == (210000.0, 0.3)
     assert "1, 1, 1, 0." in lines and "1, 3, 3, 0." in lines and "2, 2, 2, 0." in lines
     assert "3, 3, -1.250000000000e+01" in lines
     assert "2, 1, 1, 0." not in lines

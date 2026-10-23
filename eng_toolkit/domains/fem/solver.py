@@ -2,7 +2,7 @@
 
 The deck is built from arrays only: node coordinates, element connectivity, two material numbers, constrained degrees of freedom
 and nodal forces.  Every name in it (``NALL``, ``EALL``, ``NSUP``, ``MAT``) is a constant of this module and every number is a
-finite float printed by ``%.12e`` or an integer, so no text from a caller, a file or a parameter can reach it, and the
+finite float or an integer, so no text from a caller, a file or a parameter can reach it, and the
 keywords ``*INCLUDE`` and ``*INPUT`` (which would read another file) are never written.  Units are N, mm, MPa (N/mm2).
 
 CalculiX prints with seven significant digits to ``.dat`` and six to ``.frd``.  Displacements and reactions are read from ``.dat``
@@ -30,6 +30,9 @@ CCX_MAX_OUTPUT_BYTES = 150_000_000
 JOB = "job"  # the CalculiX job name: job.inp in, job.dat / job.frd out
 RIGID_TOLERANCE = 1e-6  # smallest singular value of the constraint/rigid-motion matrix, relative to its largest
 _MOTIONS = ("translation along x", "translation along y", "translation along z", "rotation about x", "rotation about y", "rotation about z")
+MAX_DISPLACEMENT_MM = 1e9
+MAX_STRESS_MPA = 1e9
+MAX_REACTION_N = 1e24
 
 
 # --------------------------------------------------------------------------- rigid body motion
@@ -76,16 +79,25 @@ def _wrap(values: list[int], per_line: int = 16) -> list[str]:
 
 def build_deck(mesh: TetMesh, young_mpa: float, poisson: float, fixed: np.ndarray, force_n: np.ndarray) -> str:
     """The ``.inp`` text: one static step, C3D10 elements, one isotropic material, boundary conditions and concentrated loads."""
-    for number in (young_mpa, poisson):
+    for name, number in (("youngs_modulus", young_mpa), ("poisson_ratio", poisson)):
         if not math.isfinite(number):
-            raise ToolFailure("input.invalid", "a material constant is not finite", {})
+            raise ToolFailure("input.invalid", "a material constant is not finite", {"param": f"/{name}"})
+    if young_mpa <= 0 or not -1 < poisson < .5:
+        raise ToolFailure("input.invalid", "the material constants must give positive finite bulk and shear moduli", {"param": "/poisson_ratio"})
     if not (np.all(np.isfinite(mesh.nodes)) and np.all(np.isfinite(force_n))):
         raise ToolFailure("engine.failure", "a coordinate or a load is not finite; no deck was written", {})
+    # CalculiX reads numeric fields in 20 columns. Shortest decimals preserve the
+    # endpoints' neighbours; long exponents of tiny ratios can use 13 digits.
+    poisson_text = repr(poisson)
+    if len(poisson_text) > 20:
+        poisson_text = f"{poisson:.12e}"
+    if not -1 < float(poisson_text) < .5:
+        raise ToolFailure("input.out_of_range", "the serialized Poisson ratio would give singular material constants", {"param": "/poisson_ratio"})
     lines = ["*HEADING", "eng-toolkit fem_static", "*NODE, NSET=NALL"]
     lines += [f"{i + 1}, {x:.12e}, {y:.12e}, {z:.12e}" for i, (x, y, z) in enumerate(mesh.nodes)]
     lines.append("*ELEMENT, TYPE=C3D10, ELSET=EALL")
     lines += [f"{i + 1}, " + ", ".join(str(int(v) + 1) for v in row) for i, row in enumerate(mesh.tets)]
-    lines += ["*MATERIAL, NAME=MAT", "*ELASTIC", f"{young_mpa:.12e}, {poisson:.12e}", "*SOLID SECTION, ELSET=EALL, MATERIAL=MAT"]
+    lines += ["*MATERIAL, NAME=MAT", "*ELASTIC", f"{young_mpa:.12e}, {poisson_text}", "*SOLID SECTION, ELSET=EALL, MATERIAL=MAT"]
     constrained = np.nonzero(fixed.any(axis=1))[0]
     lines.append("*NSET, NSET=NSUP")
     lines += _wrap([int(n) + 1 for n in constrained])
@@ -202,7 +214,18 @@ def read_frd_stress(path: Path, n_nodes: int) -> np.ndarray:
 
 def von_mises(stress: np.ndarray) -> np.ndarray:
     sxx, syy, szz, sxy, syz, szx = (stress[:, k] for k in range(6))
-    return np.sqrt(0.5 * ((sxx - syy) ** 2 + (syy - szz) ** 2 + (szz - sxx) ** 2) + 3.0 * (sxy**2 + syz**2 + szx**2))
+    return np.hypot.reduce(np.stack([
+        (sxx - syy) / math.sqrt(2), (syy - szz) / math.sqrt(2), (szz - sxx) / math.sqrt(2),
+        math.sqrt(3) * sxy, math.sqrt(3) * syz, math.sqrt(3) * szx,
+    ]), axis=0)
+
+
+def check_result(name: str, array: np.ndarray, limit: float) -> None:
+    """Check solver components and derived fields before they can reach artifacts."""
+    if not np.all(np.isfinite(array)):
+        raise ToolFailure("engine.failure", f"CalculiX returned a non-finite {name}; the result is discarded", {"param": "/loads"})
+    if np.any(np.abs(array) > limit):
+        raise ToolFailure("input.out_of_range", f"the computed {name} exceeds the supported magnitude {limit:g}; the result is discarded", {"param": "/loads", "max": limit})
 
 
 # --------------------------------------------------------------------------- running it
@@ -235,7 +258,11 @@ def solve(mesh: TetMesh, young_mpa: float, poisson: float, fixed: np.ndarray, fo
         )
     results = read_dat(dat, len(mesh.nodes))
     stress = read_frd_stress(frd, len(mesh.nodes))
-    for name, array in (("displacement", results.displacement), ("stress", stress), ("reaction", results.reaction_total)):
-        if not np.all(np.isfinite(array)):
-            raise ToolFailure("engine.failure", f"CalculiX returned a non-finite {name}; the result is discarded", {})
+    for name, array, limit in (
+        ("displacement (mm)", results.displacement, MAX_DISPLACEMENT_MM),
+        ("stress (MPa)", stress, MAX_STRESS_MPA),
+        ("nodal reaction (N)", results.reaction, MAX_REACTION_N),
+        ("total reaction (N)", results.reaction_total, MAX_REACTION_N),
+    ):
+        check_result(name, array, limit)
     return SolveResult(results.displacement, stress, results, record)

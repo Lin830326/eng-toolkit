@@ -18,7 +18,7 @@ SIZES = {5125: ("I", 4), 5126: ("f", 4)}
 COMPONENTS = {"SCALAR": 1, "VEC3": 3}
 
 
-def read_fem_glb(path) -> dict:
+def read_fem_glb(path, *, world_space=True) -> dict:
     data = Path(path).read_bytes()
     magic, version, length = struct.unpack("<4sII", data[:12])
     assert magic == b"glTF" and version == 2 and length == len(data), "GLB header"
@@ -76,6 +76,11 @@ def read_fem_glb(path) -> dict:
         primitives.append(entry)
     node = document["nodes"][0]
     json.dumps(node["extras"], allow_nan=False)
+    translation = node.get("translation", [0.0, 0.0, 0.0])
+    assert len(translation) == 3 and all(math.isfinite(x) for x in translation)
+    if world_space:
+        for primitive in primitives:
+            primitive["attributes"]["POSITION"] = [tuple(x + t for x, t in zip(p, translation)) for p in primitive["attributes"]["POSITION"]]
     return {"document": document, "primitives": primitives, "node": node, "bytes": data}
 
 
@@ -85,6 +90,8 @@ def gltf_to_model_mm(p):
 
 
 def signed_volume(points, triangles) -> float:
+    origin = points[0]
+    points = [tuple(x - o for x, o in zip(p, origin)) for p in points]
     total = 0.0
     for a, b, c in triangles:
         pa, pb, pc = points[a], points[b], points[c]

@@ -10,7 +10,7 @@ Domain `fem` (`eng_toolkit/domains/fem/`): three tools, `fem_mesh`, `fem_static`
 | 2 | `mesh.check_before_meshing` | element count estimate and size limits, **before** any program starts |
 | 3 | `brep.write_brep`, then Gmsh | `gmsh part.brep -3 -order 2 -clmax <size> -format msh2 -nopopup -o part.msh` in `<job>/gmsh/`; no `.geo` is written, the only generated text is the size (`repr` of a validated float) |
 | 4 | `mesh.read_msh` | strict reader of the ASCII file: nodes and 10-node tetrahedra (Gmsh type 11); Gmsh's midside nodes 9 and 10 are swapped to CalculiX's order |
-| 5 | `mesh.check_and_measure` | quality, Jacobians, exact volume of the quadratic mesh; connected pieces; boundary facets with outward normals and curved areas |
+| 5 | `mesh.check_and_measure` | quality; positive Jacobians at every C3D10 integration point, volume integration point, corner and edge midpoint; exact volume of the quadratic mesh; connected pieces; boundary facets with outward normals and curved areas. These samples do not prove positivity everywhere |
 | 6 | `selectors` + `tools.static` | supports and loads parsed to numbers; faces chosen on the boundary facets; loads turned into consistent nodal forces |
 | 7 | `solver.free_rigid_motions` | rigid-body check before the solver |
 | 8 | `solver.build_deck`, CalculiX | `ccx -i job` in `<job>/calculix/` on the deck the toolkit wrote |
@@ -99,7 +99,10 @@ The fully clamped root is not a bug and not the textbook beam: beam theory lets 
 | Young's modulus | 1e-3 to 1e7 MPa, > 0 | `input.invalid` / `input.out_of_range` |
 | Poisson's ratio | -1 < nu < 0.5 (a warning from 0.45) | `input.invalid` |
 | Force, pressure, coordinates | 1e12 N, 1e7 MPa, 1e7 mm (the force *vector* too) | `input.out_of_range` |
-| Load as a stress on its face | at most 10 x E | `input.out_of_range` |
+| Combined load as a stress on each facet | at most 10 x E after summing the traction vectors of all overlapping force and pressure clauses | `input.out_of_range`, `/loads` |
+| Combined nodal load is exactly zero | refused before CalculiX; tiny nonzero loads use scaled norms | `input.invalid`, `/loads` |
+| Solver displacement magnitude and stress components / von Mises | 1e9 mm and 1e9 MPa; nodal and total reactions at most 1e24 N; checked before result artifacts | `input.out_of_range`, `/loads` |
+| Mesh/static output conversion | factor from mm or MPa between 1e-30 and 1e30; converted values at most 1e30; nonzero values must remain representable | `input.out_of_range`, `/output_unit`, `/output_length_unit` or `/output_stress_unit` |
 | Gmsh | 120 s, 4096 MB | `engine.timeout`, `engine.resource_limit` |
 | CalculiX | 240 s, 6144 MB, 150 MB of files | same |
 | Solids in the file | exactly one | `input.unsupported` |
@@ -111,7 +114,7 @@ Measured: 33482 elements (the bar at 1.13 mm) take 2.3 s to mesh and about 22 s 
 ## Security
 
 * **The caller cannot produce a Gmsh script.** There is no `.geo`; Gmsh gets a fixed argument list and a BREP the toolkit wrote. `Merge`, `Include`, `Exec`, `SystemCall` cannot occur. A test spies on `external.run` and asserts the argument list (`part.brep -3 -order 2 -clmax <float> ...`), that no `*.geo` exists in the job, and that a hostile file name (`bar & calc $(x).step`) reaches no program (the copy under `input/` is never an argument).
-* **The caller cannot produce a CalculiX deck.** Every line of `job.inp` is one of a closed set of keywords with constant names (`NALL`, `EALL`, `NSUP`, `MAT`) and integers or `%.12e` floats. `*INCLUDE` and `*INPUT` are never written. A test checks every line of a generated deck against the closed vocabulary, and that text planted in the STEP file (a product name `*INCLUDE, INPUT=evil.inp`) never reaches the deck.
+* **The caller cannot produce a CalculiX deck.** Every line of `job.inp` is one of a closed set of keywords with constant names (`NALL`, `EALL`, `NSUP`, `MAT`) and integers or finite decimal floats. Coordinates, loads and Young's modulus use `%.12e`. Poisson's ratio uses its shortest round-trip decimal if it fits CalculiX's 20-column field, otherwise `%.12e` for tiny ratios with long exponents. The serialized ratio must still lie strictly between -1 and 0.5. This preserves accepted ratios near either singular endpoint but does not establish solver accuracy for ill-conditioned materials. `*INCLUDE` and `*INPUT` are never written. A test checks every line of a generated deck against the closed vocabulary, and that text planted in the STEP file (a product name `*INCLUDE, INPUT=evil.inp`) never reaches the deck.
 * **Text from the selectors** is held to a character whitelist and parsed to numbers; the tests refuse `;`-chained commands, pipes, `&`, backticks, `$()`, quotes, braces, backslashes, newlines, NUL, and the Gmsh and CalculiX keywords.
 * Both programs run only through `eng_toolkit.external` (fixed argument list, job subdirectory as working directory, scrubbed environment, time/memory/output limits). The layer is not a sandbox (see its design note): a program that parses a file in C runs with the server's rights.
 * The user-supplied CAD file is parsed by OpenCASCADE in-process (the same loader as `geometry_measure`, with its size and read-directory rules via `JobHandle.input_file`).
@@ -137,7 +140,7 @@ Measured: 33482 elements (the bar at 1.13 mm) take 2.3 s to mesh and about 22 s 
 | `mesh_file`, `results_file` | | instead of `result_dir`: a `mesh.msh` and the `results.csv` of the same run. Without a manifest nothing is hashed against; the CSV's row count must be the node count and its node coordinates must equal the mesh's within `1e-6 x diagonal + 2e-8 x max|coordinate|`, or `fem.integrity_mismatch`. The second term is the `%.9g` rounding of `results.csv` (9 significant digits move a value by at most `5e-9` of it) times a safety factor of 4: a part 20 m from the origin is printed with errors up to 1e-4 mm while its diagonal is 25 mm. In `result_dir` mode the sha256 check has already passed and this comparison is a consistency guard only; it still refuses swapped node rows or another mesh's results (tested) |
 | `field` | `von_mises` | `von_mises`, `displacement` (magnitude), `ux` `uy` `uz`, `s_xx` `s_yy` `s_zz` `s_xy` `s_yz` `s_zx`, `principal_max`, `principal_min` (eigenvalues of the nodal tensor, computed here). A field whose columns the CSV lacks is `fem.field_not_available` (`/field`), naming those that exist |
 | `colormap` | `auto` | `sequential` for `von_mises` and `displacement`, `diverging` for the signed fields; either can be forced |
-| `range` | `auto` | `auto`: min..max over the surface nodes (diverging: symmetric about 0, so the neutral light grey #DDDDDD is zero). Or `lo, hi` with units of the field's dimension (`0 MPa, 250 MPa`, `-0.1 mm, 0.1 mm`; any pressure or length unit). Values outside take the end colours and are counted |
+| `range` | `auto` | `auto`: min..max over the surface nodes. Or `lo, hi` with units of the field's dimension (`0 MPa, 250 MPa`, `-0.1 mm, 0.1 mm`; any pressure or length unit). Every diverging range, including an explicit range, expands to `-max(abs(lo), abs(hi)) .. +max(abs(lo), abs(hi))`, so light grey #DDDDDD is zero. An explicit expansion is reported in the notes and warnings. Values outside the resulting range take the end colours and are counted |
 | `deformation_scale` | `0` | `0` undeformed; `auto` = factor making the largest displacement 5 % of the bounding-box diagonal of the mesh nodes (rounded to 6 digits, and that rounded factor is the one used); or a plain factor 0 to 1e4 |
 | `show_undeformed_edges` | true | when deformed, the undeformed feature edges as a grey line primitive |
 | `mesh_edges` | false | the surface's element edges (each curved edge as two segments through its midside node) as a line primitive, on the drawn shape |
@@ -154,7 +157,7 @@ Values: `triangle_count` (primary), `field_max`, `field_min` (over the surface n
 * **Normals:** the normal of the curved six-node facet at each of its nodes (from the derivatives of the quadratic shape functions), area-weighted over the facets of one patch, computed on the drawn (possibly deformed) positions.
 * **Values:** each vertex carries exactly the value of its node in `results.csv`, which for stresses is the nodal stress CalculiX writes to `.frd`: extrapolated from the integration points of each element and averaged between the elements sharing the node, six printed digits (see "Neither exact nor discretisation" above). `fem_view` does no further averaging. The GLB's maximum von Mises equals `fem_static`'s `max_von_mises` to the seven digits of float32 when the maximum lies on the surface (tested on the bar: 99.999 MPa); when the all-node maximum (or minimum) exceeds the surface's by more than one float32 step, a warning says it lies inside the part and gives the value and node. A tie with a surface node is not reported as interior, and `max_node`/`min_node` then name the surface node (`max_on_surface: true`).
 * **Colours:** `t = (value - low) / (high - low)` clamped to [0, 1]; the colour is the linear interpolation of a 65-point sRGB table at `t`; `COLOR_0` is that colour with the sRGB transfer undone (glTF vertex colours are linear), **float32 VEC3**, multiplied by a white base colour (metallic 0, roughness 0.8, single-sided). The viewer interpolates `COLOR_0` linearly over each sub-triangle.
-* **Deformation:** positions = node + factor x u (mm), then the axes conversion. The node extras, `view.json`, the legend (`Shape exaggerated: displacements drawn x<factor>`) and a warning say so whenever the factor is above 1.
+* **Deformation:** subtract the mesh bounding-box centre in float64, add factor x u (mm), then convert axes and store local float32 positions. The node translation restores the original coordinates. The node extras, `view.json`, the legend (`Shape exaggerated: displacements drawn x<factor>`) and a warning say so whenever the factor is above 1.
 * **Uniform fields:** an automatic sequential range narrower than 0.1 % of its largest magnitude is widened to that width about its middle (the bar's 99.999 MPa everywhere would otherwise spread the six-digit print noise over the whole map); it is reported as `widened`. An all-zero field gets 0..1 (diverging -1..1).
 
 ### Colour maps (own tables, computed from published formulas at import)
@@ -168,11 +171,11 @@ The table (sRGB, six decimals) is in the node extras (`colormap_table_srgb`), so
 
 ### GLB layout and extras
 
-One scene, one node (`name`), one mesh. Primitive 0 (TRIANGLES, material `field`): `POSITION`, `NORMAL`, `COLOR_0` (float32 linear RGB), `_FIELD` (float32 value in the legend's unit), `_NODE` (float32, the 1-based node number of `results.csv`; exact for these node counts), uint32 indices. `_FIELD` and `_NODE` are application-specific attributes (leading underscore, allowed by glTF 2.0; viewers ignore them). Optional LINES primitives `mesh_edges` (#202020) and `undeformed_outline` (#7A7A7A), positions only. Metres, +Y up, `(x, y, z) mm -> (x, z, -y) / 1000 m`, every buffer view on a 4-byte boundary, accessor min/max of every accessor, JSON padded with spaces, `allow_nan=False`, ASCII-escaped.
+One scene, one node (`name`), one mesh. Primitive 0 (TRIANGLES, material `field`): `POSITION`, `NORMAL`, `COLOR_0` (float32 linear RGB), `_FIELD` (float32 value in the legend's unit), `_NODE` (float32, the 1-based node number of `results.csv`; exact for these node counts), uint32 indices. `_FIELD` and `_NODE` are application-specific attributes (leading underscore, allowed by glTF 2.0; viewers ignore them). Optional LINES primitives `mesh_edges` (#202020) and `undeformed_outline` (#7A7A7A), positions only. All primitives use the same local origin at the model bounding-box centre. The glTF node `translation` stores that offset in metres; extras and `view.json` record `units.origin_mm` and `units.node_translation_m`. Apply the node transform before comparing positions with the source model. Accessor bounds are local. Metres, +Y up, `(x, y, z) mm -> (x, z, -y) / 1000 m`, every buffer view on a 4-byte boundary, accessor min/max of every accessor, JSON padded with spaces, `allow_nan=False`, ASCII-escaped.
 
 Node extras: `tool`, `tool_version`, `field`, `field_label`, `unit` (pint name), `unit_symbol`, `colormap`, `colormap_source`, `colormap_table_srgb`, `colormap_rule`, `range` {`mode`, `low`, `high`, `unit`, `unit_symbol`, `widened`, `clamped_below`, `clamped_above`, `clamp_rule`}, `legend` (11 samples: `value`, `color` hex, `srgb`, `linear_rgb`), `deformation` {`mode`, `factor`, `exaggerated`, `inverted`, `max_displacement_mm`, `bbox_diagonal_mm`, `drawn_max_displacement_mm`, `rule`}, `notes`, `units` (conversion), `attributes` (what each attribute holds), `source_sha256`, `fem_static_job_id`. Surface primitive extras: `kind`, `facets`, `sub_triangles_per_facet`, `feature_edges`, `meaning`. `view.json` holds the same plus statistics and counts.
 
-After writing, the GLB is parsed from its bytes and the triangle count, every position, every `_FIELD` and `_NODE`, the colour bounds and the line segment counts are compared with what was meant to be written (`fem.readback_mismatch` otherwise); `field_max`/`field_min`, the triangle count, the accessor bounds and the enclosed volume in the answer come from that read-back.
+Before writing, float32 triangle area vectors must agree with the original float64 vectors to relative 1e-4; collapsed or unrepresentable triangles are refused. After writing, the GLB is parsed from its bytes and the triangle count, every local position, the node translation, every `_FIELD` and `_NODE`, the colour bounds and the line segment counts are compared with what was meant to be written (`fem.readback_mismatch` otherwise). `field_max`/`field_min`, the triangle count, the accessor bounds and the enclosed volume in the answer come from that read-back. Volume uses a common nearby origin, `sum((a-o) dot ((b-o) cross (c-o))) / 6`, to avoid cancellation on translated models.
 
 `legend.svg`: a 340 x 470 hand-written SVG: title, field label and unit, a vertical bar filled by a `linearGradient` whose 65 stops are the table (SVG interpolates in sRGB, as the table does), 11 ticks with labels (enough digits to tell them apart), and the notes (clamped counts, exaggeration, widened range, surface min/max, "nodal values"). Elements `svg title rect text defs linearGradient stop line` only, no script, no `href`, the one reference is the internal `url(#ramp)`; all text escaped (`&`, `<`, `>`, quotes). Deterministic: the same inputs give the same bytes for all three files (tested).
 
@@ -219,6 +222,30 @@ No volume rendering, cut planes, iso-surfaces or interior views; no animation of
 | a | "blue-white-red", "white is zero" | | "blue-grey-red", light grey #DDDDDD is zero |
 | b | "never echoed" | overstated | states what is echoed (paths within the cap, short words up to 32 characters) |
 | extras | inside-out shapes; a factor on zero displacements | no warning; "Shape exaggerated x200" | `deformation.inverted` with a warning and a legend note; "Displacements are zero" |
+
+## Second independent review (`tests/test_fem_review2.py`)
+
+All twelve findings at `472d99c` were reproduced through `Client(gateway)` before
+the fixes. CAD and external-program fixtures isolate the reported arithmetic;
+mesh and solver readers, load assembly, result validation, artifact writing and
+the gateway remain real. These fixtures do not establish CalculiX accuracy for
+near-singular materials. The separate existing real-program tests cover ordinary
+bar, bending, pressure and curved-mesh cases.
+
+| Finding | Correct reference or refusal | Fix |
+|---|---|---|
+| 1 | 60-digit Decimal differentiation gives det J = -0.02182089431 at the reported C3D10 point | Test all four solver integration points, all volume quadrature points, corners and edge midpoints. Refuse at `/element_size` |
+| 2 | The two reported Poisson ratios must remain strictly between -1 and 0.5 in `*ELASTIC` | Preserve endpoint neighbours using shortest decimals within CalculiX's field width and validate the serialized ratio |
+| 3 | Two 6 MPa clauses on a 50 mm2 face give 600 N and nominal strain 12 for E = 1 MPa | Sum traction vectors per facet before checking the 10E limit; mixed force/pressure clauses obey the same rule |
+| 4 | Opposite 10 N clauses give zero nodal force; a single -1e-200 N clause remains nonzero | Refuse exact cancellation at `/loads`; use hypot norms and dimensionless moment arithmetic for nonzero loads |
+| 5 | The element-size limits precede h cubed | Refuse tiny or huge converted sizes at `/element_size` before estimating element count; error details stay finite |
+| 6 | 1000/6 mm3 cannot become a successful zero or infinity after conversion | Bound output factors and results; refuse underflow, overflow and absurd converted magnitudes at the output-unit pointer |
+| 7 | Uniaxial von Mises equals the absolute axial stress, even for 1e200 mathematically | Use a scaled norm; reject absurd solver components and derived values before CSV or published result artifacts |
+| 8 | Ordinary refusals must identify their input with a JSON pointer | Normalize shared unit/file errors at the FEM boundary and identify support/load/mesh failures |
+| 9 | T(0.01, 1000000) has ten distinct physical nodes and nonzero triangle areas | Store centred local positions with a node translation shared by surface and line layers; compare float32 and float64 triangle geometry |
+| 10 | The old GLB bytes enclose 0.15522042910257974 mm3 by Decimal arithmetic, not 35.7590332 | Integrate about a nearby common origin. The centred GLB now preserves 1/6 mm3 to float32 precision |
+| 11 | Light grey represents zero, blue negative and red positive | Expand explicit diverging ranges symmetrically, including -100..200 MPa to -200..200 MPa; update legend, metadata and warnings |
+| 12 | A mesh containing an unsupported volume element cannot represent the complete model | Both readers accept only C3D10 volumes and known point/line/surface types 1, 2, 3, 8, 9, 10, 15, 16. Reject every other type, including mixed tetrahedra and hexahedra |
 
 ## Found on the way (for other sessions)
 
