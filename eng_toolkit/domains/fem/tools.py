@@ -22,6 +22,7 @@ from eng_toolkit.contract import Artifact, QuantityOut, ToolResult
 from eng_toolkit.domains.fem import mesh as meshing
 from eng_toolkit.domains.fem import selectors as sel
 from eng_toolkit.domains.fem import solver
+from eng_toolkit.domains.fem import view as viewer
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.external_catalog import CCX, GMSH
 from eng_toolkit.licenses import install_hint
@@ -31,7 +32,8 @@ from eng_toolkit.workspace import sha256_file
 
 ENGINE_MESH = "eng_toolkit.fem.mesh"
 ENGINE_STATIC = "eng_toolkit.fem.static"
-TOOL_NAMES: tuple[str, ...] = ("mesh", "static")
+ENGINE_VIEW = "eng_toolkit.fem.view"
+TOOL_NAMES: tuple[str, ...] = ("mesh", "static", "view")
 MIN_YOUNG_MPA, MAX_YOUNG_MPA = 1e-3, 1e7
 MAX_POISSON = 0.5  # exclusive
 MIN_POISSON = -1.0  # exclusive
@@ -625,5 +627,86 @@ def static(
         standing_warnings=(
             "Linear static, small-displacement analysis of one elastic solid: no plasticity, contact, large displacement, buckling, dynamics or temperature. "
             "Peak stresses depend on the mesh and grow without bound at point loads, supports and sharp corners; compare two element sizes. Not a design verification.",
+        ),
+    )
+
+
+# --------------------------------------------------------------------------- fem_view
+
+VIEW_DESCRIPTION = (
+    "Colour-mapped GLB of a fem_static result for a 3D viewer: the mesh surface (each 6-node facet as 4 triangles) coloured by the "
+    "nodal field CalculiX wrote, optionally deformed. Give result_dir (the fem_static job directory; its manifest sha256s are "
+    "checked) or mesh_file + results_file. field: von_mises, displacement, ux uy uz, s_xx s_yy s_zz s_xy s_yz s_zx, principal_max, "
+    "principal_min. colormap auto (sequential for magnitudes, diverging blue-grey-red for signed fields, light grey = 0). GLB is metres, +Y up; "
+    "COLOR_0 linear RGB, _FIELD holds the values. Also writes legend.svg and view.json. Returns triangle_count, field_max, "
+    f"field_min, deformation_factor. Capped at {viewer.MAX_TRIANGLES:,} triangles. Only the surface is shown; nodal stresses are "
+    "extrapolated and averaged, and unbounded at point loads and sharp corners. No Gmsh/CalculiX run."
+)
+
+
+@server.tool(name="view", description=VIEW_DESCRIPTION)
+def view(
+    result_dir: Annotated[str, Field(description="Job directory of a fem_static run (holds manifest.json); or leave empty and give mesh_file + results_file")] = "",
+    mesh_file: Annotated[str, Field(description="Without result_dir: the mesh.msh a fem_static run wrote")] = "",
+    results_file: Annotated[str, Field(description="Without result_dir: the results.csv of the same fem_static run")] = "",
+    field: Annotated[str, Field(description="von_mises (default), displacement, ux, uy, uz, s_xx, s_yy, s_zz, s_xy, s_yz, s_zx, principal_max or principal_min")] = "von_mises",
+    colormap: Annotated[str, Field(description="'auto' (sequential for von_mises/displacement, diverging otherwise), 'sequential' or 'diverging'")] = "auto",
+    range: Annotated[str, Field(description="'auto' (surface min..max; diverging: symmetric about 0) or 'lo, hi' with units, e.g. '0 MPa, 250 MPa'")] = "auto",  # noqa: A002
+    deformation_scale: Annotated[str, Field(description="'0' undeformed, 'auto' (largest displacement = 5 % of the diagonal) or a factor up to 1e4, e.g. '200'")] = "0",
+    show_undeformed_edges: Annotated[bool, Field(description="When deformed, draw the undeformed feature edges as a grey line primitive")] = True,
+    mesh_edges: Annotated[bool, Field(description="Draw the element edges of the surface as a line primitive")] = False,
+    name: Annotated[str, Field(description="Node name in the GLB and title of the legend, 1 to 64 printable characters")] = "fem_view",
+    output_unit: Annotated[str, Field(description="Unit of the values and labels: a stress unit (default MPa) or a length unit (default mm)")] = "auto",
+    max_seconds: Annotated[int, Field(description="Wall-clock budget in seconds, 1 to 600; default 120")] = 120,
+) -> ToolResult:
+    deadline = viewer.Deadline(max(1, min(max_seconds, 600)) if isinstance(max_seconds, int) else 1)
+    inputs = {
+        "result_dir": result_dir,
+        "mesh_file": mesh_file,
+        "results_file": results_file,
+        "field": field,
+        "colormap": colormap,
+        "range": range,
+        "deformation_scale": deformation_scale,
+        "show_undeformed_edges": show_undeformed_edges,
+        "mesh_edges": mesh_edges,
+        "name": name,
+        "output_unit": output_unit,
+        "max_seconds": max_seconds,
+    }
+
+    def compute(job: JobHandle) -> Computed:
+        try:
+            return viewer.view(
+                job,
+                result_dir=result_dir,
+                mesh_file=mesh_file,
+                results_file=results_file,
+                field=field,
+                colormap=colormap,
+                value_range=range,
+                deformation_scale=deformation_scale,
+                show_undeformed_edges=show_undeformed_edges,
+                mesh_edges=mesh_edges,
+                name=name,
+                output_unit=output_unit,
+                max_seconds=max_seconds,
+                deadline=deadline,
+            )
+        except ToolFailure as exc:  # every refusal names its parameter as a JSON pointer
+            raise ToolFailure(exc.family, exc.message, {**exc.details, "param": viewer.pointer(exc.details, exc.family)}) from None
+        except (ArithmeticError, FloatingPointError, MemoryError) as exc:
+            raise ToolFailure("input.out_of_range", f"a number is outside the supported range ({type(exc).__name__})", {"param": "/result_dir"}) from None
+
+    return run_tool(
+        tool_name="fem_view",
+        engine=ENGINE_VIEW,
+        version=__version__,
+        inputs=inputs,
+        compute=compute,
+        engines=("numpy",),
+        standing_warnings=(
+            "The colours show the nodal values of a linear static result on the surface of the mesh only; they are not an engineering "
+            "approval. Peaks at point loads, supports and sharp corners are mesh artefacts; check two element sizes.",
         ),
     )
