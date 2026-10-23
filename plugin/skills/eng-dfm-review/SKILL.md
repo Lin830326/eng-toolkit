@@ -34,7 +34,7 @@ For each issue propose a concrete change with a number (e.g. "increase the inter
 
 ## 6. Optional follow-ups
 
-`drawing_make_views` can produce a dimensioned drawing sheet (PDF/DXF/PNG) of the part for the shop; `geometry_make_part` can build a modified candidate from a text spec when the user wants to compare alternatives (then re-run the same checks with the same limits).
+`geometry_view` with `color_by="dfm"` (same process, tool axis and limits) writes a GLB whose faces are coloured by the worst DFM finding (red error, orange warning, blue info) with face ids that match `geometry_measure`: give the user that file to look at in a 3D viewer; it discloses findings that name more faces than it can colour. `drawing_make_views` can produce a dimensioned drawing sheet (PDF/DXF/PNG) of the part for the shop; `geometry_make_part` can build a modified candidate from a text spec when the user wants to compare alternatives (then re-run the same checks with the same limits).
 
 ## 7. Report
 

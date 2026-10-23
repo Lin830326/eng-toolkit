@@ -5,7 +5,7 @@ description: Use when the user asks an engineering calculation, simulation or CA
 
 # eng-toolkit: how to use the engineering tools
 
-The `eng-toolkit` MCP server provides deterministic, unit-aware calculation tools (79 tools, tool names `mcp__eng-toolkit__<domain>_<tool>`). **Compute with the tools; never do the arithmetic yourself and never invent numbers.** If the server is not connected, say so and give the registration command from the `/eng-toolkit-setup` command; do not fall back to guessing.
+The `eng-toolkit` MCP server provides deterministic, unit-aware calculation tools (100 tools, tool names `mcp__eng-toolkit__<domain>_<tool>`). **Compute with the tools; never do the arithmetic yourself and never invent numbers.** If the server is not connected, say so and give the registration command from the `/eng-toolkit-setup` command; do not fall back to guessing.
 
 ## Rules that apply to every call
 
@@ -26,16 +26,21 @@ The `eng-toolkit` MCP server provides deterministic, unit-aware calculation tool
 - **machine**: `shaft` (static + fatigue + critical speed), `gear` (spur Lewis/Hertz), `weld` (fillet weld groups), `pressure_vessel` (thin/thick wall), `belt`, `key` (key and spline).
 - **fluids**: `pipe_network`, `pump_system`, `open_channel`, `compressible`, `surge` (water hammer), `external_flow` (drag, terminal velocity). **calc**: `pipe_pressure_drop`, `orifice_flow`, `pump_power`, `cylinder_force`, `cylinder_speed`, `accumulator_precharge`.
 - **thermal**: `conduction`, `convection`, `radiation`, `fin`, `exchanger`, `transient`.
+- **fatigue**: `sn` (S-N, Marin factors, mean-stress and notch corrections), `rainflow` (ASTM E1049 counting + Miner damage), `strain_life` (Coffin-Manson-Basquin, Neuber), `fracture` (stress intensity, critical crack size, Paris/Forman growth), `material` (true/engineering stress-strain, Ramberg-Osgood, Larson-Miller, typical properties; counts of cycles must be given as `cycle`/`count`, never as an angle).
+- **electric**: `transformer`, `induction_motor` (torque-speed), `pm_dc_motor` (DC, PMSM/BLDC dq, field weakening), `power_flow` (three-phase, symmetrical components, fault currents), `drive_sizing` (torque/inertia/duty), `converter` (buck/boost/buck-boost). `kVA` is not `kW`.
+- **optimize**: `minimize`, `linprog`, `root`, `fit` (nonlinear least squares with confidence intervals), `sensitivity` (GUM, Monte Carlo, Sobol), `doe` (designs and response surfaces). Formulas are passed as plain-number expressions (`x^2+sin(y)`, grammar in the tool description): variables carry no units inside an expression.
 - **control / dsp**: `control_{analyze,response,frequency,feedback,pid_tune,discretize}`; `dsp_{filter_design,filter_apply,spectrum,sampling,correlate,window}`.
 - **electronics**: `spice_{simulate,measure,check_netlist}` (ngspice), `digital_{synthesize,check,equivalent}` (Yosys), `pcb_{info,drc,erc,export}` (KiCad), `fem_{mesh,static}` (Gmsh + CalculiX). These need external programs; run `toolkit_doctor` to see what is installed.
-- **geometry / drawing**: `geometry_measure`, `geometry_check_dfm`, `geometry_make_part` (build a part from a text spec), `geometry_convert`; `drawing_make_views`, `drawing_read`, `drawing_convert`. Needs the `cad`/`drawing` extras.
+- **geometry / drawing**: `geometry_measure`, `geometry_check_dfm`, `geometry_make_part` (build a part from a text spec), `geometry_convert` (STEP/IGES/BREP to STEP/BREP/STL/GLB), `geometry_view` (coloured GLB: by face kind, by DFM findings, or highlighted faces, for a 3D viewer); `drawing_make_views`, `drawing_read`, `drawing_convert`. Needs the `cad`/`drawing` extras.
 - **metrology**: `fit_limits` (ISO 286 fits), `fit_search`, `stackup_1d`, `form_error`, `position_tolerance`, `check_scan`.
+- **plot**: `plot_xy` (lines/scatter/step/stem, log axes, second axis, bands, fill-to-zero), `plot_panels` (stacked panels sharing x: Bode, waveforms), `plot_bar` (bars, histograms). They read the CSV artifacts other tools write (`artifacts[].path`, e.g. `filter_response.csv`, `member_1_stations.csv`) or inline series and return an SVG (`data.svg_inline` when small, file `plot.svg`). Use `x_scale=log` for frequency axes and S-N life axes; give axis labels with units; show the chart to the user when they asked to see a curve or diagram.
 - **toolkit**: `toolkit_list_tools` (everything installed), `toolkit_doctor` (engine/external program health).
 
 ## Workflows
 
 - Structural strength / deflection / buckling / vibration of beams, frames, trusses, columns: use the **eng-structural-check** skill (`/eng-structural-check`).
 - Manufacturability of a STEP/IGES/BREP part for CNC milling or sheet metal: use the **eng-dfm-review** skill (`/eng-dfm-review`).
+- A curve, spectrum, diagram or histogram the user wants to SEE: call the tool that makes the table, then `plot_xy`/`plot_panels`/`plot_bar` on its CSV artifact.
 - Anything else: pick the domain above, read the tool description for the inputs, call it, and follow the rules above.
 
 ## Report format (use for any final answer with numbers)
