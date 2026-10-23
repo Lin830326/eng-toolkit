@@ -80,8 +80,10 @@ The caller's original file is never opened directly by the domain.
 Scalar roots use bisection on a bracket in a linear or logarithmic coordinate,
 with a relative bracket-width tolerance of 2e-11 and at most 160 iterations.
 An absent bracket is a refusal. Strain life brackets log reversals between
-log(1) and log(1e18). Crack growth uses adaptive Simpson after the substitution
-u=log(a), includes its Jacobian, and checks the requested tolerance. It has a
+log(1) and log(1e18). Growth critical-size roots instead use the requested life
+tolerance and the remaining crack interval, as described below. Crack growth
+uses adaptive Simpson after the substitution u=log(a/a0), includes its
+Jacobian, and checks the requested tolerance. It has a
 global 50000-function-evaluation cap and depth cap of 24. Resource caps also
 cover histogram cells and output stations.
 
@@ -233,9 +235,26 @@ Otherwise the automatic steel bending/axial estimates have method-specific range
   fit. It is a Neuber constant, not a Peterson a, so it is never substituted
   for the Peterson method.
 
+For torsion, `load_type="torsion"` selects Shigley's separate Neuber fit,
+sqrt(a_s)[sqrt(in)]=.190-.00251 Su+.0000135 Su^2-.0000000267 Su^3, with
+Su in ksi. The implementation converts tensile Su from MPa to ksi and squares
+the resulting constant before converting inches to meters. It uses the same
+conservative Su=345..1500 MPa range. Source: Shigley, chapter 6, torsional
+notch-sensitivity correlation, equation 6-35; equation 6-34 is the bending/axial
+fit. The load type selects the automatic correlation in both `estimate` and
+`notch` modes. A measured `notch_material_length` overrides either fit.
+Automatic Peterson torsion is not supplied; torsion with `notch_method="peterson"`
+requires a measured length and otherwise returns `input.missing` at
+`/notch_material_length`.
+
+For Su=600 MPa, r=.1 mm and Kt=3, the torsional fit gives q=.5274613644 and
+Kfs=2.054922729. With the default polished surface, kb=1 and a nominal shear
+amplitude of 100 MPa, the estimated life is about 236422.49 cycles. The prior
+bending/axial substitution gave q=.4560198438 and about 474345.98 cycles.
+
 The fatigue amplitude is multiplied by Kf, the mean by Kt. The elastic yield
 screen uses Kt(Sa+abs(Sm)), not Kf. Kt must lie in 1..100. Notch geometry
-charts and torsional notch-sensitivity fits are not included.
+charts are not included.
 
 ## Cycle counting: fatigue_rainflow
 
@@ -246,6 +265,10 @@ needed for cycle counting. `sample_scale` supplies physical units, for example
 `1 MPa` or `1 ksi`. `history_kind="force"` permits force counting with a scale
 such as `1 kN`, but refuses fatigue damage until the caller converts loads to
 stress. At least two nonconstant samples are required.
+
+Inline numeric overflow, nonzero underflow, NaN and Infinity return
+`input.out_of_range` at `/history`. Deliberate numeric-parser refusals retain
+their family; only malformed JSON is reported as `input.invalid`.
 
 Reversal extraction removes duplicate values and monotonic interior points.
 An optional directional hysteresis gate suppresses interior excursions smaller
@@ -505,6 +528,31 @@ instability occurs first. A finite limit receives `cycles_to_limit`; only an
 instability endpoint receives `cycles_to_failure`. The CSV has 2..101
 log-spaced crack stations and cumulative cycles.
 
+For growth, constant-Y critical sizes use a_c=(Kc/(Y sigma_max))^2/pi.
+Variable geometries use a shrinking bisection bracket in crack length, with
+at most 160 iterations. The endpoint error must be at most one eighth of
+`integration_tolerance` times the remaining interval from a0 to the lower
+root bound. A 64-ulp crack-length allowance guards against floating-point
+roundoff, including a computed zero residual. K increases over the supported
+geometry intervals, so dN/da decreases for both growth laws. Consequently,
+endpoint life error divided by life is bounded by endpoint length error
+divided by that remaining interval. This avoids accepting a small error
+relative to a_c when it is large relative to a_c-a0.
+
+If the root bracket or floating-point resolution cannot meet that budget,
+growth returns `numerical.no_convergence` at `/integration_tolerance`.
+For example, a0=1 mm, sigma_max=100 MPa, Kc=5.6049912166781786 MPa sqrt(m),
+C=1e-20 m/(MPa sqrt(m))^3 and tolerance=1e-10 are refused. A 70-digit
+closed-form calculation gives a_c=.0010000000001000001213 m and
+56790.5033 cycles; the remaining interval is too small for double precision
+to verify the requested relative life accuracy. The former result of
+33300.5133 cycles integrated to an inaccurate critical endpoint.
+
+Integration uses half the requested tolerance. Its coordinate endpoint is
+log1p((a_f-a0)/a0), avoiding subtraction of nearly equal logarithms. Only an
+endpoint obtained from the instability solve receives `cycles_to_failure`;
+an explicit limit below instability remains `specified_crack_limit`.
+
 Paris uses da/dN=C DeltaK^m. Forman divides that rate by
 (1-R)Kc-DeltaK and requires toughness. Geometry is recomputed at each
 integration evaluation. Threshold arrest at the initial crack returns no
@@ -525,7 +573,11 @@ Require .5<=m<=8 and explicit composite coefficient units:
 * Imperial Paris, m=3: `1e-8 inch/cycle/(ksi sqrt(inch))^3`.
 
 The numeric exponent in the coefficient units must match the chosen law and
-m. Internally C uses m per cycle (a count, factor one) with DeltaK in
+m. The target exponent retains full floating-point precision, and dimensions
+are compared as Pint dimensionality objects without display-format conversion.
+For m=3.123456789, Paris units raised to 3.123456789 are accepted; a rounded
+3.12346 is refused with `units.dimension_mismatch` at `/growth_c`. Forman
+uses m-1 with the same validation. Internally C uses m per cycle (a count, factor one) with DeltaK in
 MPa sqrt(m); converting to SI does not mistake a number calibrated in
 ksi sqrt(in) for the same number in MPa sqrt(m). The `/cycle` factor is optional
 and never converted as an angle: `1e-12 m/(MPa*m^0.5)^3`,
@@ -658,6 +710,14 @@ equivalent range, 7,766,344 Paris cycles), torsion anchors and shear Goodman
 133.11 MPa, the E739 fit, the 960 MPa single-edge peak, surface-section strip
 integration, Larson-Miller units, the rainflow slope limit, the gate reference,
 r_p=2 r_y and the Peterson range. Each numerical test states its arithmetic and tolerance.
+
+`tests/test_fatigue_review2.py` exercises the second review's findings through
+the in-process gateway. It checks the torsional Neuber constant and life with
+Decimal arithmetic, measured notch overrides, full-precision growth exponents,
+and rainflow error families. Critical-size regressions check both Paris and
+Forman against 70-digit antiderivatives, a Decimal edge-crack root with optional
+SciPy quadrature, and explicit refusals when the remaining interval cannot
+meet the requested accuracy.
 
 Optional SciPy comparisons use `pytest.importorskip` for fitted slopes,
 strain-life/notch roots and variable-geometry Paris/Forman integration.
