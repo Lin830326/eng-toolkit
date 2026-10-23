@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import heapq
+from fractions import Fraction
 from typing import Annotated
 import numpy as np
 from pydantic import Field
@@ -23,31 +24,107 @@ def _feasible(x, au, bu, ae, be, bounds):
 
 def _simplex(c, A, b, basis, budget, limit=20000):
     """Canonical tableau; Bland's entering and leaving indices prevent cycling."""
-    A, b = A.copy(), b.copy()
+    original, initial_rhs = A.copy(), b.copy()
+    rounding = 64*np.finfo(float).eps*max(1,len(basis))
     for _ in range(limit):
         budget.check()
+        # Rebuild from the supplied rows so accumulated pivot cancellation cannot
+        # turn an exact zero into a spurious limiting row.
+        base = original[:,basis]
+        try:
+            inverse = np.linalg.solve(base,np.eye(len(basis)))
+            A = np.linalg.solve(base,original)
+            b = np.linalg.solve(base,initial_rhs)
+            A += np.linalg.solve(base,original-base@A)
+            b += np.linalg.solve(base,initial_rhs-base@b)
+        except np.linalg.LinAlgError:
+            invalid("inputs", "simplex basis is numerically singular", "optimize.not_converged")
+        coefficient_error = np.abs(inverse)@(np.abs(original-base@A)
+                             + rounding*(np.abs(original)+np.abs(base)@np.abs(A)))
+        rhs_error = np.abs(inverse)@(np.abs(initial_rhs-base@b)
+                    + rounding*(np.abs(initial_rhs)+np.abs(base)@np.abs(b)))
+        b[(b<0)&(b>=-rhs_error)] = 0.
+        if np.any(b < 0):
+            invalid("inputs", "simplex lost primal feasibility", "optimize.not_converged")
+        A[:,basis] = np.eye(len(basis))
         reduced = c - c[basis] @ A
-        entering = np.flatnonzero(reduced < -1e-9)
+        error = (rounding*(np.abs(c)+np.abs(c[basis])@np.abs(A))
+                 + np.abs(c[basis])@coefficient_error)
+        reduced[basis] = 0.
+        entering = np.flatnonzero(reduced < -error)
         if not len(entering):
             return A, b, basis, None
         j = int(entering[0])
-        rows = np.flatnonzero(A[:, j] > 1e-10)
+        # Resolve positivity relative to the column's solve error, not an absolute
+        # pivot threshold. A small but accurately resolved entry still limits the ray.
+        rows = np.flatnonzero(A[:, j] > coefficient_error[:,j])
         if not len(rows):
             ray = np.zeros(len(c)); ray[j] = 1
             ray[basis] = -A[:, j]
+            ray[basis[np.abs(A[:,j])<=coefficient_error[:,j]]] = 0.
             return A, b, basis, ray
         ratios = b[rows] / A[rows, j]
         minimum = np.min(ratios)
         tied = rows[np.abs(ratios - minimum) <= 1e-10 * max(1., abs(minimum))]
         i = int(min(tied, key=lambda k: basis[k]))
-        pivot = A[i, j]
-        A[i] /= pivot; b[i] /= pivot
-        factors = A[:, j].copy(); factors[i] = 0
-        A -= factors[:, None] * A[i]; b -= factors * b[i]
         basis[i] = j
-        if np.min(b, initial=0) < -1e-7:
-            invalid("inputs", "simplex lost primal feasibility", "optimize.not_converged")
     invalid("inputs", "simplex pivot limit reached", "optimize.not_converged")
+
+
+def _independent_rows(matrix, budget):
+    """Select original equations supporting the retained basis after redundant rows drop."""
+    work = matrix.copy()
+    scales = np.max(np.abs(work),axis=0)
+    if np.any(scales == 0):
+        invalid("inputs", "unresolved basis after redundant-row removal", "optimize.not_converged")
+    work /= scales
+    rows = np.arange(len(work))
+    for j in range(work.shape[1]):
+        budget.check()
+        pivot = j+int(np.argmax(np.abs(work[j:,j])))
+        if abs(work[pivot,j]) <= 64*np.finfo(float).eps*max(1,len(work)):
+            invalid("inputs", "unresolved independent constraint rows", "optimize.not_converged")
+        work[[j,pivot]],rows[[j,pivot]] = work[[pivot,j]],rows[[pivot,j]]
+        work[j] /= work[j,j]
+        work[j+1:] -= work[j+1:,j,None]*work[j]
+    return rows[:work.shape[1]].tolist()
+
+
+def _exact_ray(standard, rows, basis, ray, transform, c, au, ae, bounds, budget):
+    """Reconstruct and verify a recession direction with exact rational arithmetic."""
+    entering = next(j for j in range(len(ray)) if j not in basis and ray[j] != 0)
+    system = [[Fraction(float(standard[i,j])) for j in basis]
+              + [-Fraction(float(standard[i,entering]))] for i in rows]
+    for j in range(len(basis)):
+        budget.check()
+        pivot = max(range(j,len(basis)),key=lambda i: abs(system[i][j]))
+        if not system[pivot][j]:
+            invalid("inputs", "unbounded ray basis is singular", "optimize.not_converged")
+        system[j],system[pivot] = system[pivot],system[j]
+        divisor = system[j][j]
+        system[j] = [v/divisor for v in system[j]]
+        for i in range(len(basis)):
+            budget.check()
+            if i != j and system[i][j]:
+                factor = system[i][j]
+                system[i] = [v-factor*w for v,w in zip(system[i],system[j])]
+    exact = [Fraction(0) for _ in ray]
+    exact[entering] = Fraction(1)
+    for j,row in zip(basis,system):
+        exact[j] = row[-1]
+    direction = [sum((Fraction(float(v))*exact[j] for j,v in enumerate(row) if v),Fraction(0))
+                 for row in transform]
+    def dot(row):
+        return sum((Fraction(float(v))*d for v,d in zip(row,direction)),Fraction(0))
+    slope = dot(c)
+    checked = (slope < 0 and all(dot(row) <= 0 for row in au) and all(dot(row) == 0 for row in ae)
+               and all((lo is None or d >= 0) and (hi is None or d <= 0)
+                       for d,(lo,hi) in zip(direction,bounds)))
+    if not checked:
+        invalid("inputs", "unbounded ray failed exact verification", "optimize.not_converged")
+    budget.check()
+    return {"ray": [float(d) for d in direction], "ray_exact": [str(d) for d in direction],
+            "objective_slope": float(slope)}
 
 
 def solve_lp(c, au, bu, ae, be, bounds, budget):
@@ -82,6 +159,7 @@ def solve_lp(c, au, bu, ae, be, bounds, budget):
     rhs = np.r_[ub, eb]
     signs = np.where(rhs < 0, -1., 1.)
     original *= signs[:, None]; rhs *= signs
+    unscaled_original = original.copy()
     scale = np.maximum(np.max(np.abs(original), axis=1, initial=0), 1)
     original /= scale[:, None]; rhs /= scale
     width = original.shape[1]
@@ -159,26 +237,32 @@ def solve_lp(c, au, bu, ae, be, bounds, budget):
             tab -= factors[:,None]*tab[i]; basis[i] = j
         i += 1
     tab = tab[:, :width]
-    tab, rhs, basis, ray = _simplex(costs, tab, rhs, basis, budget)
+    if len(rows) < m:
+        rows = _independent_rows(original[:,basis],budget)
+    tab, rhs, basis, ray = _simplex(costs, original[rows], initial_rhs[rows], basis, budget)
     z = np.zeros(width); z[basis] = rhs
     x = offset+T@z[:k]
     if not _feasible(x,au,bu,ae,be,bounds):
         invalid("inputs", "candidate failed original-coordinate feasibility check", "optimize.not_converged")
     if ray is not None:
-        direction = T@ray[:k]
-        checked = (c@direction < -1e-9 and np.max(au@direction, initial=0)<=1e-7
-                   and np.max(np.abs(ae@direction), initial=0)<=1e-7
-                   and all((lo is None or direction[i]>=-1e-7) and (hi is None or direction[i]<=1e-7) for i,(lo,hi) in enumerate(bounds)))
-        if not checked: invalid("inputs", "unbounded ray failed verification", "optimize.not_converged")
-        return {"status":"unbounded", "proof":{"point":x.tolist(), "ray":direction.tolist(), "objective_slope":float(c@direction)}}
+        proof = _exact_ray(unscaled_original,rows,basis,ray,T,c,au,ae,bounds,budget)
+        return {"status":"unbounded", "proof":{"point":x.tolist(), **proof}}
     dual = np.zeros(m)
     ranges = None
     if len(rows):
         base = original[rows][:,basis]
         multipliers = np.linalg.solve(base.T, costs[basis])
+        multipliers += np.linalg.solve(base.T,costs[basis]-base.T@multipliers)
         residual_cost = costs - multipliers @ original[rows]
-        if np.min(residual_cost, initial=0) < -1e-6:
-            invalid("inputs", "optimal basis failed dual feasibility check", "optimize.not_converged")
+        rounding = 64*np.finfo(float).eps*max(1,len(rows))
+        solve_error = (np.abs(costs[basis]-base.T@multipliers)
+                       + rounding*(np.abs(costs[basis])+np.abs(base.T)@np.abs(multipliers)))
+        dual_error = np.abs(np.linalg.solve(base.T,np.eye(len(rows))))@solve_error
+        cost_error = (rounding*(np.abs(costs)+np.abs(multipliers)@np.abs(original[rows]))
+                      + dual_error@np.abs(original[rows]))
+        if np.any(residual_cost < -cost_error):
+            invalid("inputs", "optimal basis failed dual feasibility check", "optimize.not_converged",
+                    reduced_costs=residual_cost, rounding_bounds=cost_error)
         dual[rows] = multipliers * signs[rows]/scale[rows]
         if len(rows) == m:
             inverse = np.linalg.solve(base, np.eye(m))

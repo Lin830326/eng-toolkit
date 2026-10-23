@@ -14,34 +14,43 @@ def jacobian(function, x, lo=None, hi=None):
     matrix = np.zeros((base.size, x.size))
     for j in range(x.size):
         step = np.cbrt(np.finfo(float).eps) * max(1., abs(x[j]))
+        step = min(step, (upper[j]-lower[j])/4)
         for _ in range(12):
             plus, minus = min(step, upper[j]-x[j]), min(step, x[j]-lower[j])
             fp = fm = None
             if plus > 0:
                 trial = x.copy()
                 trial[j] += plus
-                try:
-                    fp = np.atleast_1d(function(trial))
-                except TrialError:
-                    pass
+                if trial[j] == x[j]:
+                    plus = 0.
+                else:
+                    try:
+                        fp = np.atleast_1d(function(trial))
+                    except TrialError:
+                        pass
             if minus > 0:
                 trial = x.copy()
                 trial[j] -= minus
-                try:
-                    fm = np.atleast_1d(function(trial))
-                except TrialError:
-                    pass
+                if trial[j] == x[j]:
+                    minus = 0.
+                else:
+                    try:
+                        fm = np.atleast_1d(function(trial))
+                    except TrialError:
+                        pass
             if fp is not None and fm is not None:
                 # Unequal distances occur beside bounds.
-                matrix[:, j] = (minus**2*(fp-base)+plus**2*(base-fm))/(plus*minus*(plus+minus))
+                matrix[:, j] = ((fp-base)/plus * (minus/(plus+minus))
+                                + (base-fm)/minus * (plus/(plus+minus)))
                 if plus == minus:
                     half = plus/2
                     right,left = x.copy(),x.copy()
                     right[j] += half
                     left[j] -= half
                     try:
-                        finer = (np.atleast_1d(function(right))-np.atleast_1d(function(left)))/(2*half)
-                        matrix[:,j] = (4*finer-matrix[:,j])/3
+                        if right[j] > x[j] and left[j] < x[j]:
+                            finer = (np.atleast_1d(function(right))-np.atleast_1d(function(left)))/(2*half)
+                            matrix[:,j] = (4*finer-matrix[:,j])/3
                     except TrialError:
                         pass
                 break
@@ -68,6 +77,8 @@ def jacobian(function, x, lo=None, hi=None):
                         pass
                 break
             if plus == minus == 0:
+                if lower[j] != upper[j]:
+                    raise TrialError("finite-difference neighborhood is below coordinate resolution")
                 break
             step *= .25
         else:

@@ -78,6 +78,50 @@ def _steps(x, u):
     return np.where(u > 0, np.minimum(h, np.maximum(.1 * u, 1e-6 * typical)), h), typical
 
 
+def _hessian(f, x, h, typical, gradient, center):
+    """Resolve each second derivative separately from the first-derivative stencil."""
+    n = len(x)
+    matrix, errors = np.zeros((n,n)), np.zeros((n,n))
+    pairs = [(i,i) for i in range(n)]+[(i,j) for i in range(n) for j in range(i)]
+    for i,j in pairs:
+        multiplier = 1.
+        for _ in range(5):
+            estimates, magnitudes = [], []
+            try:
+                for fraction in (1.,.5,.25):
+                    a,b = np.zeros(n),np.zeros(n)
+                    a[i],b[j] = h[i]*multiplier*fraction,h[j]*multiplier*fraction
+                    if i == j:
+                        right,left = f(x+a),f(x-a)
+                        value = ((right-center)+(left-center))/a[i]/a[i]
+                        magnitude = max(abs(right),abs(left),abs(center))
+                    else:
+                        values = [f(x+a+b),f(x+a-b),f(x-a+b),f(x-a-b)]
+                        value = ((values[0]-values[1])-(values[2]-values[3]))/(4*a[i])/b[j]
+                        magnitude = max(abs(v) for v in values)
+                    estimates.append(value)
+                    magnitudes.append(magnitude)
+            except TrialError:
+                multiplier /= 2
+                continue
+            coarse = (4*estimates[1]-estimates[0])/3
+            fine = (4*estimates[2]-estimates[1])/3
+            rounding = 32*np.finfo(float).eps*max(magnitudes)/(h[i]*multiplier/4)/(h[j]*multiplier/4)
+            error = abs(fine-coarse)+rounding
+            # Output offsets are absent from this scale: they cannot justify a zero Hessian.
+            unit = typical[i]*typical[j]
+            scale = max(abs(fine)*unit, float(np.max(np.abs(gradient)*typical)),
+                        float(np.max(np.abs(matrix)*np.outer(typical,typical))))
+            if error*unit <= DERIVATIVE_TOLERANCE*scale:
+                matrix[i,j] = matrix[j,i] = fine
+                errors[i,j] = errors[j,i] = error
+                break
+            multiplier *= 2 if rounding >= abs(fine-coarse) else .5
+        else:
+            raise TrialError(f"second derivative ({i},{j}) not resolved: truncation or rounding exceeds tolerance", f"nominal/{i}")
+    return matrix, errors
+
+
 def _derivatives(f, x, u, second_order):
     """Central differences at h, h/2, h/4 with two Richardson levels per variable.
 
@@ -120,17 +164,11 @@ def _derivatives(f, x, u, second_order):
         checks.append({"step": step, "coarse": r1, "fine": r2, "richardson": r2,
                        "absolute_step_difference": abs(r2 - r1), "error_estimate": error,
                        "relative_error_estimate": error / scale if scale else 0., "stable": True})
-        if second_order:
-            s1 = (values[1.] - 2 * center + values[-1.]) / step**2
-            s2 = (values[.5] - 2 * center + values[-.5]) / (step / 2)**2
-            hessian[i, i] = (4 * s2 - s1) / 3
         h[i] = step
     if second_order:
+        hessian, errors = _hessian(f,x,h,typical,gradient,center)
         for i in range(n):
-            for j in range(i):
-                a, b = np.zeros(n), np.zeros(n)
-                a[i], b[j] = h[i], h[j]
-                hessian[i, j] = hessian[j, i] = (f(x+a+b) - f(x+a-b) - f(x-a+b) + f(x-a-b)) / (4*h[i]*h[j])
+            checks[i]["hessian_error_estimates"] = errors[i].tolist()
     return center, gradient, hessian, checks
 
 
