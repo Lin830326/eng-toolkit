@@ -490,7 +490,7 @@ HOSTILE = [
     ({"color_by": "dfm", "limits": '{"min_wall": "NaN mm"}'}, None, "/limits/min_wall"),
     ({"color_by": "dfm", "limits": '{"min_wall": "2 kg"}'}, None, "/limits/min_wall"),
     ({"color_by": "dfm", "limits": '{"max_hole_depth_ratio": 1e308}'}, "input.out_of_range", "/limits/max_hole_depth_ratio"),
-    ({"color_by": "dfm", "limits": '{"bogus": 1}'}, "input.invalid", "/limits"),
+    ({"color_by": "dfm", "limits": '{"bogus": 1}'}, "input.invalid", "/limits/bogus"),  # an unknown key is named by its own pointer
     ({"color_by": "dfm", "limits": "not json"}, "input.invalid", "/limits"),
     ({"color_by": "texture"}, "input.invalid", "/color_by"),
     ({"color_by": "dfm", "process": "turning"}, "geometry.unsupported_process", "/process"),

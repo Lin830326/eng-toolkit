@@ -491,4 +491,4 @@ def test_a_model_over_the_face_limit_is_refused(models, monkeypatch):
 
     monkeypatch.setattr(dfm, "MAX_FACES", 5)
     r = failed(run(models["wall"]), "input.too_large")
-    assert r.error.details == {"faces": 11, "limit": 5}
+    assert r.error.details == {"faces": 11, "limit": 5, "param": "/model_path"}  # every refusal now names its JSON pointer

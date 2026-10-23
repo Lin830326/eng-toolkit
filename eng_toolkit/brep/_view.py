@@ -61,6 +61,33 @@ class Closure:
     open_shells: int  # shells of solids with at least one free edge
     free_edges: int  # edges of a solid's shell used by only one face of that shell (seams and degenerate edges excluded)
     faces_outside_solids: int  # faces of the shape that belong to no solid (loose faces, free shells)
+    loose_face_ids: tuple[int, ...] = ()  # F<n> (inventory numbering) of the faces that belong to no solid, ascending
+
+    @property
+    def closed(self) -> bool:
+        """At least one solid, every shell of every solid closed, and no face outside the solids."""
+        return self.solids > 0 and self.open_shells == 0 and self.faces_outside_solids == 0
+
+    def problems(self) -> list[str]:
+        """What keeps the shape from being closed solids only, in words (empty when :attr:`closed`, or with no solid)."""
+        found = []
+        if self.open_shells:
+            found.append(f"{self.open_shells} of {self.shells} shells of its solids are open ({self.free_edges} free edges)")
+        if self.solids and self.faces_outside_solids:
+            found.append(f"{self.faces_outside_solids} faces lie outside any solid (loose faces or shells)")
+        return found
+
+    def summary(self, listed: int | None = None) -> dict[str, object]:
+        """The closure as plain data for a tool result; ``loose_face_ids`` holds the first ``listed`` ids (all if None)."""
+        return {
+            "closed_solids_only": self.closed,
+            "solids": self.solids,
+            "shells": self.shells,
+            "open_shells": self.open_shells,
+            "free_edges": self.free_edges,
+            "faces_outside_solids": self.faces_outside_solids,
+            "loose_face_ids": list(self.loose_face_ids if listed is None else self.loose_face_ids[: max(0, listed)]),
+        }
 
 
 def closure(solid: Solid) -> Closure:
@@ -68,7 +95,9 @@ def closure(solid: Solid) -> Closure:
 
     A free edge is an edge that only one face of its shell uses; a seam (used twice by the same periodic face) and a
     degenerate edge (a sphere's pole) are not free.  ``mass_properties`` alone accepts a solid made of an open shell (it
-    still integrates a volume) and a compound of a solid with loose faces beside it; this check does not.
+    still integrates a volume) and a compound of a solid with loose faces beside it; this check does not.  This is the
+    one closure check of the package: ``geometry_view`` and ``geometry_check_dfm`` refuse what it finds, ``geometry_measure``
+    reports it.  ``loose_face_ids`` numbers faces as :func:`eng_toolkit.brep.inventory` does.
     """
     _occ.load()
     from OCP.BRep import BRep_Tool
@@ -105,12 +134,21 @@ def closure(solid: Solid) -> Closure:
             open_shells += 1 if free else 0
             shell_explorer.Next()
         solid_explorer.Next()
+    loose: list[int] = []
+    face_explorer = TopExp_Explorer(shape, TopAbs_FACE)  # the inventory's order, so the ids are its F<n>
+    face_id = 0
+    while face_explorer.More():
+        face_id += 1
+        if not in_solids.Contains(face_explorer.Current()):
+            loose.append(face_id)
+        face_explorer.Next()
     return Closure(
         solids=solids,
         shells=shells,
         open_shells=open_shells,
         free_edges=free_edges,
         faces_outside_solids=int(every_face.Extent() - in_solids.Extent()),
+        loose_face_ids=tuple(loose),
     )
 
 

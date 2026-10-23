@@ -44,7 +44,8 @@ def assert_timeout(result, limit, phase=None):
     assert result.value is None and result.values == {}
     assert result.error.family == "geometry.time_budget_exceeded"
     details = result.error.details
-    assert set(details) == {"phase", "elapsed_s", "max_seconds"}
+    assert set(details) == {"phase", "elapsed_s", "max_seconds", "param"}
+    assert details["param"] == "/max_seconds"  # every geometry refusal names its JSON pointer (before: no param)
     assert details["phase"] in PHASES
     if phase is not None:
         assert details["phase"] == phase
@@ -66,7 +67,7 @@ def test_budget_out_of_range(seconds):
     assert not result.ok
     assert result.error.family == "input.out_of_range"
     assert result.error.message == f"max_seconds: must be between 1 and 600, got {seconds}"
-    assert result.error.details == {"param": "max_seconds"}
+    assert result.error.details == {"param": "/max_seconds"}  # a JSON pointer, as every geometry refusal names its parameter
 
 
 @pytest.mark.parametrize("process", ["cnc_milling", "sheet_metal"])

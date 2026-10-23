@@ -139,8 +139,27 @@ def _point_mm(raw: grammar.PointText, index: int) -> brep.PointRef:
         try:
             coordinates.append(float(parse_quantity(text, name=f"queries point {name}", dimension="length").to("millimeter").magnitude))
         except UnitsError as exc:
-            raise UnitsError(exc.family, f"q{index + 1}: {exc.message}", {**exc.details, "query_index": index}) from exc
+            raise UnitsError(exc.family, f"q{index + 1}: {exc.message}", {**exc.details, "param": "/queries", "query_index": index}) from exc
     return brep.PointRef((coordinates[0], coordinates[1], coordinates[2]))
+
+
+def _with_pointers(compute, default):
+    """``compute`` with every refusal's ``details.param`` turned into a JSON pointer (``max_seconds`` -> ``/max_seconds``,
+    ``limits.min_wall`` -> ``/limits/min_wall``); a refusal that names no parameter points at ``default(details)``, the
+    input it is about.  The rule of :func:`view.pointer`, shared by every geometry tool."""
+
+    def run(job: JobHandle) -> Computed:
+        try:
+            return compute(job)
+        except ToolFailure as exc:
+            param = viewer.pointer(exc.details, exc.family, default=default(exc.details))
+            raise ToolFailure(exc.family, exc.message, {**exc.details, "param": param}) from None
+
+    return run
+
+
+def _measure_default(details: dict[str, Any]) -> str:
+    return "/queries" if "query_index" in details else "/model_path"
 
 
 def _entity(ref: grammar.Ref, index: int) -> brep.Entity:
@@ -197,7 +216,8 @@ def _area_mm2(entity: brep.Entity, inv: brep.Inventory) -> float:
         "data.faces), H<n> (hole from data.holes) or P(10 mm, 0 mm, 5 mm) (a point, units required); axis is one of "
         "+x -x +y -y +z -z. Results q1, q2, ... follow the order of the queries. Face and hole ids belong to one "
         "file: call once without queries to read the inventory, then ask. A file without a closed solid (a "
-        "shell, loose faces) has no volume: surface_area becomes the primary value. "
+        "shell, loose faces, or a solid whose shell is open) has no volume: surface_area becomes the primary value. "
+        "Loose faces beside closed solids are left out of volume and mass, listed in data.closure, and warned about. "
         f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')}). Mesh files (.stl) are not supported yet."
     ),
 )
@@ -257,7 +277,13 @@ def measure(
         solid = brep.read_solid(model_file, param="model_path")
         if solid.faces == 0:
             raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
-        props = brep.mass_properties(solid)
+        closed = brep.closure(solid)
+        if closed.open_shells:  # an open shell encloses nothing: the volume OpenCASCADE integrates for it means nothing
+            props = brep.mass_properties(solid, volume="none")
+        elif closed.solids and closed.faces_outside_solids:  # closed solids beside loose faces: the volume of the solids alone
+            props = brep.mass_properties(solid, volume="solids")
+        else:
+            props = brep.mass_properties(solid)
         inv = brep.inventory(solid)
         file_hash = job.input_files[-1].sha256
 
@@ -277,17 +303,32 @@ def measure(
             primary = "volume"
         else:
             primary = "surface_area"
-            warnings.append(
-                f"The file holds no closed solid with positive volume (solids found: {solid.solids}), so volume and "
-                "mass are not reported and surface_area is the primary value"
-                + (
-                    "; IGES stores surfaces unless the exporter wrote a solid"
-                    if model_file.suffix.lower() in (".iges", ".igs")
-                    else ""
+            if closed.open_shells:
+                warnings.append(
+                    f"The file's solids are not closed: {closed.open_shells} of {closed.shells} shells are open ({closed.free_edges} "
+                    "free edges, edges used by only one face of their shell), and an open shell encloses no volume, so volume and "
+                    "mass are not reported and surface_area is the primary value"
                 )
-            )
+            else:
+                warnings.append(
+                    f"The file holds no closed solid with positive volume (solids found: {solid.solids}), so volume and "
+                    "mass are not reported and surface_area is the primary value"
+                    + (
+                        "; IGES stores surfaces unless the exporter wrote a solid"
+                        if model_file.suffix.lower() in (".iges", ".igs")
+                        else ""
+                    )
+                )
             if density_kg_m3 is not None:
                 warnings.append("density was given but mass needs a volume, so no mass is reported")
+        loose_ids = [f"F{i}" for i in closed.loose_face_ids]
+        if closed.solids and loose_ids:
+            warnings.append(
+                f"{len(loose_ids)} face(s) lie outside every solid (loose faces or free shells: {', '.join(loose_ids[:20])}"
+                + (" ..." if len(loose_ids) > 20 else "")
+                + "; data.closure.loose_face_ids): they count in surface_area, the size and the bounding box"
+                + (", not in volume or mass, which are those of the solids alone" if props.volume_mm3 is not None else "")
+            )
         values["surface_area"] = area(props.area_mm2)
         for name, extent in zip(("size_x", "size_y", "size_z"), size):
             values[name] = length(extent)
@@ -357,6 +398,7 @@ def measure(
                 "holes": [_hole_dict(h) for h in inv.holes],
                 "edges": inv.edges,
                 "vertices": inv.vertices,
+                "closure": closed.summary(),
             },
         )
         data: dict[str, Any] = {
@@ -372,6 +414,7 @@ def measure(
             "bbox_min_mm": _list(props.bbox_min_mm),
             "bbox_max_mm": _list(props.bbox_max_mm),
             "step_roots": {"in_file": solid.roots_in_file, "transferred": solid.roots_transferred},
+            "closure": closed.summary(inventory_limit),  # loose_face_ids: ids as in data.faces
             "queries": results,
             "face_ids_valid_for": file_hash,
             "conventions": CONVENTIONS,
@@ -384,7 +427,7 @@ def measure(
         engine=ENGINE_MEASURE,
         version=__version__,
         inputs=inputs,
-        compute=compute,
+        compute=_with_pointers(compute, _measure_default),
         engines=("cadquery-ocp-novtk", "numpy"),
         standing_warnings=(
             "Measures are exact B-rep properties of the file as read, not of a tessellation. Units are millimetres "
@@ -444,7 +487,9 @@ CHECK_DFM_DESCRIPTION = (
     "lists the checks that were NOT performed. 'limits' is an optional JSON object that overrides the defaults, e.g. "
     '{"min_wall": "1 mm", "tool_radius": "2 mm"} for cnc_milling (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["cnc_milling"]) + "), or "
     '{"min_bend_radius_ratio": 1.5} for sheet_metal (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["sheet_metal"]) + "). "
-    "The defaults are the toolkit's own rules of thumb, not a standard. A file without a closed solid is refused. "
+    "The defaults are the toolkit's own rules of thumb, not a standard; a bad limit is refused at its own key "
+    "(details.param '/limits/<key>'). A file that is not made of closed solids only (a shell, a solid whose shell is open, "
+    "loose faces beside a solid) is refused (geometry.not_a_solid). "
     "max_seconds is a wall-clock budget (default 120, 1 to 600 seconds). On expiry, returns "
     "geometry.time_budget_exceeded at the next check. An OpenCASCADE call already running cannot be interrupted. "
     f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')})."
@@ -519,14 +564,9 @@ def check_dfm(
         file_hash = job.input_files[-1].sha256
         if solid.faces == 0:
             raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
-        if solid.solids == 0 or brep.mass_properties(solid).volume_mm3 is None:
-            raise ToolFailure(
-                "geometry.not_a_solid",
-                f"model_path holds {solid.faces} faces but no closed solid with positive volume (solids found: {solid.solids}); "
-                "manufacturability checks need material between faces, so a shell or loose surfaces are refused. "
-                "Export the part as a solid",
-                {"solids": solid.solids, "faces": solid.faces},
-            )
+        volume_mm3 = brep.mass_properties(solid).volume_mm3 if solid.solids else None
+        dfm.require_closed_solids(solid, volume_mm3, purpose="manufacturability checks need material between faces")
+        deadline("read")
         if solid.faces > dfm.MAX_FACES:
             raise ToolFailure(
                 "input.too_large",
@@ -635,7 +675,7 @@ def check_dfm(
         engine=ENGINE_CHECK_DFM,
         version=__version__,
         inputs=inputs,
-        compute=compute,
+        compute=_with_pointers(compute, lambda details: "/model_path"),
         engines=("cadquery-ocp-novtk", "numpy"),
         standing_warnings=(
             "Manufacturability findings are rule-of-thumb checks on the geometry alone, with limits chosen by this toolkit or "
@@ -828,7 +868,8 @@ CONVERT_DESCRIPTION = (
     "input converts to 'stl' or 'glb' only: a mesh is not a solid and is never turned into STEP or BREP. The converted file is an "
     "artifact with its sha256; the input is never modified. Mesh outputs tessellate the exact surfaces to triangles within "
     "mesh_deflection. Returns volume_in, volume_out and volume_relative_change (read back from the written file; no volume for a "
-    "shell or an open mesh, then surface_area_out is the primary value), triangle_count for mesh outputs, and data.losses: "
+    "shell, a solid whose shell is open, loose faces beside solids, or an open mesh: then surface_area_out is the primary value), "
+    "triangle_count for mesh outputs, and data.losses: "
     "every loss in plain words (exact surfaces become triangles, units converted, GLB axes, names/colours/assembly dropped, "
     f"float32 precision). Needs the optional cad engine for STEP/IGES/BREP input or output ({install_hint('cadquery-ocp-novtk')}); "
     "STL to STL or GLB needs no engine."
@@ -852,8 +893,11 @@ def convert(
         engine=ENGINE_CONVERT,
         version=__version__,
         inputs=inputs,
-        compute=lambda job: conversion.convert(
-            job, input_path=input_path, output_format=output_format, mesh_deflection=mesh_deflection, name=name
+        compute=_with_pointers(
+            lambda job: conversion.convert(
+                job, input_path=input_path, output_format=output_format, mesh_deflection=mesh_deflection, name=name
+            ),
+            lambda details: "/input_path",
         ),
         engines=("cadquery-ocp-novtk", "numpy"),
         standing_warnings=(

@@ -371,7 +371,7 @@ def test_a_density_must_be_positive(unread):
 
 def test_a_missing_file(tmp_path):
     r = failed(run(tmp_path / "nope.step"), "input.file_not_found")
-    assert r.error.details["param"] == "model_path"
+    assert r.error.details["param"] == "/model_path"  # JSON pointer (was the bare name)
 
 
 def test_an_stl_file_says_mesh_files_come_later(tmp_path):
@@ -452,7 +452,7 @@ def test_a_bad_axis_is_input_invalid(unread):
 @pytest.mark.parametrize("limit", [-1, 501])
 def test_inventory_limit_out_of_range(unread, limit):
     r = failed(run(unread, inventory_limit=limit), "input.invalid")
-    assert r.error.details["param"] == "inventory_limit"
+    assert r.error.details["param"] == "/inventory_limit"
 
 
 def test_output_unit_must_be_a_length(unread):

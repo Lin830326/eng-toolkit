@@ -37,6 +37,7 @@ MAX_TRIANGLES = 2_000_000  # an STL read as input (pure NumPy, about 100 bytes p
 MAX_TESSELLATION_TRIANGLES = 600_000  # a B-rep tessellated by OpenCASCADE, which holds about 6.6 kB per triangle while meshing
 MAX_SIZE_PER_DEFLECTION = 5.0e6  # bounding-box diagonal over deflection: guards the time of the tessellation
 READBACK_TOLERANCE = 1e-6
+MAX_LOOSE_FACES_LISTED = 200  # loose face ids in data.input.closure
 FLOAT32_RELATIVE = 2.0**-24  # half a unit in the last place of a float32 mantissa
 MM3 = "millimeter ** 3"
 MM2 = "millimeter ** 2"
@@ -361,7 +362,11 @@ def convert(
                 f"{solid.roots_transferred} transferred; OpenCASCADE drops a face whose geometry it cannot convert, as it does for absurd coordinates)",
                 path=original.path,
             )
-        props = brep.mass_properties(solid)
+        closed = brep.closure(solid)
+        # a solid with an open shell, or loose faces beside the solids: the whole file is converted, but OpenCASCADE's volume
+        # integral of it means nothing (an open box "has" 80000 mm3, a loose face adds its share), so no volume is claimed
+        not_closed = bool(closed.solids) and not closed.closed
+        props = brep.mass_properties(solid, volume="none" if not_closed else "shape")
         _bounds_check(props)
         exact_volume = props.volume_mm3
         area_in = props.area_mm2
@@ -373,8 +378,25 @@ def convert(
             "solids": solid.solids,
             "faces": solid.faces,
             "step_roots": {"in_file": solid.roots_in_file, "transferred": solid.roots_transferred},
+            "closure": closed.summary(MAX_LOOSE_FACES_LISTED),
         }
-        if exact_volume is None:
+        if not_closed:
+            what = " and ".join(closed.problems())
+            loose = [f"F{i}" for i in closed.loose_face_ids[:20]] + (["..."] if len(closed.loose_face_ids) > 20 else [])
+            warnings.append(
+                f"The file is not made of closed solids only: {what}"
+                + (f" ({', '.join(loose)}, numbered as geometry_measure numbers faces)" if loose else "")
+                + "; it is converted as it is, but no volume is claimed: volume_in, volume_out and volume_relative_change are not "
+                "reported and surface_area_out is the primary value"
+            )
+            losses.append(
+                {
+                    "kind": "no_volume",
+                    "detail": f"the input is not closed solids only ({what}); the output holds the same faces, and no volume was "
+                    "computed or verified for either file (the output is read back and its area reported, nothing more)",
+                }
+            )
+        elif exact_volume is None:
             warnings.append(
                 f"The file holds no closed solid with positive volume (solids found: {solid.solids}); it is converted as "
                 "surfaces, so no volume is reported and surface_area is the primary value. "
@@ -441,7 +463,7 @@ def convert(
         out_has_volume = data["output"]["closed"]
     else:
         assert solid is not None
-        artifact, volume_out, area_out = _brep_output(job, solid, fmt=fmt, stem=stem, exact_volume=exact_volume, data=data)
+        artifact, volume_out, area_out = _brep_output(job, solid, fmt=fmt, stem=stem, exact_volume=exact_volume, data=data, warnings=warnings)
         out_has_volume = exact_volume is not None
 
     values["surface_area_out"] = _q(area_out, MM2)
@@ -460,7 +482,7 @@ def convert(
 
 
 def _brep_output(
-    job: JobHandle, solid: brep.Solid, *, fmt: str, stem: str, exact_volume: float | None, data: dict[str, Any]
+    job: JobHandle, solid: brep.Solid, *, fmt: str, stem: str, exact_volume: float | None, data: dict[str, Any], warnings: list[str]
 ) -> tuple[Any, float, float]:
     import tempfile
 
@@ -484,6 +506,13 @@ def _brep_output(
                 f"{solid.solids} solids with {exact_volume:.9g} mm^3",
                 {"volume_in_mm3": exact_volume, "volume_read_mm3": volume_out, "solids_read": read_back.solids},
             )
+    elif read_back.solids != solid.solids or read_back.faces != solid.faces:
+        warnings.append(
+            f"The {fmt.upper()} file reads back as {read_back.solids} solid(s) and {read_back.faces} faces (the input: {solid.solids} and "
+            f"{solid.faces})"
+            + (": OpenCASCADE writes a solid whose shell is open as a shell in STEP" if fmt == "step" and read_back.solids < solid.solids else "")
+            + "; no volume was compared, since the input has none"
+        )
     data["output"] = {
         "kind": "b-rep",
         "solids": read_back.solids,

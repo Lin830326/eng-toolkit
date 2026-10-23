@@ -20,7 +20,7 @@ The tool takes four string parameters: `input_path`, `output_format`, `mesh_defl
 ## Reading and writing rules
 
 * The input goes through `JobHandle.input_file` (opened once, hashed, copied into the job directory; 100 MB cap). The output is written with `job.write_bytes` into the job directory `ws/<job>/`, which is new for every call, so the input can never be overwritten even when output and input have the same stem and format (tested).
-* Every number that describes a mesh output (`volume_out`, `surface_area_out`, `triangle_count`, the GLB accessor min/max) is **read back from the bytes of the file that is returned**, with the tool's own STL and GLB parsers. A B-rep output is read back with `read_solid` and its volume must match within 1e-6 or the call fails with `geometry.readback_mismatch`, as `geometry_make_part` does.
+* Every number that describes a mesh output (`volume_out`, `surface_area_out`, `triangle_count`, the GLB accessor min/max) is **read back from the bytes of the file that is returned**, with the tool's own STL and GLB parsers. A B-rep output is read back with `read_solid` and, when the input has a volume, its volume must match within 1e-6 or the call fails with `geometry.readback_mismatch`, as `geometry_make_part` does (an input without a volume, below, has nothing to compare).
 * The tests use a second, independent set of readers (`tests/convert_readers.py`: plain `struct` and `json`) so the writer and the tool's read-back are not the only witnesses.
 
 ## Contract
@@ -28,6 +28,10 @@ The tool takes four string parameters: `input_path`, `output_format`, `mesh_defl
 Primary value `volume_out` (`millimeter ** 3`). Values: `volume_in`, `volume_out`, `volume_relative_change` = (out − in) / in (dimensionless, signed), `surface_area_in`, `surface_area_out`, and for mesh outputs `triangle_count`.
 
 When there is no volume (a shell or loose faces in a B-rep file, an STL that is not a closed, consistently oriented surface) the volume values are omitted, `surface_area_out` is the primary value, and a warning says why. An empty file, a file with no readable faces, and an inside-out STL (closed but negative volume) are refused.
+
+A B-rep input that holds solids but is not made of closed solids only (`brep.closure`, the check of `geometry_measure`, `geometry_check_dfm` and `geometry_view`) is treated the same way: a solid whose shell is open (free edges) or loose faces beside the solids. OpenCASCADE integrates a volume for both (an open 5-face box saved as BREP "has" 80000 mm³; a box with a loose 10 × 10 face gives 99714.29 mm³ instead of 100000), so no volume is claimed: `volume_in`, `volume_out` and `volume_relative_change` are omitted, `surface_area_out` is primary, a warning names the open shells (free edges) or the loose faces (`F<n>`), `data.losses` has a `no_volume` entry, and `data.input.closure` holds the counts and the loose face ids. Unlike `geometry_measure`, which reports the volume of the closed solids beside loose faces, `geometry_convert` claims none: its volumes describe the whole file converted, and the output holds the loose faces too. Such files are still converted to every format, like shells; a B-rep output is read back and its area reported, but no volume is compared, so the STEP of the open box (which OpenCASCADE writes as a shell: it reads back as 0 solids) no longer fails with `geometry.readback_mismatch`, and a warning says how the output reads back when its solid or face count differs from the input's (tested in `tests/test_geometry_gaps.py`, all four formats, before and after).
+
+Every refusal carries `details.param` as a JSON pointer: `/input_path` (the file, including a model beyond 1 km and a file with no faces), `/output_format` (also an STL to STEP or BREP), `/mesh_deflection`, `/name`. Before, the names were bare (`mesh_deflection`) or missing.
 
 `data` holds `input` and `output` descriptions (kind, solids/faces or triangles, closure, `declared_length_unit` for STEP, file name and sha256), `losses`, and for B-rep to mesh `output.deflection_mm`, `angular_deflection_rad` (0.5, fixed in `brep.triangulate`), `volume_change_bound_mm3` and `float32_coordinate_error_bound_mm`. The converted file is an artifact with its sha256.
 
@@ -48,6 +52,7 @@ A list of `{kind, detail}` entries, only those that apply:
 | `face_ids` | B-rep in | `geometry_measure` ids of the input do not apply to the output |
 | `input_units`, `mesh_deflection_ignored` | STL in | the STL's unit is assumed to be millimetres; the triangles are copied, not re-meshed |
 | `degenerate_triangles` | welding dropped some | how many |
+| `no_volume` | B-rep in with an open solid shell or loose faces beside the solids | what is not closed, and that no volume was computed or verified for either file |
 
 ## Hand-derived acceptance numbers (all in `tests/test_geometry_convert.py`)
 
@@ -65,7 +70,7 @@ Lengths must stay within ±1e6 mm (1 km) of the origin. STL coordinates beyond t
 
 * **STL reading by hand, not `StlAPI_Reader`.** OpenCASCADE's reader returns a shape carrying a `Poly_Triangulation` that is not a B-rep, which would need new code in `brep/` and gives no way to count or validate triangles the way this tool reports them. Parsing is about 40 lines of NumPy, works without the `cad` extra, and rejects non-finite or huge coordinates before anything uses them. Binary versus ASCII is decided by file size (84 + 50 n), because many binary files start with `solid`.
 * **No STL to STEP.** A mesh is not a solid; faceted STEP would have thousands of planar faces and no cylinders, so a downstream `geometry_measure` would report nonsense holes. Refused with a clear error; the design table already said this.
-* **Shells convert.** The brief allowed it only if stated: a B-rep shell converts to every format with the warning "no closed solid" and `surface_area_out` as primary value.
+* **Shells convert.** The brief allowed it only if stated: a B-rep shell converts to every format with the warning "no closed solid" and `surface_area_out` as primary value. A solid with an open shell, and loose faces beside solids, convert the same way (no volume claimed, a `no_volume` loss), rather than being refused as `geometry_check_dfm` and `geometry_view` refuse them: a converter's job is to carry the faces over, and refusing would contradict the shell rule.
 * **Read back, don't trust.** `volume_out` of a mesh is the volume of what is in the file (including float32 rounding), not of what was meant to be written.
 * **Units are fixed millimetres in the result.** The design table has no `output_unit` for this tool; the unit string on every value says `millimeter ** 3` etc.
 

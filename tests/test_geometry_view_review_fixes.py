@@ -174,7 +174,7 @@ def test_geometry_convert_refuses_a_fine_sphere_before_meshing(cad, tmp_path):
     started = time.perf_counter()
     r = getattr(convert, "fn", convert)(input_path=str(source), output_format="glb", mesh_deflection="0.001 mm")
     assert r.ok is False and r.error.family == "input.out_of_range" and r.error.details["estimated"] is True
-    assert r.error.details["param"] == "mesh_deflection"  # geometry_convert's own convention: bare parameter names
+    assert r.error.details["param"] == "/mesh_deflection"  # a JSON pointer since geometry_convert names its parameters like the other geometry tools
     assert time.perf_counter() - started < 5.0
     assert conversion.MAX_TESSELLATION_TRIANGLES == 600_000
 
@@ -203,20 +203,21 @@ def test_the_dfm_legend_speaks_of_severity_and_each_finding_of_its_check(fx, cad
 
 
 def test_a_finding_that_names_only_part_of_its_faces_is_disclosed(fx, cad, tmp_path):
+    # Was: 50 of the 320 faces red and 270 disclosed as not coloured. Since the DFM code keeps a finding's complete face
+    # list for in-process callers (tests/test_geometry_gaps.py, gap 2), all 320 are coloured and nothing is left to disclose.
     plate = cad.box(length=200, width=200, height=2)
     bosses = [cad.box(x=10 + 22 * i, y=10 + 22 * j, z=2, length=3, width=3, height=1) for i in range(8) for j in range(8)]
     source = cad.write_step(fx.fuse(plate, cad.compound(*bosses)), tmp_path / "bosses.step")
     r = run(source, color_by="dfm", process="sheet_metal")
     assert r.ok, r.error
-    (partial,) = r.data["findings_partly_coloured"]
-    assert partial["rule"] == "sheet.thickness_uniform"
-    assert partial["faces_total"] == 320 and partial["faces_named"] == 50 and partial["faces_not_coloured"] == 270
-    assert any("names only 50" in w and "270" in w for w in r.warnings)
+    assert r.data["findings_partly_coloured"] == []
+    assert not any("could not be coloured" in w for w in r.warnings)
     table = json.loads(artifact(r, "view.json").read_text(encoding="utf-8"))
     row = next(f for f in table["findings"] if f["rule"] == "sheet.thickness_uniform")
-    assert (row["faces_named"], row["faces_total"], row["faces_not_coloured"]) == (50, 320, 270)
+    assert (row["faces_named"], row["faces_total"], row["faces_not_coloured"]) == (320, 320, 0)
+    assert row["faces_listed_by_geometry_check_dfm"] == 50
     groups = groups_of_faces(read_view_glb(artifact(r, "view.glb")))
-    assert sum(1 for g in groups.values() if g == "dfm_error") == 50  # geometry_check_dfm names only these 50
+    assert sum(1 for g in groups.values() if g == "dfm_error") == 320
 
 
 # --------------------------------------------------------------------------- 4. overflowing limits

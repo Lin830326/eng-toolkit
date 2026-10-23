@@ -97,6 +97,23 @@ def _bbox(shape) -> tuple[Vec3, Vec3]:
     return _vec(box.CornerMin()), _vec(box.CornerMax())
 
 
+def _solids_only(shape):
+    """A compound of the solids of ``shape``, without the faces and shells that lie outside them."""
+    from OCP.BRep import BRep_Builder
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS_Compound
+
+    builder = BRep_Builder()
+    compound = TopoDS_Compound()
+    builder.MakeCompound(compound)
+    explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    while explorer.More():
+        builder.Add(compound, explorer.Current())
+        explorer.Next()
+    return compound
+
+
 def _unique_count(shape, kind) -> int:
     from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
     from OCP.TopExp import TopExp
@@ -109,8 +126,16 @@ def _unique_count(shape, kind) -> int:
 # --------------------------------------------------------------------------- mass properties
 
 
-def mass_properties(solid: Solid) -> MassProperties:
-    """Exact B-rep properties.  ``volume_mm3`` is None unless the shape holds a closed solid of positive volume."""
+def mass_properties(solid: Solid, *, volume: str = "shape") -> MassProperties:
+    """Exact B-rep properties.  ``volume_mm3`` is None unless the shape holds a closed solid of positive volume.
+
+    ``volume`` says what the volume (and the centroid with it) is integrated over: ``"shape"`` (the default) the whole
+    shape, as OpenCASCADE does it, so loose faces beside a solid add their (meaningless) share; ``"solids"`` only the
+    solids of the shape, loose faces and free shells left out; ``"none"`` no volume at all (the centroid is then the
+    surface's), for a shape whose solids are open.  Area and bounding box are always those of the whole shape.
+    """
+    if volume not in ("shape", "solids", "none"):
+        raise ValueError(f"volume must be 'shape', 'solids' or 'none', got {volume!r}")
     _occ.load()
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
@@ -118,17 +143,18 @@ def mass_properties(solid: Solid) -> MassProperties:
     shape = solid._handle
     surface = GProp_GProps()
     BRepGProp.SurfaceProperties_s(shape, surface)
-    volume: float | None = None
+    volume_mm3: float | None = None
     centre = surface.CentreOfMass()
-    if solid.solids > 0:
+    if solid.solids > 0 and volume != "none":
+        body = shape if volume == "shape" else _solids_only(shape)
         measured = GProp_GProps()
-        BRepGProp.VolumeProperties_s(shape, measured)
+        BRepGProp.VolumeProperties_s(body, measured)
         if measured.Mass() > 0.0:
-            volume = float(measured.Mass())
+            volume_mm3 = float(measured.Mass())
             centre = measured.CentreOfMass()
     lo, hi = _bbox(shape)
     return MassProperties(
-        volume_mm3=volume,
+        volume_mm3=volume_mm3,
         area_mm2=float(surface.Mass()),
         centroid_mm=_vec(centre),
         bbox_min_mm=lo,
