@@ -25,6 +25,7 @@ from eng_toolkit.contract import QuantityOut
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.runner import Computed, JobHandle
 from eng_toolkit.units import parse_quantity
+from eng_toolkit.domains.geometry._numeric import out_of_range
 
 FORMATS: tuple[str, ...] = ("step", "stl", "glb", "brep")
 MESH_FORMATS: tuple[str, ...] = ("stl", "glb")
@@ -235,14 +236,17 @@ def parse_format(raw: str) -> str:
     return fmt
 
 
-def parse_deflection(raw: str) -> float:
-    quantity = parse_quantity(raw, name="mesh_deflection", dimension="length")
-    mm = float(quantity.to("millimeter").magnitude)
+def parse_deflection(raw: str, *, range_family: str = "input.out_of_range") -> float:
+    try:
+        quantity = parse_quantity(raw, name="mesh_deflection", dimension="length")
+        mm = float(quantity.to("millimeter").magnitude)
+    except ArithmeticError:
+        raise out_of_range("mesh_deflection") from None
     low, high = DEFLECTION_MM
     if not math.isfinite(mm) or not low <= mm <= high:
         shown = f"{mm:g} mm" if math.isfinite(mm) else f"{raw.strip()!r}, which overflows when converted to millimetres,"
         raise ToolFailure(
-            "input.out_of_range",
+            range_family if math.isfinite(mm) else "input.out_of_range",
             f"mesh_deflection: {shown} is outside {low:g} mm to {high:g} mm",
             {"param": "mesh_deflection", "limits_mm": [low, high]},
         )
@@ -274,7 +278,7 @@ def _finite_all(*values: float) -> bool:
 
 def _bounds_check(props: brep.MassProperties) -> None:
     box = [*props.bbox_min_mm, *props.bbox_max_mm]
-    if not _finite_all(*box, props.area_mm2) or max(abs(c) for c in box) > MAX_ABS_MM:
+    if not _finite_all(*box, props.area_mm2) or max(abs(c) for c in box) > MAX_ABS_MM + 1e-6:
         raise ToolFailure(
             "input.out_of_range",
             f"the model extends beyond {MAX_ABS_MM:g} mm (1 km) from the origin or its size is not a finite number; check the "
@@ -356,6 +360,7 @@ def convert(
         size_diagonal = float(np.linalg.norm(welded.vertices.max(axis=0) - welded.vertices.min(axis=0)))
     else:
         solid = brep.read_solid(source, param="input_path")
+        brep.validate_bounds(solid, param="/input_path")
         if solid.faces == 0:
             raise _bad(
                 f"input_path: no faces could be read from {original.path!r} ({solid.roots_in_file} root entities in the file, "
@@ -375,6 +380,8 @@ def convert(
         bbox_abs = max(abs(c) for c in [*props.bbox_min_mm, *props.bbox_max_mm])
         data["input"] = {
             "kind": "b-rep",
+            "bbox_kind": "conservative, including topology tolerances and spline control hulls",
+            "integration_relative_tolerance": 1e-8,
             "solids": solid.solids,
             "faces": solid.faces,
             "step_roots": {"in_file": solid.roots_in_file, "transferred": solid.roots_transferred},

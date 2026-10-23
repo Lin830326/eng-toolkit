@@ -67,7 +67,7 @@ from eng_toolkit.brep._model import (
 from eng_toolkit.brep._path import MAX_PATH_SEGMENTS, Path2, PathProblem, PathSegment, check_path
 from eng_toolkit.brep._occ import load as require_engine
 from eng_toolkit.brep._project import VIEW_FRAMES, Arc2, Ellipse2, Line2, Poly2, Prim2, Projection, ViewFrame, ViewName, project
-from eng_toolkit.brep._query import angle, distance, inventory, lookup, mass_properties, wall_thickness
+from eng_toolkit.brep._query import angle, distance, inventory, lookup, mass_properties, validate_bounds, wall_thickness
 from eng_toolkit.brep._types import (
     Entity,
     FaceInfo,
@@ -177,6 +177,7 @@ __all__ = [
     "transform",
     "triangulate",
     "validity",
+    "validate_bounds",
     "wall_thickness",
     "weld",
     "write_brep",

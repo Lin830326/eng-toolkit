@@ -28,6 +28,8 @@ DIGITS = 9
 SAME_MM = 1e-6  # lengths closer than this are the same place
 AXIS_PARALLEL = 1.0 - 1e-12  # |cos| of two axes that are the same direction
 HIT_TOLERANCE_MM = 1e-7
+MAX_COORDINATE_MM = 1e6
+INTEGRATION_RELATIVE_TOLERANCE = 1e-8
 RIM_RAY_FRACTIONS = (0.5, 0.7, 0.9)  # end rays run these fractions of the radius off the axis
 WALL_RAY_DIRECTIONS = 3  # radial rays from the axis that must meet the wall at the radius for a cylinder to be a hole
 
@@ -91,10 +93,29 @@ def _bbox(shape) -> tuple[Vec3, Vec3]:
     from OCP.BRepBndLib import BRepBndLib
 
     box = Bnd_Box()
-    BRepBndLib.AddOptimal_s(shape, box, False, False)  # not the triangulation, not the tolerance: the exact box
+    # Add includes triangulation deflection and topology tolerances in the gap;
+    # without triangulation it uses analytic/control-hull bounds. CornerMin/Max
+    # include that gap. AddOptimal can miss extrema of rational surfaces.
+    BRepBndLib.Add_s(shape, box, True)
     if box.IsVoid():
         raise ToolFailure("input.invalid", "the shape has no extent")
-    return _vec(box.CornerMin()), _vec(box.CornerMax())
+    return tuple(math.nextafter(c, -math.inf) for c in box.CornerMin().Coord()), tuple(
+        math.nextafter(c, math.inf) for c in box.CornerMax().Coord()
+    )
+
+
+def validate_bounds(solid: Solid, *, param: str = "/model_path") -> None:
+    """Refuse nonfinite or excessive coordinates before integration, inventory or meshing."""
+    try:
+        lo, hi = _bbox(solid._handle)
+        valid = all(math.isfinite(c) and abs(c) <= MAX_COORDINATE_MM + SAME_MM for c in (*lo, *hi))
+    except ToolFailure:
+        raise
+    except Exception:
+        valid = False
+    if not valid:
+        raise ToolFailure("input.out_of_range", "the conservative model bounds exceed 1 km from the origin or are not finite",
+                          {"param": param, "maximum_abs_mm": MAX_COORDINATE_MM})
 
 
 def _solids_only(shape):
@@ -126,8 +147,34 @@ def _unique_count(shape, kind) -> int:
 # --------------------------------------------------------------------------- mass properties
 
 
+def _integrated_properties(shape, *, volume: bool = False):
+    """Adaptive BRep integrals, checked against the next tighter integration tolerance."""
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    integrate = BRepGProp.VolumeProperties_s if volume else BRepGProp.SurfaceProperties_s
+    previous = None
+    for eps in (1e-6, 1e-8, 1e-10, 1e-12, 1e-14, 1e-16, 1e-18, 1e-20):
+        props = GProp_GProps()
+        try:
+            error = integrate(shape, props, eps)
+        except (ArithmeticError, RuntimeError):
+            break
+        current = (float(props.Mass()), *props.CentreOfMass().Coord())
+        if not all(math.isfinite(c) for c in (*current, error)):
+            break
+        if previous is not None and error <= INTEGRATION_RELATIVE_TOLERANCE:
+            mass_ok = abs(current[0] - previous[0]) <= INTEGRATION_RELATIVE_TOLERANCE * max(abs(current[0]), 1e-12)
+            centre_ok = math.dist(current[1:], previous[1:]) <= 1e-7
+            if mass_ok and centre_ok:
+                return props
+        previous = current
+    raise ToolFailure("geometry.integration_not_converged", "B-rep integration did not converge at successive tolerances",
+                      {"property": "volume" if volume else "surface_area", "relative_tolerance": INTEGRATION_RELATIVE_TOLERANCE})
+
+
 def mass_properties(solid: Solid, *, volume: str = "shape") -> MassProperties:
-    """Exact B-rep properties.  ``volume_mm3`` is None unless the shape holds a closed solid of positive volume.
+    """Converged B-rep integrals and conservative bounds. ``volume_mm3`` needs a positive solid volume.
 
     ``volume`` says what the volume (and the centroid with it) is integrated over: ``"shape"`` (the default) the whole
     shape, as OpenCASCADE does it, so loose faces beside a solid add their (meaningless) share; ``"solids"`` only the
@@ -137,18 +184,13 @@ def mass_properties(solid: Solid, *, volume: str = "shape") -> MassProperties:
     if volume not in ("shape", "solids", "none"):
         raise ValueError(f"volume must be 'shape', 'solids' or 'none', got {volume!r}")
     _occ.load()
-    from OCP.BRepGProp import BRepGProp
-    from OCP.GProp import GProp_GProps
-
     shape = solid._handle
-    surface = GProp_GProps()
-    BRepGProp.SurfaceProperties_s(shape, surface)
+    surface = _integrated_properties(shape)
     volume_mm3: float | None = None
     centre = surface.CentreOfMass()
     if solid.solids > 0 and volume != "none":
         body = shape if volume == "shape" else _solids_only(shape)
-        measured = GProp_GProps()
-        BRepGProp.VolumeProperties_s(body, measured)
+        measured = _integrated_properties(body, volume=True)
         if measured.Mass() > 0.0:
             volume_mm3 = float(measured.Mass())
             centre = measured.CentreOfMass()
@@ -258,13 +300,10 @@ def _sense_from(centre_line_point: np.ndarray, centre_line_axis: np.ndarray | No
 
 def _describe(face_id: int, face) -> tuple[FaceInfo, _Cylinder | None]:
     from OCP.BRepAdaptor import BRepAdaptor_Surface
-    from OCP.BRepGProp import BRepGProp
-    from OCP.GProp import GProp_GProps
 
     surface = BRepAdaptor_Surface(face)
     kind = _kind_of(surface.GetType())
-    area = GProp_GProps()
-    BRepGProp.SurfaceProperties_s(face, area)
+    area = _integrated_properties(face)
     lo, hi = _bbox(face)
     located = _outward_normal(face)
 
@@ -413,7 +452,7 @@ def _bore(candidate: _Candidate, intersector, diagonal: float) -> tuple[np.ndarr
     """
     a, origin, r = candidate.axis, candidate.origin, candidate.radius
     reach = 2.0 * diagonal + 1.0
-    nudge = max(1e-6 * diagonal, SAME_MM)
+    nudge = max(HIT_TOLERANCE_MM * 10, min(r, candidate.t1 - candidate.t0) * 1e-6)
     first = _perpendicular(a)
     second = np.cross(a, first)
     sides = [
@@ -423,7 +462,9 @@ def _bore(candidate: _Candidate, intersector, diagonal: float) -> tuple[np.ndarr
     lo_end, hi_end = origin + candidate.t0 * a, origin + candidate.t1 * a
 
     def open_at(end: np.ndarray, outward: float) -> bool:
-        return not any(_hits(intersector, end + outward * nudge * a + side, outward * a, reach) for side in sides)
+        # Start in the bore air, just BEFORE the end. Starting beyond it can jump
+        # through a blind bottom, regardless of how small that bottom is.
+        return not any(_hits(intersector, end - outward * nudge * a + side, outward * a, reach) for side in sides)
 
     open_lo, open_hi = open_at(lo_end, -1.0), open_at(hi_end, 1.0)
     if not (open_lo or open_hi):

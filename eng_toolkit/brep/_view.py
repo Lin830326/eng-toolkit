@@ -16,6 +16,7 @@ import numpy as np
 from eng_toolkit.brep import _occ
 from eng_toolkit.brep._files import ANGULAR_DEFLECTION_RAD
 from eng_toolkit.brep._types import Solid
+from eng_toolkit.brep._query import _bbox, _integrated_properties
 
 CURVATURE_SAMPLES = 5  # per parameter direction, for surfaces and curves whose curvature is not constant
 # Calibrated against BRepMesh (OCCT 7.x, angular deflection 0.5 rad) on spheres, tori, cones, lofts and filleted boxes at
@@ -233,13 +234,15 @@ def estimate_triangles(solid: Solid, deflection_mm: float, *, deadline: Callable
     ``_angle_step(k, d)``, a straight edge into one), plus, for a curved face, the interior: a cylinder or cone (curved in
     one direction only) gets two triangles per circumferential step over its angular span; any other curved face gets
     ``2 A / (h1 h2)``, where ``h = step / k`` is the chord length in each principal direction (the flat direction of a
-    singly curved free-form face is taken as ``sqrt(A)`` long).  It is cheap (curvature at a few sample points) and errs
-    high; the calibration and its accuracy are in docs/geometry-view/design.md.
+    singly curved free-form face is taken as ``sqrt(A)`` long). Spline faces also reserve work for every knot span,
+    polynomial degree and rational weight ratio. This is a conservative preflight estimate, not a mathematical bound
+    on OCCT's triangulator. Freeform meshes also run in a process with time and memory limits.
     """
     _occ.load()
     from OCP.BRepAdaptor import BRepAdaptor_Surface
-    from OCP.BRepGProp import BRepGProp
     from OCP.GeomAbs import (
+        GeomAbs_BezierSurface,
+        GeomAbs_BSplineSurface,
         GeomAbs_Cone,
         GeomAbs_Cylinder,
         GeomAbs_Plane,
@@ -247,7 +250,6 @@ def estimate_triangles(solid: Solid, deflection_mm: float, *, deadline: Callable
         GeomAbs_SurfaceOfRevolution,
         GeomAbs_Torus,
     )
-    from OCP.GProp import GProp_GProps
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
     from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS
@@ -272,8 +274,7 @@ def estimate_triangles(solid: Solid, deflection_mm: float, *, deadline: Callable
             span = surface.LastUParameter() - surface.FirstUParameter()
             estimate = boundary + 2.0 * math.ceil(span / _angle_step(curvature, deflection_mm))  # one strip along the axis
         else:
-            props = GProp_GProps()
-            BRepGProp.SurfaceProperties_s(face, props)
+            props = _integrated_properties(face)
             area = abs(float(props.Mass()))
             if kind in (GeomAbs_Sphere, GeomAbs_Torus):
                 estimate = boundary + CURVED_FACTOR * _interior(face, surface, area, deflection_mm, isotropic=False)
@@ -283,6 +284,14 @@ def estimate_triangles(solid: Solid, deflection_mm: float, *, deadline: Callable
                 estimate = boundary + REVOLUTION_FACTOR * _interior(face, surface, area, deflection_mm, isotropic=True)
             else:  # B-spline, Bezier, revolution, extrusion, offset: meshed isotropically
                 estimate = boundary + FREEFORM_FACTOR * _interior(face, surface, area, deflection_mm, isotropic=True)
+                if kind in (GeomAbs_BSplineSurface, GeomAbs_BezierSurface):
+                    spline = surface.BSpline() if kind == GeomAbs_BSplineSurface else surface.Bezier()
+                    spans = (spline.NbUKnots() - 1) * (spline.NbVKnots() - 1) if kind == GeomAbs_BSplineSurface else 1
+                    weights = [spline.Weight(i, j) for i in range(1, spline.NbUPoles() + 1) for j in range(1, spline.NbVPoles() + 1)]
+                    weight_ratio = max(weights) / min(weights)
+                    size = math.dist(*_bbox(face))
+                    complexity = spans * (spline.UDegree() + 1) * (spline.VDegree() + 1) * weight_ratio
+                    estimate = max(estimate, boundary + complexity * max(1.0, size / (16 * deflection_mm)))
         per_face.append(int(max(2.0, min(estimate, 1e15))))
         explorer.Next()
     return TriangleEstimate(total=int(sum(per_face)), per_face=tuple(per_face))
@@ -314,7 +323,13 @@ def tessellate_faces(
     from OCP.TopoDS import TopoDS
 
     shape = solid._handle
-    BRepTools.Clean_s(shape)
+    from eng_toolkit.brep._mesh_process import needs_isolation, isolated_mesh
+
+    isolated = needs_isolation(shape)
+    if isolated:
+        shape = isolated_mesh(shape, deflection_mm, deadline=deadline)
+    else:
+        BRepTools.Clean_s(shape)
     vertex_blocks: list[np.ndarray] = []
     triangle_blocks: list[np.ndarray] = []
     vertex_ranges: list[tuple[int, int]] = []
@@ -325,7 +340,8 @@ def tessellate_faces(
         if deadline is not None:
             deadline("mesh")
         face = TopoDS.Face(explorer.Current())
-        BRepMesh_IncrementalMesh(face, deflection_mm, False, ANGULAR_DEFLECTION_RAD, False)
+        if not isolated:
+            BRepMesh_IncrementalMesh(face, deflection_mm, False, ANGULAR_DEFLECTION_RAD, False)
         location = TopLoc_Location()
         triangulation = BRep_Tool.Triangulation_s(face, location)
         nodes = np.empty((0, 3))

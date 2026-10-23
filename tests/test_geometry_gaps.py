@@ -189,7 +189,7 @@ def test_measure_reports_the_solid_alone_beside_a_loose_face(models, key):
     assert r.value == r.values["volume"] and r.values["volume"].quantity == pytest.approx(100000.0, abs=1e-6)
     assert r.values["mass"].quantity == pytest.approx(0.1, abs=1e-12)
     assert r.values["surface_area"].quantity == pytest.approx(16100.0, abs=1e-6)  # the loose face counts in the area
-    assert r.values["size_x"].quantity == pytest.approx(210.0, abs=1e-9)  # and in the size
+    assert r.values["size_x"].quantity == pytest.approx(210.0, abs=1e-6)  # and in the size
     assert r.data["centroid_mm"] == pytest.approx([50.0, 25.0, 10.0], abs=1e-6)  # the box's
     closure = r.data["closure"]
     assert closure["closed_solids_only"] is False and closure["faces_outside_solids"] == 1 and closure["loose_face_ids"] == [7]

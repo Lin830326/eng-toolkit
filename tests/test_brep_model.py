@@ -49,7 +49,7 @@ def test_box_matches_the_hand_calculation():
     props = brep.mass_properties(box)
     assert props.volume_mm3 == pytest.approx(32000.0, abs=1e-6)
     assert props.area_mm2 == pytest.approx(8800.0, abs=1e-6)
-    assert size(box) == pytest.approx((80, 40, 10), abs=1e-9)
+    assert size(box) == pytest.approx((80, 40, 10), abs=1e-6)
     assert (box.solids, box.faces) == (1, 6)
 
 
@@ -64,7 +64,7 @@ def test_cylinder_matches_the_hand_calculation():
     props = brep.mass_properties(cylinder)
     assert props.volume_mm3 == pytest.approx(math.pi * 225 * 40, abs=1e-6)
     assert props.area_mm2 == pytest.approx(2 * math.pi * 15 * 40 + 2 * math.pi * 225, abs=1e-6)
-    assert size(cylinder) == pytest.approx((30, 30, 40), abs=1e-9)
+    assert size(cylinder) == pytest.approx((30, 30, 40), abs=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -73,12 +73,12 @@ def test_cylinder_matches_the_hand_calculation():
 )
 def test_cylinder_axis_sets_the_direction(axis, extent):
     cylinder = brep.make_cylinder(30.0, 40.0, (0, 0, 0), axis)
-    assert size(cylinder) == pytest.approx(extent, abs=1e-9)
+    assert size(cylinder) == pytest.approx(extent, abs=1e-6)
     props = brep.mass_properties(cylinder)
     base_centre = (0.0, 0.0, 0.0)
     far = [c + 40.0 * a for c, a in zip(base_centre, axis)]
     for i in range(3):
-        assert min(base_centre[i], far[i]) - 15 * (1 - abs(axis[i])) == pytest.approx(props.bbox_min_mm[i], abs=1e-9)
+        assert min(base_centre[i], far[i]) - 15 * (1 - abs(axis[i])) == pytest.approx(props.bbox_min_mm[i], abs=1e-6)
 
 
 def test_a_zero_axis_is_input_invalid():
@@ -100,13 +100,13 @@ def test_sphere_matches_the_hand_calculation():
     props = brep.mass_properties(ball)
     assert props.volume_mm3 == pytest.approx(4 / 3 * math.pi * 15**3, abs=1e-6)
     assert props.area_mm2 == pytest.approx(4 * math.pi * 225, abs=1e-6)
-    assert size(ball) == pytest.approx((30, 30, 30), abs=1e-9)
+    assert size(ball) == pytest.approx((30, 30, 30), abs=1e-6)
     assert ball.solids == 1
 
 
 def test_sphere_at_is_its_centre():
     props = brep.mass_properties(brep.make_sphere(10.0, (10, 20, 30)))
-    assert props.bbox_min_mm == pytest.approx((5, 15, 25), abs=1e-9) and props.bbox_max_mm == pytest.approx((15, 25, 35), abs=1e-9)
+    assert props.bbox_min_mm == pytest.approx((5, 15, 25), abs=1e-6) and props.bbox_max_mm == pytest.approx((15, 25, 35), abs=1e-6)
 
 
 @pytest.mark.parametrize("diameter", [0.0, -1.0, math.nan, math.inf])
@@ -120,7 +120,7 @@ def test_frustum_matches_the_hand_calculation():
     # radii 20 and 10, height 30: pi*h/3*(R^2 + R*r + r^2) = pi*10*700
     cone = brep.make_cone(40.0, 20.0, 30.0, (0, 0, 0), (0, 0, 1))
     assert brep.mass_properties(cone).volume_mm3 == pytest.approx(math.pi * 10 * 700, abs=1e-6)
-    assert size(cone) == pytest.approx((40, 40, 30), abs=1e-9)
+    assert size(cone) == pytest.approx((40, 40, 30), abs=1e-6)
     slant = math.hypot(30.0, 10.0)
     assert brep.mass_properties(cone).area_mm2 == pytest.approx(math.pi * (400 + 100) + math.pi * (20 + 10) * slant, abs=1e-6)
 
@@ -148,17 +148,17 @@ def test_a_cone_may_widen_towards_its_top():
 )
 def test_cone_axis_sets_the_direction(axis, extent):
     cone = brep.make_cone(40.0, 20.0, 30.0, (0, 0, 0), axis)
-    assert size(cone) == pytest.approx(extent, abs=1e-9)
+    assert size(cone) == pytest.approx(extent, abs=1e-6)
     props = brep.mass_properties(cone)
     far = [30.0 * a for a in axis]
     for i in range(3):
         low = min(0.0, far[i]) - 20 * (1 - abs(axis[i]))
-        assert low == pytest.approx(props.bbox_min_mm[i], abs=1e-9)
+        assert low == pytest.approx(props.bbox_min_mm[i], abs=1e-6)
 
 
 def test_cone_at_is_the_centre_of_its_base():
     props = brep.mass_properties(brep.make_cone(40.0, 20.0, 30.0, (10, 20, 30), (0, 0, 1)))
-    assert props.bbox_min_mm == pytest.approx((-10, 0, 30), abs=1e-9) and props.bbox_max_mm == pytest.approx((30, 40, 60), abs=1e-9)
+    assert props.bbox_min_mm == pytest.approx((-10, 0, 30), abs=1e-6) and props.bbox_max_mm == pytest.approx((30, 40, 60), abs=1e-6)
 
 
 @pytest.mark.parametrize("args", [(0.0, 5.0, 5.0), (-1.0, 0.0, 5.0), (10.0, -1.0, 5.0), (10.0, 5.0, 0.0), (10.0, 5.0, -2.0), (10.0, math.nan, 5.0)])
@@ -186,7 +186,7 @@ def test_a_flat_box_is_input_invalid():
 def test_prism_of_a_rectangle_in_each_plane():
     rect = brep.Rect2((20.0, 10.0), (0.0, 0.0), False)
     xy = brep.make_prism(rect, XY, 5.0)
-    assert volume(xy) == pytest.approx(1000.0, abs=1e-9) and size(xy) == pytest.approx((20, 10, 5))
+    assert volume(xy) == pytest.approx(1000.0, abs=1e-6) and size(xy) == pytest.approx((20, 10, 5))
     xz = brep.make_prism(rect, XZ, 5.0)  # u = x, v = z, extruded along +y
     assert size(xz) == pytest.approx((20, 5, 10))
     yz = brep.make_prism(rect, YZ, 5.0)  # u = y, v = z, extruded along +x
@@ -219,9 +219,9 @@ def test_prism_of_a_circle_a_triangle_and_a_slot():
     # slot 30 long overall and 10 wide: (30 - 10)*10 + pi*5^2
     slot = brep.make_prism(brep.Slot2(30.0, 10.0, (0.0, 0.0), 0.0), XY, 2.0)
     assert volume(slot) == pytest.approx(((30 - 10) * 10 + math.pi * 25) * 2, abs=1e-6)
-    assert size(slot) == pytest.approx((30, 10, 2), abs=1e-9)
+    assert size(slot) == pytest.approx((30, 10, 2), abs=1e-6)
     turned = brep.make_prism(brep.Slot2(30.0, 10.0, (0.0, 0.0), math.pi / 2), XY, 2.0)
-    assert size(turned) == pytest.approx((10, 30, 2), abs=1e-9)
+    assert size(turned) == pytest.approx((10, 30, 2), abs=1e-6)
 
 
 def test_a_self_crossing_polygon_is_a_build_failure():
@@ -236,7 +236,7 @@ def test_revolving_a_rectangle_makes_a_washer():
     profile = brep.Rect2((6.0, 3.0), (8.0, 0.0), False)
     washer = brep.make_revolution(profile, XZ, "v", 2 * math.pi)
     assert volume(washer) == pytest.approx(math.pi * (196 - 64) * 3, abs=1e-6)
-    assert size(washer) == pytest.approx((28, 28, 3), abs=1e-9)
+    assert size(washer) == pytest.approx((28, 28, 3), abs=1e-6)
     half = brep.make_revolution(profile, XZ, "v", math.pi)
     assert volume(half) == pytest.approx(math.pi * (196 - 64) * 3 / 2, abs=1e-6)
 
@@ -309,7 +309,7 @@ def test_add_fuses_touching_solids_into_one_and_merges_coplanar_faces():
     wall = brep.make_box((5, 40, 25), (0, 0, 5))
     bracket = brep.combine(base, wall, "add")
     assert volume(bracket) == pytest.approx(17000.0, abs=1e-6)
-    assert size(bracket) == pytest.approx((60, 40, 30), abs=1e-9)
+    assert size(bracket) == pytest.approx((60, 40, 30), abs=1e-6)
     assert bracket.solids == 1
     assert brep.validity(bracket) == ()
     assert bracket.faces == 8  # the L section extruded: 6 side faces and 2 ends
@@ -480,7 +480,7 @@ def test_validity_is_empty_for_a_good_solid():
 def test_transform_translates_a_solid_and_keeps_its_volume():
     moved = brep.transform(brep.make_box((10, 20, 30), (0, 0, 0)), ((1, 0, 0), (0, 1, 0), (0, 0, 1)), (100.0, -5.0, 7.0))
     props = brep.mass_properties(moved)
-    assert props.bbox_min_mm == pytest.approx((100, -5, 7), abs=1e-9) and props.bbox_max_mm == pytest.approx((110, 15, 37), abs=1e-9)
+    assert props.bbox_min_mm == pytest.approx((100, -5, 7), abs=1e-6) and props.bbox_max_mm == pytest.approx((110, 15, 37), abs=1e-6)
     assert props.volume_mm3 == pytest.approx(6000.0, abs=1e-6)
     assert (moved.solids, moved.faces) == (1, 6)
 
@@ -489,7 +489,7 @@ def test_transform_rotates_before_it_translates():
     # a quarter turn about z sends (x, y) to (-y, x): the box [0,10] x [0,20] becomes [-20,0] x [0,10]; then +5 on x
     quarter = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
     props = brep.mass_properties(brep.transform(brep.make_box((10, 20, 30), (0, 0, 0)), quarter, (5.0, 0.0, 0.0)))
-    assert props.bbox_min_mm == pytest.approx((-15, 0, 0), abs=1e-9) and props.bbox_max_mm == pytest.approx((5, 10, 30), abs=1e-9)
+    assert props.bbox_min_mm == pytest.approx((-15, 0, 0), abs=1e-6) and props.bbox_max_mm == pytest.approx((5, 10, 30), abs=1e-6)
 
 
 @pytest.mark.parametrize(
