@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from fractions import Fraction
 
 import numpy as np
 
@@ -56,6 +57,11 @@ class Axis:
     def pxa(self, values: np.ndarray) -> np.ndarray:
         t = np.log10(values) if self.scale == "log" else values
         return self.p0 + (t - self.tv(self.lo)) * self.k
+
+    def exact_px(self, value: float) -> Fraction:
+        """Map an endpoint without losing the axis offset before an extreme segment is clipped."""
+        lo, hi, v = (Fraction(self.tv(float(n))) for n in (self.lo, self.hi, value))
+        return Fraction(self.p0) + (v - lo) * (Fraction(self.p1) - Fraction(self.p0)) / (hi - lo)
 
     def contains(self, v: float) -> bool:
         return self.lo <= v <= self.hi
@@ -204,6 +210,8 @@ def linear_axis(lo: float, hi: float, target: int, fixed: tuple[float, float] | 
 
 
 def _log_label(v: float) -> str:
+    if v < 1e-300:
+        return format_value(v, 17)
     n = math.floor(math.log10(v) + 1e-9)
     m = round(v / 10.0 ** n)
     if -4 <= n <= 5:
@@ -223,6 +231,11 @@ def _nice_above(v: float) -> float:
 
 def log_axis(lo: float, hi: float, target: int, fixed: tuple[float, float] | None, *, param: str, what: str, margin: float = 0.0) -> Axis:
     notes: list[str] = []
+
+    def check_bounds(a: float, b: float) -> None:
+        if not (0 < a < b and math.isfinite(b)):
+            fail(param, f"{what}: the expanded log bounds are not positive, distinct finite numbers; rescale the data or give a fixed range", "input.out_of_range")
+
     if fixed is not None:
         lo, hi = fixed
         if lo <= 0.0:
@@ -233,7 +246,10 @@ def log_axis(lo: float, hi: float, target: int, fixed: tuple[float, float] | Non
     elif margin and hi > lo:
         # markers: the data plus a margin, out to the next 1, 2 or 5 x 10^n (whole decades would waste a decade per side)
         grow = 10.0 ** (margin * (math.log10(hi) - math.log10(lo)))
-        lo, hi = _nice_below(lo / grow), _nice_above(hi * grow)
+        lo, hi = lo / grow, hi * grow
+        check_bounds(lo, hi)
+        lo, hi = _nice_below(lo), _nice_above(hi)
+        check_bounds(lo, hi)
         la, lb = math.log10(lo), math.log10(hi)
     else:
         la, lb = math.floor(math.log10(lo) + 1e-12), math.ceil(math.log10(hi) - 1e-12)
@@ -241,10 +257,11 @@ def log_axis(lo: float, hi: float, target: int, fixed: tuple[float, float] | Non
             notes.append(f"{what}: all values lie on {lo:.6g}; the log axis was padded by one decade on each side")
             la, lb = la - 1, lb + 1
         lo, hi = min(10.0 ** la, lo), max(10.0 ** lb, hi)  # whole decades, widened by rounding noise only
+    check_bounds(lo, hi)
     first, last = math.floor(la + 1e-9), math.ceil(lb - 1e-9)
     decades = max(1, last - first)
     stride = next(s for s in (1, 2, 5, 10, 20, 50, 100, 200, 500) if decades / s <= max(target, 1))
-    inside = lambda v: lo * (1 - 1e-12) <= v <= hi * (1 + 1e-12)  # noqa: E731
+    inside = lambda v: 0 < v and math.isfinite(v) and lo * (1 - 1e-12) <= v <= hi * (1 + 1e-12)  # noqa: E731
     labelled = [float(f"1e{n}") for n in range(first, last + 1) if n % stride == 0 and inside(float(f"1e{n}"))]
     if decades <= 2:
         labelled += [float(f"{mm}e{n}") for n in range(first, last + 1) for mm in (2, 5) if inside(float(f"{mm}e{n}"))]

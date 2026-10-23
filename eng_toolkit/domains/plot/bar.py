@@ -11,6 +11,8 @@ bars integrate to 1) or cumulative counts.
 from __future__ import annotations
 
 import math
+from decimal import Decimal
+from fractions import Fraction
 from typing import Annotated
 
 import numpy as np
@@ -65,8 +67,18 @@ def _bin_edges(raw: object) -> np.ndarray | None:
     parts = split_records(text.replace(",", ";"), "bin_edges", BINS_RANGE[1] + 1)
     if len(parts) < BINS_RANGE[0] + 1:
         fail("bin_edges", f"'bin_edges' needs at least {BINS_RANGE[0] + 1} edges ({BINS_RANGE[0]} bins), got {len(parts)}")
-    edges = np.array([number_token(p, "bin_edges", f"'bin_edges' value {i + 1}") for i, p in enumerate(parts)])
-    if not np.all(np.diff(edges) > 0):
+    exact_edges = []
+    for i, part in enumerate(parts):
+        value = number_token(part, "bin_edges", f"'bin_edges' value {i + 1}")
+        if value == 0:
+            mantissa = part.strip().lower().split("e", 1)[0]
+            if any(c in "123456789" for c in mantissa):
+                fail("bin_edges", f"'bin_edges' value {i + 1} is nonzero but underflows when converted for drawing", "input.out_of_range")
+            exact_edges.append(Decimal(0))
+        else:
+            exact_edges.append(Decimal(part.strip()))
+    edges = np.array(exact_edges, dtype=object)
+    if not all(a < b for a, b in zip(edges, edges[1:])):
         fail("bin_edges", "'bin_edges' must be strictly increasing")
     return edges
 
@@ -155,7 +167,7 @@ def bar(
 # ----------------------------------------------------------------------------------------------- data
 
 
-def _histogram_values(handle: JobHandle, source: str, data_file, series, ycols: list[str], notes: list[str]) -> tuple[np.ndarray, str]:
+def _histogram_values(handle: JobHandle, source: str, data_file, series, ycols: list[str], notes: list[str]) -> tuple[np.ndarray, str, str]:
     if source == "csv":
         if len(ycols) > 1:
             fail("y_columns", "a histogram takes exactly one column in 'y_columns'")
@@ -163,10 +175,10 @@ def _histogram_values(handle: JobHandle, source: str, data_file, series, ycols: 
         name = ycols[0] if ycols else table.header[0]
         idx = table.index(name, "y_columns")
         cols, lines = table.extract([idx])
-        return numeric_cells(cols[idx], lines, name), display(name), "data_file"
+        return numeric_cells(cols[idx], lines, name, exact=True), display(name), "data_file"
     if ycols:
         fail("y_columns", "'y_columns' selects CSV columns; give one inline series for a histogram")
-    loaded = inline_series(series, notes, max_series=1)
+    loaded = inline_series(series, notes, max_series=1, exact_y=True)
     if loaded[0].x_name != "index":
         notes.append("the histogram uses the 'y' values of the series; its 'x' values are ignored")
     return loaded[0].y, loaded[0].name, "series/0/y"
@@ -186,20 +198,29 @@ def _histogram(values: np.ndarray, n_bins: int, edges: np.ndarray | None, hist_m
             pad = 0.5 if lo == 0.0 else abs(lo) * 0.1
             notes.append(f"all values are equal ({lo:.6g}); the bins span {lo - pad:.6g} .. {hi + pad:.6g}")
             lo, hi = lo - pad, hi + pad
-        edges = np.linspace(lo, hi, bins_used + 1)
+        edges = np.array([Decimal(str(v)) for v in np.linspace(lo, hi, bins_used + 1)], dtype=object)
+        # Keep the original extrema included even when conversion rounds an endpoint inward.
+        edges[0], edges[-1] = min(edges[0], min(values)), max(edges[-1], max(values))
     counts = np.histogram(values, bins=edges)[0].astype(float)
     below, above = int(np.count_nonzero(values < edges[0])), int(np.count_nonzero(values > edges[-1]))
     if below or above:
         notes.append(f"{below} value(s) below the first edge and {above} above the last edge are not in any bin (counted in data.histogram)")
     n_in = int(counts.sum())
-    widths = np.diff(edges)
+    draw_edges = np.array(edges, dtype=float)
+    if not np.all(np.diff(draw_edges) > 0):
+        fail("bin_edges", "the bin edges are too close to distinguish in the drawing; rescale the data", "input.out_of_range")
     if hist_mode == "density":
-        heights = counts / (n_in * widths) if n_in else np.zeros_like(counts)
+        if n_in == 0:
+            fail("bin_edges", "density is undefined because no values lie inside the selected bin edges")
+        widths = np.array([float(Fraction(b) - Fraction(a)) for a, b in zip(edges, edges[1:])])
+        heights = counts / (n_in * widths)
     elif hist_mode == "cumulative":
         heights = np.cumsum(counts)
     else:
         heights = counts
-    return {"edges": edges, "counts": counts, "heights": heights, "below": below, "above": above, "n": n, "n_in_bins": n_in, "rule": rule, "heights_are": hist_mode}
+    reported_edges = [int(v) if v == int(v) else float(v) for v in edges]
+    return {"edges": draw_edges, "bin_edges": reported_edges, "bin_edges_exact": [str(v) for v in edges],
+            "counts": counts, "heights": heights, "below": below, "above": above, "n": n, "n_in_bins": n_in, "rule": rule, "heights_are": hist_mode}
 
 
 def _bars(handle: JobHandle, source: str, data_file, series, xcol: str, ycols: list[str], ecols: list[str], notes: list[str]) -> dict:
@@ -480,7 +501,8 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
     }
     if hist:
         data["histogram"] = {
-            "value_column": spec["value_name"], "bin_edges": spec["edges"], "counts": spec["counts"], "heights": spec["heights"], "heights_are": spec["heights_are"],
+            "value_column": spec["value_name"], "bin_edges": spec["bin_edges"], "bin_edges_exact": spec["bin_edges_exact"],
+            "counts": spec["counts"], "heights": spec["heights"], "heights_are": spec["heights_are"],
             "rule": spec["rule"], "values": spec["n"], "values_in_bins": spec["n_in_bins"], "below_first_edge": spec["below"], "above_last_edge": spec["above"],
             "bins_closed": "half-open [a, b) except the last bin, which is closed [a, b]",
         }

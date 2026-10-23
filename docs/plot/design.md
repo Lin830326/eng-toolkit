@@ -50,7 +50,10 @@ A number is a plain ASCII decimal (`-1.5e3`, `.5`, `2.`; spaces and tabs around 
 is not). A bad cell is refused at the JSON pointer `/data_file/<line>/<column>` (RFC 6901 escaping of `/` and `~`, with
 `details.line`, `details.column` and `details.reason` = "not a number" or "out of range"): text, an empty cell, `nan`, `inf`,
 `1_000`, `0x10`, fullwidth digits (`input.invalid`); magnitudes above 1e100, including `1e308` and `1e999` (`input.out_of_range`). A
-ragged row is refused at `/data_file/<line>`. Duplicate keys in an inline series object are refused at `/series/<i>/<key>`. The regular expression has non-overlapping alternatives and tokens are capped at 64
+ragged row is refused at `/data_file/<line>`. Duplicate keys in an inline series object are refused at `/series/<i>/<key>`.
+The JSON parse hook stores duplicate metadata outside the caller's objects, so no caller key can impersonate that metadata.
+Numeric bar categories have the same magnitude and finiteness checks as values, before conversion to text; a refusal points at
+`/series/<i>/x/<j>`. Text categories remain text. The regular expression has non-overlapping alternatives and tokens are capped at 64
 characters before matching, so a 6000-character token is refused in microseconds.
 
 ## Caps (all enforced; exceeding one is `input.out_of_range` unless noted)
@@ -100,12 +103,15 @@ All positions follow from these, so a test can derive a pixel by hand (see `test
 Mapping, also in `plot_data.json` per axis: `px = origin_px + (v - min) * scale_px_per_unit` (linear) or
 `px = origin_px + (log10 v - log10 min) * scale_px_per_unit` (log, scale in px per decade); for y axes `origin_px` is the bottom of the
 plot area and the scale is negative. Coordinates are written with at most two decimals, trailing zeros trimmed, `-0` as `0`.
-**Clipping is geometric and exact**: before any number is formatted, polylines are clipped to the plot area grown by 4 px with
-Liang-Barsky on the exact floating-point pixel coordinates (a line that leaves and re-enters becomes several polylines, each ending
-exactly on the rectangle), fill polygons with Sutherland-Hodgman, stems by clamping their vertical extent, and markers whose centre is
-more than 8 px outside are not written; the SVG clip path then trims the line width at the frame. A segment towards a point 1e5 x
-beyond a fixed range therefore crosses the frame where the true line does (to formatting precision, 0.005 px); per-coordinate
-clamping, used before, put it 41 px off. Bars are axis-aligned rectangles and are cut at the plot area grown by 4 px.
+**Clipping is geometric**: before formatting, polylines are clipped to the plot area grown by 4 px with Liang-Barsky. A line that
+leaves and re-enters becomes several polylines. Ordinary segments reconstruct intersections from the nearer endpoint. When a pixel
+coordinate exceeds 1e8 in magnitude, the clipper uses exact rational arithmetic, including the data-to-pixel mapping from the original
+data and axis bounds. This preserves offsets that float conversion would lose before clipping. The fallback is exact for the parsed
+binary64 data, with log coordinates taken after the log transform. Coordinates round only after clipping, to 0.005 px.
+Fill polygons use Sutherland-Hodgman with the same rational fallback. Stems clip their vertical extent before testing marker visibility;
+linear stems always start at the transformed zero, including when zero lies above a negative fixed range. Stems wholly outside the frame
+are omitted. Markers whose centre is more than 8 px outside are not written. The SVG clip path trims line width at the frame.
+Bars are axis-aligned rectangles and are cut at the plot area grown by 4 px.
 
 ## Axes and ticks
 
@@ -124,6 +130,9 @@ clamping, used before, put it 41 px off. Bars are axis-aligned rectangles and ar
   log range inside one decade with fewer than two 1..9 multiples (`2,2.5`, `30,31`, `2e-6,2.5e-6`) gets linear nice ticks labelled by
   their spacing (`2.0, 2.1, ...`, `30.0, 30.1, ...`, `2e-6, 2.05e-6, ..., 2.5e-6`), verified as above. Zero or
   negative data on a log axis is **refused** with a pointer to the series value or to the CSV column and line — never dropped.
+  Automatic decade or marker expansion must produce positive, distinct finite bounds. If expansion underflows to zero, the request
+  returns `input.out_of_range` at the relevant data pointer, before tick generation or mapping. Representable subnormal bounds,
+  including fixed ranges, remain usable; tick generation excludes zero and labels subnormal ticks without dividing by an underflowed decade.
 * Markers need room: when markers are drawn (scatter, stem, `markers=true`), automatic ranges get a 3 % margin (on a log axis out to
   the next 1, 2 or 5 x 10^n instead of a whole decade).
 * Fixed ranges (`x_range`, `y_range`, `"min,max"`): kept exactly; ticks are the step multiples inside; points outside are clipped by
@@ -195,10 +204,16 @@ A line with `markers=true` uses the envelope for the line and the cells for the 
   (`zero_height_bars`, `zero_height: true`).
 * A histogram whose values are all non-zero but below 1e-100 is refused at the value column (`/data_file` or `/series/0/y`): the
   range is too small to bin.
-* Histogram: `numpy.histogram` over equal-width bins of [min, max] (or the given edges): bins are half-open except the last, which is
-  closed. Values outside explicit edges are counted in `below_first_edge` / `above_last_edge` and a warning, never silently dropped.
-  Density = count / (values in bins x bin width), so the bars integrate to 1; cumulative = running count. `data.histogram` holds the
-  edges, raw counts, heights, the rule used and the counts outside.
+* Histogram: `numpy.histogram` over equal-width bins of [min, max] or the given edges. Bins are half-open except the last, which is
+  closed. Inline integers and decimal tokens, CSV values, and explicit edges retain their exact values for comparisons. Automatic
+  edges use the decimal spelling of the generated numbers, widened to include the exact data extrema. Only drawing coordinates use
+  binary64. Edges that collapse to the same drawing coordinate value, or nonzero edges that underflow to zero, return
+  `input.out_of_range` at `/bin_edges` before computing rational widths.
+  Values outside explicit edges are counted in `below_first_edge` / `above_last_edge` and a warning, never silently dropped.
+  Density = count / (values in bins x bin width), using rational edge differences before converting the width to binary64.
+  If no values fall in the bins, density is undefined and returns `input.invalid` at `/bin_edges`. Counts and cumulative counts
+  remain zero in that case. `data.histogram` holds numeric `bin_edges`, exact decimal strings in `bin_edges_exact`, raw counts,
+  heights, the rule used and the counts outside. Integral edges remain integers in the metadata, including above 2^53.
 * Category labels are shortened to about 24 characters with an ellipsis and thinned so they do not overlap.
 
 ## Verification
@@ -235,6 +250,11 @@ A line with `markers=true` uses the envelope for the line and the cells for the 
   not SVG, so the suite asserts structure and geometry instead of pixels.
 
 * `tests/test_plot_review_fixes.py`: one or more regression tests per review finding (S1, C1-C9, R1-R5, K1, K2), see below.
+* `tests/test_plot_review2.py`: all eight findings from the review at `472d99c`, reproduced through `Client(gateway)` with real
+  artifact writes. Geometry is checked against independent rational edge intersections, histogram boundaries against Python
+  integers and `Decimal`, density against a rational integral. Coverage includes reversed and asymmetric extreme lines, fill
+  polygons, both panels, stem visibility, inline and CSV precision, forged duplicate metadata, log underflow and representable
+  subnormals, numeric categories, and empty density ranges.
 
 ## Changes after the independent review (before -> after)
 
@@ -260,6 +280,21 @@ A line with `markers=true` uses the envelope for the line and the cells for the 
 
 Not changed: a non-integer or boolean `width` (800.5, true) is rejected by the MCP schema layer before the tool runs, so that
 refusal has no family or pointer (shared framework behaviour).
+
+## Second independent review
+
+All eight findings reproduced through the gateway before the fixes. No finding was disputed.
+
+| Finding | Reproduction and corrected result |
+|---|---|
+| 1 | A line from (-1e20, -1e20) to (1e20, 1e20) in fixed -1..1 axes used to collapse to (0,0). Rational mapping and clipping now preserve the visible crossing from (50,467) to (787,12), and both shared-x panel crossings. |
+| 2 | A stem at (0.5,10) with 0..1 axes had no path. The visible segment now runs at x=415 from y=467 to y=12. |
+| 3 | A stem at y=-2.5 in a -3..-2 range started at the bottom. It now enters from the top at y=12 and ends at y=239.5. |
+| 4 | Values 9007199254740992, 9007199254740993, 9007199254740994 with edges 0, 9007199254740993, 10000000000000000 gave [0,3]. Exact comparisons now give [1,2] for both inline and CSV data. |
+| 5 | A forged `\u0000duplicate-key` key with null, list or integer value caused a traceback. It now receives an unknown-key `input.invalid` refusal with a pointer. Actual duplicate keys still point at the repeated key. |
+| 6 | Automatic log expansion for [5e-324,1], or marker expansion for [1e-320,1e100], reached log10(0). Both now return `input.out_of_range` at the axis data pointer. |
+| 7 | Numeric categories 1e999, -1e999 and 1e101 were printed as labels. They now return `input.out_of_range` at `/series/0/x/0`. |
+| 8 | Density for values [5,6] and edges [0,1,2] returned zero heights with integral zero. It now returns `input.invalid` at `/bin_edges` because the normalization count is zero. |
 
 ## Not done (this version)
 

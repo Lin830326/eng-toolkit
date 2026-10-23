@@ -471,32 +471,45 @@ def render_xy(chart: Chart) -> Rendered:
             width_attr = [("stroke-width", num(LINE_WIDTH)), ("stroke-linejoin", "round"), ("stroke-linecap", "round")]
             if line_keep is not None:
                 lx, ly = px[line_keep], py[line_keep]
+                vx, vy = s.x[line_keep], s.y[line_keep]
                 if kind == "step" and len(lx) > 1:
                     lx, ly = np.repeat(lx, 2)[1:], np.repeat(ly, 2)[:-1]
+                    vx, vy = np.repeat(vx, 2)[1:], np.repeat(vy, 2)[:-1]
+
+                def exact_point(i: int):
+                    return x_axis.exact_px(vx[i]), ax.exact_px(vy[i])
+
                 if chart.fill == "zero":
                     tag = "" if s.axis == "y" else "r"
                     z = min(max(ax.px(0.0), rect[1]), rect[3])  # the closing edges are vertical, so clamping the base changes nothing inside
-                    gx, gy = clip_polygon(np.r_[lx[0], lx, lx[-1]], np.r_[z, ly, z], rect)
+                    def exact_fill_point(i: int):
+                        if i == 0 or i == len(lx) + 1:
+                            index = 0 if i == 0 else -1
+                            return x_axis.exact_px(vx[index]), ax.exact_px(0.0)
+                        return exact_point(i - 1)
+
+                    gx, gy = clip_polygon(np.r_[lx[0], lx, lx[-1]], np.r_[z, ly, z], rect, exact_point=exact_fill_point)
                     if len(gx) >= 3:
                         area = "M" + "L".join(f"{num(a)} {num(b)}" for a, b in zip(gx.tolist(), gy.tolist())) + "Z"
                         cv.el("path", [("d", area), ("fill-opacity", str(FILL_OPACITY_POS)), ("clip-path", f"url(#{pid}-{tag}pos{pi})")], fill=f"s{colour}")
                         cv.el("path", [("d", area), ("fill-opacity", str(FILL_OPACITY_NEG)), ("clip-path", f"url(#{pid}-{tag}neg{pi})")], fill=f"s{colour}")
-                for rx, ry in clip_polyline(lx, ly, rect):
+                for rx, ry in clip_polyline(lx, ly, rect, exact_point=exact_point):
                     cv.el("polyline", _dash([("points", _pts(rx, ry)), *width_attr], dash), fill="none", stroke=f"s{colour}")
                     seg_parts.append((rx[:-1], ry[:-1], rx[1:], ry[1:]))
             if mark_keep is not None:
                 mx, my = px[mark_keep], py[mark_keep]
-                vis = inside(mx, my, mark_rect)
-                mx, my = mx[vis], my[vis]
                 if kind == "stem":
-                    base = ax.px(0.0) if (ax.scale == "linear" and ax.contains(0.0)) else ax.p0
-                    sx_ok = (mx >= rect[0]) & (mx <= rect[2])
+                    base = ax.px(0.0) if ax.scale == "linear" else ax.p0
+                    sx_ok = ((mx >= rect[0]) & (mx <= rect[2])
+                             & (np.minimum(base, my) <= rect[3]) & (np.maximum(base, my) >= rect[1]))
                     top_y = np.clip(my[sx_ok], rect[1], rect[3])
                     base_y = min(max(base, rect[1]), rect[3])
                     stems = "".join(f"M{num(a)} {num(base_y)}V{num(b)}" for a, b in zip(mx[sx_ok].tolist(), top_y.tolist()))
                     if stems:
                         cv.el("path", _dash([("d", stems), ("stroke-width", "1.25")], dash), fill="none", stroke=f"s{colour}")
                     seg_parts.append((mx[sx_ok], np.full(int(sx_ok.sum()), base_y), mx[sx_ok], top_y))
+                vis = inside(mx, my, mark_rect)
+                mx, my = mx[vis], my[vis]
                 draw_markers(cv, mx, my, colour, marker)
                 mark_x.append(mx)
                 mark_y.append(my)
