@@ -212,7 +212,7 @@ class Expression:
             if budget is not None:
                 budget.check()
             if node.op == "number":
-                result = node.value
+                result = np.float64(node.value)
             elif node.op == "name":
                 result = np.asarray(bindings[node.value], dtype=float)
                 if result.ndim > 1:
@@ -241,9 +241,11 @@ class Expression:
                     result = np.power(args[0], args[1])
             if np.any(~np.isfinite(result)) or np.any(np.abs(result) > LIMIT):
                 raise TrialError(f"nonfinite or excessive intermediate at character {node.position}")
+            if np.any((result != 0) & (np.abs(result) < np.finfo(float).tiny)):
+                fail(self.param, "expression intermediate underflows to subnormal", node.position, "input.out_of_range")
             return result
         try:
-            with np.errstate(over="raise", divide="raise", invalid="raise", under="ignore"):
+            with np.errstate(over="raise", divide="raise", invalid="raise", under="raise"):
                 value = walk(self.tree)
                 if budget is not None:
                     budget.check()
@@ -253,4 +255,6 @@ class Expression:
         except TrialError as exc:
             raise TrialError(str(exc), self.param) from None
         except (FloatingPointError, OverflowError, ValueError, ZeroDivisionError) as exc:
+            if isinstance(exc, FloatingPointError) and "underflow" in str(exc):
+                fail(self.param, "expression intermediate underflows", family="input.out_of_range")
             raise TrialError(f"expression domain/range failure: {exc}", self.param) from None

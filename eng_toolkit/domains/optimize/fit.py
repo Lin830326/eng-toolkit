@@ -25,6 +25,32 @@ def _certificate(matrix,residual,point,lo,hi,tolerance):
             "gradient_scale":scale,"passed":metric<=tolerance}
 
 
+def _check_curvature(function, point, residual, matrix, lo, hi):
+    """Check the full objective Hessian, including residual curvature absent from J'J."""
+    singular = np.linalg.svd(matrix,compute_uv=False)
+    if singular[-1] <= 1e-10*singular[0]:
+        raise TrialError("rank-deficient or ill-conditioned Jacobian; covariance and intervals are undefined", "model")
+    gradient = matrix.T@residual
+    gradient_error = np.sqrt(np.finfo(float).eps)*np.linalg.norm(matrix,axis=0)*max(1.,np.linalg.norm(residual))
+    free = ~(((point<=lo)&(gradient>gradient_error)) | ((point>=hi)&(gradient<-gradient_error)))
+    if not np.any(free):
+        return {"minimum_eigenvalue": None, "free_parameters": 0}
+    units = np.maximum(1.,np.abs(point))
+    def objective_gradient(z):
+        p = point+units*z
+        r = function(p)
+        return units*(jacobian(function,p,lo,hi).T@r)
+    hessian = jacobian(objective_gradient,np.zeros(point.size),(lo-point)/units,(hi-point)/units)
+    reduced = ((hessian+hessian.T)/2)[np.ix_(free,free)]
+    eigenvalues = np.linalg.eigvalsh(reduced)
+    rounding = 64*np.finfo(float).eps*float(np.linalg.norm(reduced,ord=2))
+    if eigenvalues[0] < -rounding:
+        raise TrialError("stationary fit has negative objective curvature; no local minimum certified", "model")
+    if eigenvalues[0] <= rounding:
+        raise TrialError("stationary fit has unresolved or rank-deficient objective curvature", "model")
+    return {"minimum_eigenvalue": float(eigenvalues[0]), "free_parameters": int(np.sum(free))}
+
+
 def _lm(function, initial, lo, hi, tolerance, iterations, budget):
     point = initial.copy()
     residual = function(point)
@@ -159,6 +185,8 @@ def fit(
         deviations = np.ones(n) if not sigma else array(sigma,"sigma")
         if deviations.size!=n or np.any(deviations<=0):
             invalid("sigma","one strictly positive sigma per observation is required")
+        sigma_scale = float(np.min(deviations))
+        relative_deviations = deviations/sigma_scale
         def predict(point):
             bindings = {key:columns[key] for key in independent_names}
             bindings.update(zip(names,point))
@@ -169,7 +197,7 @@ def fit(
                 raise TrialError("model did not produce one prediction per observation")
             return prediction
         def function(point):
-            return (predict(point)-observed)/deviations
+            return (predict(point)-observed)/relative_deviations
         best = None
         failures = []
         for start in range(starts):
@@ -177,9 +205,12 @@ def fit(
             point = np.clip(point,lo,hi)
             try:
                 answer = _lm(function,point,lo,hi,tol,iterations,budget)
+                final_matrix = jacobian(function,answer[0],lo,hi)
+                curvature = _check_curvature(function,answer[0],answer[1],final_matrix,lo,hi)
                 score = answer[1]@answer[1]
                 if best is None or score < best[1]@best[1]:
                     best = answer
+                    best_curvature = curvature
             except TrialError as exc:
                 failures.append(str(exc))
         if best is None:
@@ -189,13 +220,17 @@ def fit(
         certificate = _certificate(matrix,residual,point,lo,hi,tol)
         if not certificate["passed"]:
             invalid("model","final projected-gradient convergence certificate failed","optimize.not_converged")
+        certificate["objective_curvature"] = best_curvature
         _,singular,vt = np.linalg.svd(matrix,full_matrices=False)
         if singular[-1]<=1e-10*singular[0]:
             invalid("model","rank-deficient or ill-conditioned Jacobian; covariance and intervals are undefined","input.out_of_range")
         covariance = (vt.T/singular**2)@vt
-        chi2 = float(residual@residual)
+        normalized_chi2 = float(residual@residual)
+        chi2 = normalized_chi2/sigma_scale/sigma_scale
         if not absolute_sigma:
-            covariance *= chi2/(n-p)
+            covariance *= normalized_chi2/(n-p)
+        else:
+            covariance *= sigma_scale*sigma_scale
         stderr = np.sqrt(np.maximum(0.,np.diag(covariance)))
         denominator = np.outer(stderr,stderr)
         correlation = np.divide(covariance,denominator,out=np.zeros_like(covariance),where=denominator>0)

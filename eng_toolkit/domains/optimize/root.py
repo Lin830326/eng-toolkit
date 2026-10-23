@@ -26,9 +26,7 @@ def _equilibrate(matrix):
 
 
 def _residual_scale(matrix,x,floor):
-    """|J| @ (|x| + floor): a residual below tolerance*scale means a Newton correction
-    below tolerance*|x| + tolerance*floor, i.e. relative accuracy with an absolute floor
-    atol = tolerance*floor (floor = 1e-15*width/tolerance, so atol = 1e-15*width)."""
+    """Equation-local residual units; systems also need a forward-error check."""
     return np.maximum(1e-100,np.abs(matrix)@(np.abs(x)+floor))
 
 
@@ -40,14 +38,16 @@ def _system(function, x, lo, hi, tolerance, iterations, budget, initial_scale=No
     for iteration in range(iterations):
         budget.check()
         matrix = jacobian(function, x, lo, hi)
-        # Test convergence before factorizing: an exact (possibly multiple) root at the
-        # current point is a root even where the Jacobian is singular.
+        # Preserve exact multiple roots, but a small system residual alone is insufficient.
         scale = np.minimum(_residual_scale(matrix,x,floor),original_scale)
-        if np.max(np.abs(residual)/scale) <= tolerance:
+        if np.all(residual == 0):
             return x, residual, iteration
         scaled,row,column,_ = _equilibrate(matrix)
         rhs = residual/row
         direction = np.linalg.solve(scaled, -rhs)/column
+        if (np.max(np.abs(residual)/scale) <= tolerance
+                and np.all(np.abs(direction) <= tolerance*(np.abs(x)+floor))):
+            return x, residual, iteration
         accepted = False
         for damping in (0., 1e-6, 1e-3, 1., 100.):
             if damping:
@@ -70,6 +70,7 @@ def _system(function, x, lo, hi, tolerance, iterations, budget, initial_scale=No
 
 def _bisect(function, a, b, tolerance, iterations, budget, initial_scale=None, floor=None):
     floor = np.ones(1) if floor is None else floor
+    lower, upper = np.array([a]), np.array([b])
     fa, fb = function(np.array([a]))[0], function(np.array([b]))[0]
     if fa == 0:
         return np.array([a]), np.array([fa]), 0
@@ -85,7 +86,7 @@ def _bisect(function, a, b, tolerance, iterations, budget, initial_scale=None, f
         scale = max(1e-100,abs((fb-fa)/(b-a))*(abs(mid)+float(floor[0])))
         if initial_scale is not None:
             scale = min(scale,float(initial_scale[0]))
-        local_matrix = jacobian(function,np.array([mid]))
+        local_matrix = jacobian(function,np.array([mid]),lower,upper)
         scale = min(scale,float(_residual_scale(local_matrix,np.array([mid]),floor)[0]))
         if abs(fm) <= tolerance*scale:
             return np.array([mid]), np.array([fm]), iteration+1
@@ -167,7 +168,6 @@ def root(
         def function(point):
             bindings = dict(zip(names,point))
             return np.array([e.evaluate(bindings,budget) for e in expressions])
-        initial_scale = np.maximum(1.,np.abs(function(x)))
         solutions, failures = [], []
         def add(answer):
             point, residual, steps = answer
@@ -182,6 +182,9 @@ def root(
                 invalid("bracket","expected strictly increasing [lower,upper]")
             if interval[0] < lo[0] or interval[1] > hi[0]:
                 invalid("bracket","bracket lies outside bounds")
+            lo, hi = interval[:1].copy(), interval[1:].copy()
+            x = np.clip(x, lo, hi)
+        initial_scale = np.maximum(1.,np.abs(function(x)))
         if scan_count and interval is None:
             invalid("scan","scan requires a scalar bracket")
         # Problem width per variable: the bracket, else a finite bound interval, else
@@ -246,6 +249,8 @@ def root(
         rows = []
         warnings = []
         for p,r,k in solutions:
+            if np.any(p < lo) or np.any(p > hi):
+                continue
             matrix = jacobian(function,p,lo,hi)
             scale = _residual_scale(matrix,p,floor)
             scaled_residual = float(np.max(np.abs(r)/scale))
@@ -257,23 +262,34 @@ def root(
             if raw_condition is not None and (not np.isfinite(raw_condition) or raw_condition>1e100):
                 raw_condition = None
             try:
-                _,_,_,scaled_condition = _equilibrate(matrix)
+                equilibrated,row,column,scaled_condition = _equilibrate(matrix)
+                correction = np.linalg.solve(equilibrated,-r/row)/column
+                # Propagate accumulation roundoff through the inverse, in equilibrated
+                # coordinates. Nearly dependent equations may not resolve the target.
+                residual_rounding = 8*np.finfo(float).eps*scale/row
+                forward_rounding = np.abs(np.linalg.solve(equilibrated,np.eye(p.size)))@residual_rounding/column
+                forward_error = np.abs(correction)+forward_rounding
+                correction_metric = float(np.max(forward_error/(np.abs(p)+floor)))
+                if correction_metric > tol:
+                    continue
             except TrialError:
-                # Kept only because the residual itself is certified (e.g. an exact root at
-                # the start); the root may be multiple or the equations dependent.
+                if np.any(r != 0):
+                    continue
                 scaled_condition = None
+                correction = np.zeros(p.size)
+                correction_metric = 0.
                 note = "Jacobian is singular at root "+", ".join(f"{n}={v:.17g}" for n,v in zip(names,p))+": a multiple root or dependent equations; the root may not be isolated."
                 if note not in warnings:
                     warnings.append(note)
             # One Newton correction estimates the remaining error of the returned root.
-            correction = np.linalg.lstsq(matrix,-r,rcond=1e-12)[0] if np.any(r!=0) else np.zeros(p.size)
             relative_error = float(np.max(np.abs(correction)/np.maximum(np.abs(p),absolute_floor)))
             rows.append({"solution":dict(zip(names,p)),"residual":r,"iterations":k,
                          "certificate":{"scaled_residual_inf":scaled_residual,"tolerance":tol,"residual_scale":scale,
                                         "initial_scaled_residual_inf":initial_scaled_residual,"initial_residual_scale":initial_scale,
                                         "absolute_floor":absolute_floor,"estimated_relative_error":relative_error,
+                                        "forward_error_scaled_inf":correction_metric,
                                         "jacobian_condition_raw":raw_condition,"jacobian_condition_scaled":scaled_condition}})
         if not rows:
-            invalid("expression","no root passed final scaled-residual certification","optimize.not_converged")
-        return result({"roots":rows,"solution":rows[0]["solution"],"residual":rows[0]["residual"],"evaluations":budget.evaluations,"seed":seed,"method":selected,"converged":True},"root",rows[0]["solution"][names[0]],formulas=["F(x)=0; Richardson finite-difference Newton with damped line search","Residual scale=max(1e-100, abs(J) @ (abs(x)+1e-15*width/tolerance)): a Newton correction below tolerance*abs(x)+1e-15*width","Estimated relative error=max(abs(J^-1 F)/max(abs(x),1e-15*width))"],assumptions=["Square systems; locally independent equations"],validity=["Roots require residual certification; sign-change scans can miss tangent roots","Multistart does not establish completeness","Raw Jacobian condition is unavailable if singular or outside finite output range","width is the bracket, a finite bound interval, or max(1,abs(initial))"],warnings=warnings)
+            invalid("expression","no root passed final residual and correction/forward-error certification","optimize.not_converged")
+        return result({"roots":rows,"solution":rows[0]["solution"],"residual":rows[0]["residual"],"evaluations":budget.evaluations,"seed":seed,"method":selected,"converged":True},"root",rows[0]["solution"][names[0]],formulas=["F(x)=0; Richardson finite-difference Newton with damped line search","Residual scale=max(1e-100, abs(J) @ (abs(x)+1e-15*width/tolerance)); Newton correction plus propagated roundoff must be below tolerance*abs(x)+1e-15*width","Estimated relative error=max(abs(J^-1 F)/max(abs(x),1e-15*width))"],assumptions=["Square systems; locally independent equations"],validity=["Roots require residual and forward-error certification; sign-change scans can miss tangent roots","Multistart does not establish completeness","Raw Jacobian condition is unavailable if singular or outside finite output range","width is the bracket, a finite bound interval, or max(1,abs(initial))"],warnings=warnings)
     return run("root",inputs,compute)

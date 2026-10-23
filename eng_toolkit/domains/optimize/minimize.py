@@ -344,7 +344,7 @@ def minimize(
         # Solve in comparable coordinates, without changing the caller's numeric units.
         scale = np.maximum(1., np.abs(x0))
         bounded = np.isfinite(lower) & np.isfinite(upper)
-        scale[bounded] = np.maximum(1e-12, (upper[bounded] - lower[bounded]) / 2)
+        scale[bounded] = (upper[bounded] - lower[bounded]) / 2
         lo, hi, z0 = lower / scale, upper / scale, x0 / scale
         sign = -1. if maximize else 1.
         m = len(cons)
