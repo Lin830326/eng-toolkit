@@ -103,7 +103,7 @@ def test_profile_refuses_normal_depth_crossing_when_refinement_budget_is_exhaust
 def test_all_tools_refuse_offset_viscosity_composites(tool, args, unit):
     result = call(tool, **args, dynamic_viscosity=f"1 mPa*s*{unit}/K")
     assert not result.ok
-    assert result.error.family == "input.invalid"
+    assert result.error.family == "units.dimension_mismatch"
     assert result.error.details["param"] == "/dynamic_viscosity"
 
 

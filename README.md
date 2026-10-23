@@ -42,6 +42,8 @@ Claude Code / 任何 MCP 客戶端
 
 **工具命名**：MCP 工具名稱不能含 `.`，設計文件中的 `calc.cylinder_force` 在 MCP 上即為 `calc_cylinder_force`（`<領域>_<工具>`）。
 
+Gateway 的參數型別錯誤、缺少必填參數與未知參數也回傳 `ok=false` 的結構化結果，包含錯誤 family 與 `error.details.param` JSON pointer。複合單位內的偏移溫度單位（如 `MPa*degF/K`）會被拒絕；絕對溫度仍可用 `degC`／`degF`，溫差使用 K 或明確的 delta 單位。JSON 工作檔將非有限輸入記錄為字串，不寫入裸 `NaN`／`Infinity`。詳見[共用 gateway 設計](docs/gateway/design.md)。
+
 ---
 
 ## 安裝（Windows 11，乾淨環境一鍵）

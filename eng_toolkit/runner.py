@@ -33,7 +33,7 @@ from eng_toolkit.contract import (
 )
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit import safefile
-from eng_toolkit.workspace import Workspace
+from eng_toolkit.workspace import Workspace, json_safe
 
 ENV_READ_DIRS = "ENG_TOOLKIT_READ_DIRS"
 
@@ -68,6 +68,11 @@ def _clean(obj: Any) -> Any:
     return obj
 
 
+def clean_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Use the same UTF-8 and finite-JSON representation for input files and hashes."""
+    return _clean(json_safe(inputs))
+
+
 def run_tool(
     *,
     tool_name: str,
@@ -80,7 +85,7 @@ def run_tool(
     engines: tuple[str, ...] = (),
 ) -> ToolResult:
     ws = workspace or Workspace()
-    inputs = _clean(inputs)  # a lone surrogate in a caller string must not crash the contract (inputs.json, hashing, results)
+    inputs = clean_inputs(inputs)
     job = ws.new_job(tool_name)
     handle = JobHandle(job)
     artifacts: list[Artifact] = [job.write_inputs(inputs)]
@@ -282,4 +287,4 @@ class JobHandle:
         return self._job.write_bytes(filename, payload, fmt=fmt)
 
 
-__all__ = ["ENV_READ_DIRS", "Computed", "JobHandle", "read_dirs", "run_tool"]
+__all__ = ["ENV_READ_DIRS", "Computed", "JobHandle", "clean_inputs", "read_dirs", "run_tool"]

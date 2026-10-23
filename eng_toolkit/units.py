@@ -18,11 +18,13 @@ return contract.
 from __future__ import annotations
 
 import math
+import re
 from numbers import Real
 from typing import Any, Mapping
 
 import pint
 from pint import Quantity, UnitRegistry
+from pint.util import string_preprocessor
 
 from eng_toolkit.errors import ToolFailure
 
@@ -69,6 +71,35 @@ def _is_bare_number(raw: Any) -> bool:
     return False
 
 
+def _reject_compound_offsets(text: str, *, name: str, with_magnitude: bool = False) -> None:
+    """Inspect spelling before Pint cancels factors or substitutes delta units."""
+    for preprocessor in ureg.preprocessors:
+        text = preprocessor(text)
+    text = string_preprocessor(text)
+    names = re.findall(r"[^\W\d]\w*", text)
+    for token in names:
+        try:
+            canonical = ureg.get_name(token)
+        except pint.errors.OffsetUnitCalculusError:
+            canonical = None  # A prefix multiplies an offset unit and is invalid too.
+        except pint.errors.UndefinedUnitError:
+            continue  # The regular parser supplies the unknown-unit error.
+        if canonical == "" or (canonical and ureg._units[canonical].is_multiplicative):
+            continue
+        if canonical and ureg.get_dimensionality(canonical) != ureg.get_dimensionality("K"):
+            continue
+        number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*\*?\s*" if with_magnitude else ""
+        if canonical and re.fullmatch(number + re.escape(token), text.strip()):
+            return  # A single absolute-temperature unit still retains its offset.
+        # Domain callers also pass relative parameter paths such as "pipes/0/3".
+        pointer = "/" + name.lstrip("/")
+        raise UnitsError(
+            "units.dimension_mismatch",
+            "Offset temperature units cannot occur in compound quantities; use K, degR or explicit delta units.",
+            {"param": pointer},
+        )
+
+
 def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quantity:
     """Parse ``raw`` into a pint Quantity, enforcing a unit and (optionally) a dimension.
 
@@ -86,6 +117,7 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
         raise UnitsError("input.missing", f"'{name}' is required", {"param": name})
 
     if isinstance(raw, Quantity):
+        _reject_compound_offsets(str(raw.units), name=name)
         qty = raw
     elif _is_bare_number(raw):
         raise UnitsError(
@@ -114,6 +146,7 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
                 f"'{name}' has an empty unit; every quantity needs a unit",
                 {"param": name, "received": dict(raw)},
             )
+        _reject_compound_offsets(unit, name=name)
         try:
             qty = Q_(float(value), unit)
         except (pint.errors.UndefinedUnitError, pint.errors.DefinitionSyntaxError, ValueError) as exc:
@@ -143,6 +176,7 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
                 f"'{name}': {raw!r} has no numeric part; expected '<number> <unit>'",
                 {"param": name, "received": raw},
             )
+        _reject_compound_offsets(text, name=name, with_magnitude=True)
         try:
             parsed = ureg.parse_expression(text)
         except Exception as exc:  # pint raises several error types here

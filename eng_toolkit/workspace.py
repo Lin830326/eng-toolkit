@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import uuid
@@ -23,10 +24,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from eng_toolkit.contract import Artifact, canonical_json
+from eng_toolkit.contract import Artifact
 
 ENV_ROOT = "ENG_TOOLKIT_WS"
 _SAFE = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def json_safe(obj: Any) -> Any:
+    """Preserve nonfinite inputs as text, never as nonstandard JSON numbers."""
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return "NaN" if math.isnan(obj) else ("Infinity" if obj > 0 else "-Infinity")
+    if isinstance(obj, dict):
+        return {json_safe(key): json_safe(value) for key, value in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(value) for value in obj]
+    return obj
 
 
 def sha256_file(path: Path) -> str:
@@ -76,7 +88,7 @@ class Job:
         return self.write_bytes(filename, payload, fmt=fmt)
 
     def write_json(self, filename: str, obj: Any) -> Artifact:
-        text = json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n"
+        text = json.dumps(json_safe(obj), indent=2, sort_keys=True, ensure_ascii=False, default=str, allow_nan=False) + "\n"
         return self.write_text(filename, text, fmt="json")
 
     def write_inputs(self, inputs: dict[str, Any]) -> Artifact:
@@ -93,7 +105,8 @@ class Job:
             "files": dict(sorted(self._records.items())),
         }
         manifest_path = self.dir / "manifest.json"
-        manifest_path.write_text(canonical_json(manifest) + "\n", encoding="utf-8")
+        manifest_text = json.dumps(json_safe(manifest), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        manifest_path.write_text(manifest_text + "\n", encoding="utf-8")
         return manifest_path
 
     def manifest(self) -> dict[str, Any]:
@@ -118,4 +131,4 @@ class Workspace:
             return False
 
 
-__all__ = ["ENV_ROOT", "Job", "Workspace", "resolve_root", "sha256_file"]
+__all__ = ["ENV_ROOT", "Job", "Workspace", "json_safe", "resolve_root", "sha256_file"]

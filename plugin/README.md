@@ -3,6 +3,15 @@
 Skills and slash commands that teach an AI how to use the eng-toolkit MCP server well.
 The plugin carries **no calculation code**; the numbers always come from the MCP tools.
 
+Argument validation failures return the same structured refusal as calculation
+errors: check `ok`, `error.family` and the JSON pointer in `error.details.param`.
+Bare quantity numbers use `units.bare_number`; missing required arguments use
+`input.missing`; other type errors and unknown arguments use `input.invalid`.
+Use K or explicit delta units in compound quantities; offset units such as
+`degC` and `degF` are accepted only as plain absolute temperatures. JSON job
+artifacts preserve nonfinite inputs as quoted text. See the
+[shared gateway design](../docs/gateway/design.md).
+
 | Piece | What it does |
 |---|---|
 | skill `eng-toolkit` | unit rules, how to read results and errors, the tool map for all domains, the report format |

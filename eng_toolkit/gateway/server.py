@@ -15,14 +15,18 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import sys
 from typing import Annotated, Any
 
 from fastmcp import FastMCP
-from pydantic import Field
+from fastmcp.exceptions import ValidationError as MCPValidationError
+from fastmcp.server.middleware import Middleware
+from fastmcp.tools import ToolResult as MCPToolResult
+from pydantic import Field, ValidationError
 
 from eng_toolkit import __version__
-from eng_toolkit.contract import Provenance, ToolResult, inputs_hash
+from eng_toolkit.contract import Provenance, ToolResult, failure, inputs_hash
 from eng_toolkit.domains import all_domains
 from eng_toolkit.external import probe as probe_external
 from eng_toolkit.licenses import (
@@ -39,11 +43,16 @@ from eng_toolkit.licenses import (
     tier_explained_by_bundle,
     violates_policy,
 )
-from eng_toolkit.runner import ENV_READ_DIRS, read_dirs
-from eng_toolkit.workspace import Workspace
+from eng_toolkit.runner import ENV_READ_DIRS, clean_inputs, clean_text, read_dirs
+from eng_toolkit.workspace import Workspace, json_safe
 
 ENGINE = "eng_toolkit.gateway"
 MIN_PYTHON = (3, 12)
+_NUMBER_EXAMPLE = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+_QUANTITY_EXAMPLE = re.compile(
+    rf"['\"]{_NUMBER_EXAMPLE}\s+(?:[A-Za-z°µμ%]|1/)[^'\";,\[\]{{}}]*['\"]"
+    rf"|e\.g\.\s*{_NUMBER_EXAMPLE}\s+(?:[A-Za-z°µμ%]|1/)[^\s'\";,\[\]{{}}]*(?=[.;]|$)"
+)
 
 # The toolkit must never call an LLM. doctor reports if any of these are even installed.
 LLM_SDK_DISTS: tuple[str, ...] = (
@@ -67,6 +76,56 @@ LLM_API_KEY_ENV: tuple[str, ...] = (
     "COHERE_API_KEY",
 )
 
+
+class ArgumentRefusals(Middleware):
+    """Translate framework argument validation before it becomes an MCP error."""
+
+    async def on_call_tool(self, context, call_next):
+        try:
+            return await call_next(context)
+        except (MCPValidationError, ValidationError) as exc:
+            validation = exc if isinstance(exc, ValidationError) else exc.__cause__
+            if not isinstance(validation, ValidationError):
+                raise
+            issues = validation.errors(include_url=False, include_context=False, include_input=False)
+            missing = {"missing", "missing_argument", "missing_keyword_only_argument"}
+            issue = next((item for item in issues if item["type"] not in missing), issues[0])
+            location = issue["loc"]
+            param = clean_text("/" + "/".join(str(part).replace("~", "~0").replace("/", "~1") for part in location))
+            # An unexpected argument name is caller text too; never echo an unbounded key.
+            if len(param) > 256:
+                param = "/"
+            arguments = context.message.arguments or {}
+            tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
+            properties = tool.parameters.get("properties", {}) if tool is not None else {}
+            field = properties.get(location[0], {}) if location else {}
+            expected = field.get("type", "declared argument type")
+            kind = issue["type"]
+            family = "input.invalid"
+            if kind in missing:
+                family = "input.missing"
+                message = f"Required argument is missing; expected {expected}."
+            elif kind in ("unexpected_keyword_argument", "extra_forbidden"):
+                message = "Unknown argument; expected a declared tool parameter."
+            else:
+                value = arguments.get(location[0]) if location else None
+                # Quantity fields document a numeric-with-unit example. Text choices,
+                # paths and JSON records remain ordinary input errors.
+                quantity = _QUANTITY_EXAMPLE.search(field.get("description", "")) or _QUANTITY_EXAMPLE.fullmatch(
+                    repr(field.get("default", ""))
+                )
+                if kind == "string_type" and type(value) in (int, float) and quantity:
+                    family = "units.bare_number"
+                    expected = "string containing a number and its unit"
+                message = f"Invalid argument; expected {expected}."
+            result = failure(
+                family=family, message=message, engine=ENGINE, version=__version__,
+                inputs=clean_inputs(arguments),
+                details={"param": param},
+            )
+            return MCPToolResult(structured_content=result.model_dump(mode="json"))
+
+
 gateway = FastMCP(
     "eng-toolkit",
     version=__version__,
@@ -77,6 +136,7 @@ gateway = FastMCP(
         "error, review_status='unreviewed'}. Results are NOT engineering-approved."
     ),
 )
+gateway.add_middleware(ArgumentRefusals())
 
 DOMAINS = all_domains()
 for _domain in DOMAINS:
@@ -345,7 +405,7 @@ def main(argv: list[str] | None = None) -> None:
         # FastMCP >= 4 returns the plain function from @tool; older versions return a FunctionTool with .fn
         doctor_fn = getattr(toolkit_doctor, "fn", toolkit_doctor)
         report = doctor_fn(scan_env=not args.no_scan)
-        print(json.dumps(report.model_dump(mode="json"), indent=2, ensure_ascii=False))
+        print(json.dumps(json_safe(report.model_dump(mode="json")), indent=2, ensure_ascii=False, allow_nan=False))
         raise SystemExit(0 if report.ok else 1)
 
     transport = getattr(args, "transport", "stdio")
