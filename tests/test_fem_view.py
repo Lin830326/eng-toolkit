@@ -596,8 +596,10 @@ def test_bar_displacement_maximum_and_structure(solved):
         row = table[int(node[0]) - 1]
         assert p == pytest.approx((row["x_mm"], row["y_mm"], row["z_mm"]), abs=2e-5)
     accessor = parsed["document"]["accessors"][parsed["document"]["meshes"][0]["primitives"][0]["attributes"]["POSITION"]]
-    # float32 of metres: 0.1 is stored as 0.10000000149
-    assert accessor["min"] == pytest.approx([0.0, 0.0, -0.01], abs=1e-8) and accessor["max"] == pytest.approx([0.1, 0.01, 0.0], abs=1e-8)
+    # The accessor stores local metres; the node translation places the bar in the model frame.
+    assert accessor["min"] == pytest.approx([-.05, -.005, -.005], abs=1e-8)
+    assert accessor["max"] == pytest.approx([.05, .005, .005], abs=1e-8)
+    assert parsed["node"]["translation"] == pytest.approx([.05, .005, -.005])
     assert r.data["fem_static_comparison"]["max_displacement"]["agrees_with_all_nodes_max"]
 
 

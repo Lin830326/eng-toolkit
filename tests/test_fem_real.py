@@ -399,7 +399,7 @@ def test_too_fine_a_mesh_is_refused_before_gmsh_starts(tmp_path, monkeypatch):
 
     monkeypatch.setattr(X, "run", fail)
     message = failure(static(bar(tmp_path), element_size="1e-9 mm"), "input.too_large")
-    assert "elements" in message and "8.49e+31" in message
+    assert "1/1000" in message and "at least 0.101 mm" in message
     failure(static(bar(tmp_path), element_size="0.5 mm"), "input.too_large")  # 6 sqrt(2) * 10000 / 0.125 = 679 000 elements
     failure(T.mesh(model_path=bar(tmp_path), element_size="0.5 mm"), "input.too_large")
 

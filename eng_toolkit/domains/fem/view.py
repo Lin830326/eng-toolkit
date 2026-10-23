@@ -428,7 +428,7 @@ def read_mesh_file(path: Path, param: str, deadline: Deadline) -> meshing.TetMes
             raise _failure("input.invalid", param, "a node row is not an id and three coordinates") from None
     node_rows = np.concatenate(blocks) if blocks else np.empty((0, 4))
     tets: list[list[str]] = []
-    first_order = 0
+    boundary_types = {str(k) for k in meshing.BOUNDARY_ELEMENT_TYPES}
     for start in range(0, n_elements, PARSE_CHUNK):
         deadline("read mesh")
         for row in element_lines[start : start + PARSE_CHUNK]:
@@ -444,11 +444,11 @@ def read_mesh_file(path: Path, param: str, deadline: Deadline) -> meshing.TetMes
                 if len(connectivity) != 10:
                     raise _failure("input.invalid", param, "a type-11 element does not have 10 nodes")
                 tets.append(connectivity)
-            elif parts[1] == "4":
-                first_order += 1
+            elif parts[1] not in boundary_types:
+                raise _failure("input.unsupported", param, "the mesh contains an unsupported element type; only type 11 volume elements and known boundary elements are supported")
     if not tets:
         raise _failure(
-            "input.invalid", param, "the file holds no 10-node tetrahedra" + (f" ({first_order} first-order ones; fem_static writes second-order meshes)" if first_order else "")
+            "input.invalid", param, "the file holds no 10-node tetrahedra"
         )
     deadline("read mesh")
     try:
@@ -770,6 +770,7 @@ def vertex_normals(surface: Surface, nodes_mm: np.ndarray) -> np.ndarray:
     of the node's fan (one vertex); computed on the drawn (possibly deformed) positions."""
     _, d = meshing.tri6_shape(_NODE_POINTS)  # (6 points, 6 nodes, 2)
     x = nodes_mm[surface.nodes6]  # (f, 6, 3)
+    x = x - x[:, :1, :]
     tangent = np.einsum("fnk,pnj->fpkj", x, d)
     normal = np.cross(tangent[..., 0], tangent[..., 1])  # (f, 6, 3) outward: d/dL2 x d/dL3 = (b - a) x (c - a) on a flat facet
     length = np.linalg.norm(normal, axis=2, keepdims=True)
@@ -788,6 +789,8 @@ def vertex_normals(surface: Surface, nodes_mm: np.ndarray) -> np.ndarray:
 
 def enclosed_volume(points: np.ndarray, triangles: np.ndarray) -> float:
     """Signed volume inside a closed, outward-oriented triangle surface (divergence theorem)."""
+    points = np.asarray(points, dtype=np.float64)
+    points = points - (points.min(axis=0) + (points.max(axis=0) - points.min(axis=0)) / 2)
     a, b, c = (points[triangles[:, k]] for k in range(3))
     return float(np.einsum("tk,tk->t", a, np.cross(b, c)).sum() / 6.0)
 
@@ -831,6 +834,7 @@ def glb_bytes(
     lines: list[LinePrimitive],
     surface_extras: dict[str, Any],
     node_extras: dict[str, Any],
+    translation: np.ndarray,
 ) -> bytes:
     blob = bytearray()
     views: list[dict[str, Any]] = []
@@ -896,7 +900,7 @@ def glb_bytes(
         "asset": {"generator": "eng-toolkit fem_view", "version": "2.0"},
         "scene": 0,
         "scenes": [{"nodes": [0]}],
-        "nodes": [{"mesh": 0, "name": name, "extras": node_extras}],
+        "nodes": [{"mesh": 0, "name": name, "extras": node_extras, "translation": [float(x) for x in translation]}],
         "meshes": [{"name": name, "primitives": primitives}],
         "materials": materials,
         "buffers": [{"byteLength": len(blob)}],
@@ -1120,8 +1124,11 @@ def view(
     else:
         mode = "explicit" if scale != 0.0 else "undeformed"
         factor = float(scale)
-    drawn_nodes = tetra.nodes + factor * u
-    if not np.all(np.isfinite(drawn_nodes)) or np.abs(drawn_nodes).max() > MAX_COORDINATE_MM * 10:
+    origin_mm = tetra.nodes.min(axis=0) + (tetra.nodes.max(axis=0) - tetra.nodes.min(axis=0)) / 2
+    local_nodes = tetra.nodes - origin_mm
+    drawn_nodes = local_nodes + factor * u
+    translation = to_gltf(origin_mm)[0]
+    if not np.all(np.isfinite(drawn_nodes)) or np.abs(drawn_nodes + origin_mm).max() > MAX_COORDINATE_MM * 10:
         raise _failure("input.out_of_range", "/deformation_scale", f"the factor {factor:g} moves the shape beyond {MAX_COORDINATE_MM * 10:g} mm")
     exaggerated = factor > 1.0 and max_u > 0.0
     if factor != 0.0 and max_u == 0.0:
@@ -1133,7 +1140,7 @@ def view(
         notes.append(f"Shape scaled: displacements drawn x{factor:.6g} (less than true size)")
     elif factor == 1.0:
         notes.append("Shape deformed at true scale (x1)")
-    undeformed_volume = enclosed_volume(tetra.nodes[surface.vertex_node], surface.triangles)
+    undeformed_volume = enclosed_volume(local_nodes[surface.vertex_node], surface.triangles)
     drawn_volume = enclosed_volume(drawn_nodes[surface.vertex_node], surface.triangles) if factor != 0.0 else undeformed_volume
     inverted = bool(factor != 0.0 and undeformed_volume > 0.0 and drawn_volume <= 0.0)
     if inverted:
@@ -1150,6 +1157,12 @@ def view(
     if explicit is not None:
         lo, hi = explicit
         range_mode = "explicit"
+        if cmap == "diverging":
+            extent = max(abs(lo), abs(hi))
+            if lo != -extent or hi != extent:
+                notes.append("Diverging range expanded symmetrically about zero: light grey represents zero")
+                warnings.append("the explicit diverging range was expanded symmetrically about zero so light grey represents zero")
+            lo, hi = -extent, extent
     else:
         range_mode = "auto"
         if cmap == "diverging":
@@ -1187,7 +1200,7 @@ def view(
     if show_undeformed_edges and factor != 0.0:
         outline = surface.edges[surface.feature]
         if len(outline):
-            lines.append(_line_primitive("undeformed_outline", OUTLINE_COLOUR, outline, tetra.nodes, f"feature edges of the undeformed shape: every facet edge whose two facets' normals differ by more than {FEATURE_ANGLE_DEG:g} degrees"))
+            lines.append(_line_primitive("undeformed_outline", OUTLINE_COLOUR, outline, local_nodes, f"feature edges of the undeformed shape: every facet edge whose two facets' normals differ by more than {FEATURE_ANGLE_DEG:g} degrees"))
             outline_drawn = True
         else:
             notes.append("No feature edges: the undeformed outline is not drawn")
@@ -1205,6 +1218,7 @@ def view(
         "unit": unit,
         "unit_symbol": symbol,
         "widened": widened,
+        "symmetric_about_zero": cmap == "diverging",
         "clamped_below": below,
         "clamped_above": above,
         "clamp_rule": "values outside the range take the end colour; counts are of surface nodes",
@@ -1234,7 +1248,11 @@ def view(
         "legend": legend,
         "deformation": deformation,
         "notes": notes,
-        "units": {"model_unit": "millimetre", "unit": "metre", "up_axis": "+Y", "conversion": CONVERSION_TEXT},
+        "units": {
+            "model_unit": "millimetre", "unit": "metre", "up_axis": "+Y", "conversion": CONVERSION_TEXT,
+            "origin_mm": [float(x) for x in origin_mm], "node_translation_m": [float(x) for x in translation],
+            "positions": "local to the model bounding-box centre; apply the node translation to recover global glTF coordinates",
+        },
         "attributes": {
             "COLOR_0": "float32 linear RGB of the colour map (the table is sRGB; COLOR_0 = sRGB transfer undone)",
             "_FIELD": f"float32 nodal value of {spec.name} in {unit}",
@@ -1252,6 +1270,13 @@ def view(
     }
     deadline("write")
     positions = to_gltf(drawn_nodes[surface.vertex_node])
+    rounded = positions.astype("<f4").astype(np.float64)
+    a, b, c = (surface.triangles[:, k] for k in range(3))
+    area64 = np.cross(positions[b] - positions[a], positions[c] - positions[a])
+    area32 = np.cross(rounded[b] - rounded[a], rounded[c] - rounded[a])
+    area_size = np.hypot.reduce(area64, axis=1)
+    if np.any(area_size == 0) or np.any(np.hypot.reduce(area32 - area64, axis=1) > 1e-4 * area_size):
+        raise _failure("input.out_of_range", source.mesh_param, "the drawn triangles cannot be represented accurately as float32 positions, even relative to the model centre")
     normals_model = vertex_normals(surface, drawn_nodes)
     normals = np.stack([normals_model[:, 0], normals_model[:, 2], -normals_model[:, 1]], axis=1)
     node_ids = (surface.vertex_node + 1).astype(np.float64)
@@ -1269,6 +1294,7 @@ def view(
         lines=lines,
         surface_extras=surface_extras,
         node_extras=node_extras,
+        translation=translation,
     )
     glb_artifact = job.write_bytes(GLB_NAME, payload, fmt="glb")
     back = read_back(Path(glb_artifact.path).read_bytes())
@@ -1280,6 +1306,8 @@ def view(
         problems.append(f"{len(back.triangles)} triangles instead of {expected_triangles}")
     if not np.array_equal(back.positions, positions.astype("<f4").astype(np.float64)):
         problems.append("positions")
+    if not np.array_equal(back.document["nodes"][0]["translation"], translation):
+        problems.append("node translation")
     if not np.array_equal(back.field, label_values.astype("<f4").astype(np.float64)) or not np.array_equal(back.node_ids, node_ids):
         problems.append("field values or node numbers")
     if not (np.all(np.isfinite(back.colours)) and back.colours.min() >= 0.0 and back.colours.max() <= 1.0):
@@ -1418,6 +1446,8 @@ def view(
             "unit": "metre",
             "up_axis": "+Y",
             "conversion": CONVERSION_TEXT,
+            "node_translation_m": back.document["nodes"][0]["translation"],
+            "position_frame": "local to the model bounding-box centre",
             "vertex_colours": "COLOR_0 float32 linear RGB",
             "material": {"baseColorFactor": [1.0, 1.0, 1.0, 1.0], "metallicFactor": METALLIC, "roughnessFactor": ROUGHNESS, "doubleSided": False},
         },

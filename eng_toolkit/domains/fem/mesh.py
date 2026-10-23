@@ -33,6 +33,9 @@ GMSH_TIMEOUT_S = 120.0
 GMSH_MEMORY_MB = 4096
 SLIVER_QUALITY = 0.05  # mean ratio below which an element is called a sliver
 WEAK_QUALITY = 0.2  # below this the mean-ratio minimum is reported as weak
+# msh2 point, line, triangle and quadrilateral types of order one or two.
+# Everything else must be refused, never silently omitted from the volume model.
+BOUNDARY_ELEMENT_TYPES = frozenset((1, 2, 3, 8, 9, 10, 15, 16))
 
 # C3D10 midside nodes as the (corner, corner) pair, nodes 5..10 (0-based corner indices)
 _MID_EDGES = ((0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3))
@@ -76,33 +79,33 @@ def estimate_elements(volume_mm3: float, size_mm: float) -> float:
 def check_before_meshing(volume_mm3: float, bbox_min: tuple[float, float, float], bbox_max: tuple[float, float, float], size_mm: float) -> float:
     """Refuse a model or an element size that cannot be meshed within the limits; return the estimated element count."""
     extent = [hi - lo for lo, hi in zip(bbox_min, bbox_max)]
-    diagonal = math.sqrt(sum(e * e for e in extent))
+    diagonal = math.hypot(*extent)
     if not (MIN_PART_MM <= max(extent) and diagonal <= MAX_PART_MM):
         raise ToolFailure(
             "input.out_of_range",
             f"the part is {max(extent):.6g} mm at its longest (diagonal {diagonal:.6g} mm); this tool takes parts between {MIN_PART_MM:g} mm and {MAX_PART_MM:g} mm",
-            {"longest_mm": max(extent), "diagonal_mm": diagonal},
+            {"param": "/model_path", "longest_mm": max(extent), "diagonal_mm": diagonal},
         )
     smallest = diagonal * MIN_SIZE_FRACTION
+    if size_mm < smallest:
+        raise ToolFailure(
+            "input.too_large",
+            f"element size {size_mm:.6g} mm is below 1/{round(1 / MIN_SIZE_FRACTION)} of the part's diagonal ({diagonal:.6g} mm, so at least {smallest:.4g} mm)",
+            {"param": "/element_size", "size_mm": size_mm, "smallest_mm": smallest, "diagonal_mm": diagonal},
+        )
+    if not math.isfinite(size_mm) or size_mm > diagonal:
+        raise ToolFailure(
+            "input.out_of_range",
+            f"element size {size_mm:.6g} mm is larger than the part's diagonal ({diagonal:.6g} mm)",
+            {"param": "/element_size", "diagonal_mm": diagonal},
+        )
     estimate = estimate_elements(volume_mm3, size_mm)
     if estimate > MAX_ELEMENTS:
         raise ToolFailure(
             "input.too_large",
             f"element size {size_mm:.6g} mm on a part of {volume_mm3:.6g} mm3 would need about {estimate:.3g} elements; the limit is {MAX_ELEMENTS} "
             f"(use a size of at least {(TET_PER_UNIT_VOLUME * volume_mm3 / MAX_ELEMENTS) ** (1 / 3):.4g} mm)",
-            {"estimated_elements": float(f"{estimate:.6g}"), "max_elements": MAX_ELEMENTS, "size_mm": size_mm, "volume_mm3": volume_mm3},
-        )
-    if size_mm < smallest:
-        raise ToolFailure(
-            "input.too_large",
-            f"element size {size_mm:.6g} mm is below 1/{round(1 / MIN_SIZE_FRACTION)} of the part's diagonal ({diagonal:.6g} mm, so at least {smallest:.4g} mm)",
-            {"size_mm": size_mm, "smallest_mm": smallest, "diagonal_mm": diagonal},
-        )
-    if size_mm > diagonal:
-        raise ToolFailure(
-            "input.out_of_range",
-            f"element size {size_mm:.6g} mm is larger than the part's diagonal ({diagonal:.6g} mm)",
-            {"size_mm": size_mm, "diagonal_mm": diagonal},
+            {"param": "/element_size", "estimated_elements": float(f"{estimate:.6g}"), "max_elements": MAX_ELEMENTS, "size_mm": size_mm, "volume_mm3": volume_mm3},
         )
     return estimate
 
@@ -148,21 +151,25 @@ def read_msh(path: Path, size_mm: float) -> TetMesh:
         j = text.index("$Elements")
         n_elem = int(text[j + 1])
         tets: list[list[int]] = []
-        other_tets = 0
         for row in text[j + 2 : j + 2 + n_elem]:
             parts = row.split()
             kind = int(parts[1])
             if kind == 11:
                 tets.append([int(v) for v in parts[3 + int(parts[2]) :]])
-            elif kind == 4:
-                other_tets += 1
+            elif kind not in BOUNDARY_ELEMENT_TYPES:
+                raise ToolFailure(
+                    "engine.failure", f"Gmsh wrote unsupported element type {kind}; only type 11 volume elements and known boundary elements are supported",
+                    {"param": "/element_size", "element_type": kind},
+                )
+    except ToolFailure:
+        raise
     except (ValueError, IndexError) as exc:
         raise ToolFailure("engine.failure", f"the mesh file written by Gmsh could not be read ({exc})", {}) from exc
     if not tets:
         raise ToolFailure(
             "engine.failure",
-            "Gmsh wrote no second-order tetrahedra" + (f" ({other_tets} first-order ones)" if other_tets else "") + ": the model may not be a closed solid it can mesh",
-            {},
+            "Gmsh wrote no second-order tetrahedra: the model may not be a closed solid it can mesh",
+            {"param": "/element_size"},
         )
     connectivity = np.array(tets, dtype=np.int64)
     if connectivity.ndim != 2 or connectivity.shape[1] != 10:
@@ -205,11 +212,14 @@ _KEAST = np.array(
     [[0.25, 0.25, 0.25, 0.25], [0.5, 1 / 6, 1 / 6, 1 / 6], [1 / 6, 0.5, 1 / 6, 1 / 6], [1 / 6, 1 / 6, 0.5, 1 / 6], [1 / 6, 1 / 6, 1 / 6, 0.5]]
 )
 _KEAST_W = np.array([-0.8, 0.45, 0.45, 0.45, 0.45]) / 6.0
-# where the Jacobian is looked at for validity: the four corners, the six midside points, the centroid
+# The four C3D10 solver integration points, plus the volume rule and the nodes.
+_GAUSS_LOW = (5.0 - math.sqrt(5.0)) / 20.0
+_GAUSS = np.full((4, 4), _GAUSS_LOW)
+np.fill_diagonal(_GAUSS, 1.0 - 3.0 * _GAUSS_LOW)
 _CHECK_POINTS = np.array(
     [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
     + [[0.5 if k in pair else 0.0 for k in range(4)] for pair in _MID_EDGES]
-    + [[0.25, 0.25, 0.25, 0.25]],
+    + _KEAST.tolist() + _GAUSS.tolist(),
     dtype=float,
 )
 
@@ -218,6 +228,7 @@ def _jacobians(mesh: TetMesh, points: np.ndarray) -> np.ndarray:
     """det J of every element at every point: ``(m, p)``."""
     dn = _tet10_derivatives(points)  # (p, 10, 3)
     coords = mesh.nodes[mesh.tets]  # (m, 10, 3)
+    coords = coords - coords[:, :1, :]  # derivatives sum to zero; remove translation before summing
     jac = np.einsum("mna,pnb->mpab", coords, dn)  # (m, p, 3, 3): J[a, b] = sum_n x_n[a] dN_n/dxi_b
     return np.linalg.det(jac)
 
@@ -240,8 +251,8 @@ def check_and_measure(mesh: TetMesh) -> tuple[Quality, float]:
 
     Quality is the *mean ratio* of the four corner nodes: ``12 (3 V)^(2/3) / (sum of the six squared edge lengths)``, 1 for a regular
     tetrahedron and 0 for a flat one (Liu and Joe).  ``min_jacobian_ratio`` is the smallest det J over the element, at the corners, the
-    midside points and the centre, divided by the largest of them in the same element: 1 for a straight-sided element, small or
-    negative for a badly curved one.  Raises ``engine.failure`` when any det J is not positive.
+    midside points, centre and integration points, divided by the largest sampled determinant in that element: 1 for a
+    straight-sided element. Sampling is not a proof of positivity everywhere. Raises ``engine.failure`` when any sample is not positive.
     """
     corners = mesh.nodes[mesh.tets[:, :4]]  # (m, 4, 3)
     edges = np.array([corners[:, b] - corners[:, a] for a, b in _EDGES])  # (6, m, 3)
@@ -252,15 +263,15 @@ def check_and_measure(mesh: TetMesh) -> tuple[Quality, float]:
         raise ToolFailure(
             "engine.failure",
             f"the mesh holds {int(np.sum(volume6 <= 0.0))} tetrahedra with a non-positive volume (first: element {bad + 1}); no solver result can be trusted",
-            {"elements": int(np.sum(volume6 <= 0.0))},
+            {"param": "/element_size", "elements": int(np.sum(volume6 <= 0.0))},
         )
     ratio = 12.0 * (volume6 / 2.0) ** (2.0 / 3.0) / sum_sq
-    dets = _jacobians(mesh, _CHECK_POINTS)  # (m, 11)
-    if np.any(dets <= 0.0):
+    dets = _jacobians(mesh, _CHECK_POINTS)
+    if not np.all(np.isfinite(dets)) or np.any(dets <= 0.0):
         raise ToolFailure(
             "engine.failure",
-            f"{int(np.sum(np.any(dets <= 0.0, axis=1)))} second-order elements are inverted (negative Jacobian at a corner, midside point or the centre); use a smaller element size",
-            {},
+            "second-order elements are inverted or invalid (non-positive or non-finite Jacobian at a corner, midside point, centre or integration point); use a smaller element size",
+            {"param": "/element_size"},
         )
     jac_ratio = float(np.min(dets.min(axis=1) / dets.max(axis=1)))
     mesh_volume = float(np.sum(_jacobians(mesh, _KEAST) @ _KEAST_W))
@@ -378,6 +389,7 @@ def facet_integrals(mesh: TetMesh, facets: Facets, chosen: np.ndarray) -> tuple[
     n, d = tri6_shape(pts)  # (q, 6), (q, 6, 2)
     nodes6 = np.concatenate([facets.corners[chosen], facets.mids[chosen]], axis=1)  # (f, 6)
     x = mesh.nodes[nodes6]  # (f, 6, 3)
+    x = x - x[:, :1, :]
     tangent = np.einsum("fnk,qnj->fqkj", x, d)  # (f, q, 3, 2)
     area_vec = np.cross(tangent[..., 0], tangent[..., 1])  # (f, q, 3)
     magnitude = np.linalg.norm(area_vec, axis=2)  # (f, q)
