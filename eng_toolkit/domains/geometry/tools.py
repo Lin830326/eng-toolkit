@@ -158,6 +158,31 @@ def _with_pointers(compute, default):
     return run
 
 
+def _part_default(details: dict[str, Any]) -> str:
+    return "/spec"
+
+
+def _with_part_pointers(compute):
+    """``geometry_make_part``'s refusals: ``details.param`` becomes a JSON pointer. A refusal inside the spec already carries
+    ``details.pointer`` (``/features/2/diameter``): that is the pointer; a bare parameter name (``name``, ``formats``) becomes
+    ``/name``; a refusal about no parameter points at the spec."""
+
+    def run(job: JobHandle) -> Computed:
+        try:
+            return compute(job)
+        except ToolFailure as exc:
+            inner = exc.details.get("pointer")
+            if isinstance(inner, str) and inner.startswith("/") and inner.strip("/ "):
+                param = inner
+            elif inner == "":  # a refusal about the whole spec text (not JSON, empty, over the size cap)
+                param = "/spec"
+            else:
+                param = viewer.pointer(exc.details, exc.family, default=_part_default(exc.details))
+            raise ToolFailure(exc.family, exc.message, {**exc.details, "param": param}) from None
+
+    return run
+
+
 def _measure_default(details: dict[str, Any]) -> str:
     return "/queries" if "query_index" in details else "/model_path"
 
@@ -852,7 +877,7 @@ def make_part(
         engine=ENGINE_MAKE_PART,
         version=__version__,
         inputs=inputs,
-        compute=compute,
+        compute=_with_part_pointers(compute),
         engines=("cadquery-ocp-novtk", "numpy"),
         standing_warnings=(
             "The part is built exactly as the spec says and checked for validity by OpenCASCADE; it is an unreviewed model, "

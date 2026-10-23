@@ -502,12 +502,12 @@ def test_input_errors_are_contract_results_without_warnings(kwargs, family):
 
 def test_a_bad_name_reports_the_parameter():
     r = failed(run(PROBE_SPEC, name="a b"), "input.invalid")
-    assert r.error.details["param"] == "name"
+    assert r.error.details["param"] == "/name"  # a JSON pointer, like every geometry refusal
 
 
 def test_a_bad_format_lists_the_allowed_ones():
     r = failed(run(PROBE_SPEC, formats="step,iges"), "input.invalid")
-    assert r.error.details["param"] == "formats" and r.error.details["allowed"] == ["step", "glb", "stl", "brep"]
+    assert r.error.details["param"] == "/formats" and r.error.details["allowed"] == ["step", "glb", "stl", "brep"]
 
 
 def test_spec_errors_carry_the_pointer_through_the_runner():
