@@ -139,6 +139,34 @@ class Integrator:
         return split(left,right,fl,fm,fr,estimate,24)
 
 
+def growth_critical(g, a0, upper, demand, kc, tolerance):
+    """Locate instability to a fraction of the remaining growth interval, not of a itself."""
+    if g.intensity(upper, demand) < kc:
+        invalid("toughness", "root is not bracketed within the stated validity range", "input.out_of_range")
+    lower = a0
+    for _ in range(160):
+        if g.name in ("infinite", "edge_small"):
+            # Constant Y admits an algebraic root; its floating-point uncertainty still matters.
+            critical = (kc / (demand * g.factor(a0)))**2 / math.pi
+            error = 64 * math.ulp(critical)
+            remaining = critical - a0 - error
+        else:
+            critical = lower + (upper - lower) / 2
+            # K(a) is increasing on these geometry ranges. Include roundoff even for a zero residual.
+            error = (upper - lower) / 2 + 64 * math.ulp(critical)
+            remaining = lower - a0
+        # dN/da decreases with K for both laws: endpoint life error / life <= error / remaining.
+        if remaining > 0 and error <= tolerance * remaining / 8:
+            return critical
+        if g.name in ("infinite", "edge_small") or critical in (lower, upper):
+            break
+        if g.intensity(critical, demand) < kc:
+            lower = critical
+        else:
+            upper = critical
+    invalid("integration_tolerance", "critical crack endpoint cannot meet the requested life tolerance", "numerical.no_convergence")
+
+
 @server.tool(description="Mode-I LEFM: infinite/finite plates, edge/double-edge, Newman-Raju surface tension, ASTM E399 SENB/CT factors. K, critical crack, Irwin zones and size screen; Paris/Forman growth with adaptive integration and threshold. Geometry/yield limits enforced; no retardation or closure model.")
 def fracture(
     mode: Annotated[str, Field(description="evaluate, critical or growth; compute stress intensity, solve critical size or integrate crack growth.")] = "evaluate",
@@ -161,7 +189,7 @@ def fracture(
     growth_m: Annotated[float, Field(description="Paris/Forman power m, dimensionless .5..8; must agree with the composite units of C.")] = 3,
     load_ratio: Annotated[float, Field(description="Growth stress ratio R=Kmin/Kmax, dimensionless 0..0.95, default 0; compressive cycles are outside scope.")] = 0,
     threshold: Annotated[str, Field(description="No-growth Delta_K threshold, e.g. '4 MPa*m^0.5'; growth only; '' means zero threshold.")] = "",
-    integration_tolerance: Annotated[float, Field(description="Relative adaptive Simpson tolerance, 1e-10..1e-3, default 1e-7; global cap 50000 evaluations.")] = 1e-7,
+    integration_tolerance: Annotated[float, Field(description="Relative life tolerance for integration and critical endpoint, 1e-10..1e-3, default 1e-7; cap 50000 evaluations.")] = 1e-7,
     table_points: Annotated[int, Field(description="Growth CSV stations, 2..101, default 31; log-spaced crack lengths, cumulative cycles.")] = 31,
 ):
     inputs = dict(locals())
@@ -270,22 +298,21 @@ def fracture(
         if law == "forman" and kc is None:
             invalid("toughness", "Forman requires toughness", "input.missing")
         exponent = m if law == "paris" else m-1
-        coefficient = q(growth_c, "growth_c", "stress", target=f"m/cycle/(MPa*m^0.5)^{exponent:g}")
+        coefficient_units = f"m/cycle/(MPa*m^0.5)^{exponent!r}"
+        coefficient = q(growth_c, "growth_c", "stress", target=coefficient_units)
         dkth = q(threshold, "threshold", "K", zero=True, optional=True) or 0.
         af = q(final_crack, "final_crack", "length", optional=True)
         if kc is not None and intensity >= kc:
             invalid("crack_size", "initial crack is already unstable at maximum load")
-        if af is None:
-            if kc is None:
-                invalid("final_crack", "growth needs final crack limit or toughness", "input.missing")
-            af = critical_between(a0, g.bounds()[1])
-        if af <= a0:
-            invalid("final_crack", "final crack must exceed initial crack")
-        g.factor(af)
+        if af is None and kc is None:
+            invalid("final_crack", "growth needs final crack limit or toughness", "input.missing")
+        if af is not None:
+            if af <= a0:
+                invalid("final_crack", "final crack must exceed initial crack")
+            g.factor(af)
         stop = "specified_crack_limit"
-        if kc is not None and g.intensity(af, maximum) >= kc*(1-1e-10):
-            if g.intensity(af, maximum) > kc:
-                af = critical_between(a0, af)
+        if af is None or (kc is not None and g.intensity(af, maximum) >= kc):
+            af = growth_critical(g, a0, g.bounds()[1] if af is None else af, maximum, kc, tol)
             stop = "Kmax_instability"
         check_net(af)
         r.data["growth_stop"] = stop
@@ -298,13 +325,13 @@ def fracture(
             r.artifacts.append(handle.write_text("crack_growth.csv", csv_text(["crack_m", "cycles"], [[a0, 0]]), fmt="csv"))
             return r.done("final_crack_size")
 
-        def integrand(log_a):
-            size = math.exp(log_a)
+        def integrand(log_ratio):
+            size = a0 * math.exp(log_ratio)
             kmax = g.intensity(size, maximum)
             dk = kmax*(1-ratio)
             if dk <= dkth:
                 invalid("threshold", "growth crosses a no-growth threshold within the integration interval")
-            log_value = log_a-math.log(coefficient)-m*math.log(dk)
+            log_value = math.log(a0)+log_ratio-math.log(coefficient)-m*math.log(dk)
             if law == "forman":
                 remaining = (1-ratio)*(kc-kmax)
                 if remaining < -1e-8*kc:
@@ -314,18 +341,18 @@ def fracture(
                 log_value += math.log(remaining)
             return positive_exp(log_value, "growth_c")
 
-        integrator = Integrator(integrand, tol)
-        log_sizes = np.linspace(math.log(a0), math.log(af), stations)
+        integrator = Integrator(integrand, tol / 2)
+        log_sizes = np.linspace(0., math.log1p((af-a0)/a0), stations)
         rows, cumulative = [[a0, 0.]], 0.
         for left, right in zip(log_sizes, log_sizes[1:]):
             cumulative += integrator.integrate(float(left), float(right))
-            rows.append([math.exp(float(right)), cumulative])
+            rows.append([a0 * math.exp(float(right)), cumulative])
         r.add("cycles_to_limit", cumulative, "count")
         if stop == "Kmax_instability":
             r.add("cycles_to_failure", cumulative, "count")
         r.add("final_crack_size", af, "m")
         r.data.update(integration_evaluations=integrator.evaluations, relative_tolerance=tol,
-                      growth_status="integrated", coefficient_units=f"m/cycle/(MPa*m^0.5)^{exponent:g}")
+                      growth_status="integrated", coefficient_units=coefficient_units)
         r.artifacts.append(handle.write_text("crack_growth.csv", csv_text(["crack_m", "cycles"], rows), fmt="csv"))
         r.warnings.append("Paris/Forman coefficients must be calibrated for the material, environment, R and growth regime. Threshold is a hard arrest model; no closure, overload retardation or sequence effects.")
         return r.done("cycles_to_limit")

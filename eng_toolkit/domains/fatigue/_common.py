@@ -175,7 +175,9 @@ def q(raw, param, kind, *, signed=False, zero=False, optional=False, target=None
         units = "count"
     elif target is not None:
         units, dest = composite_count(units, dest, param)
-    qty = parse_quantity({"value": val, "unit": units}, name=param, dimension=str(ureg.Unit(dest).dimensionality))
+    qty = parse_quantity({"value": val, "unit": units}, name=param)
+    if qty.dimensionality != ureg.Unit(dest).dimensionality:
+        invalid(param, f"quantity dimensions must match {dest}", "units.dimension_mismatch")
     if kind == "temperature_scale":
         # Scale quantities with a temperature dimension (Larson-Miller P): offsets are meaningless.
         if str(qty.units) not in TEMPERATURE_SCALES:
@@ -230,6 +232,8 @@ def json_numbers(text, param, cap=1000000):
         invalid(param, f"point cap is {cap}", "input.out_of_range")
     try:
         values = json.loads(stripped, parse_float=lambda s: literal(s, param), parse_constant=lambda s: invalid(param, "nonfinite JSON", "input.out_of_range"))
+    except ToolFailure:
+        raise
     except (ValueError, RecursionError):
         invalid(param, "invalid JSON number list")
     if not isinstance(values, list) or len(values) > cap:

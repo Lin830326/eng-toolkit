@@ -30,7 +30,7 @@ def sn(
     surface_finish: Annotated[str, Field(description="Estimate surface: polished, ground, machined, hot_rolled or as_forged; Shigley steel coefficients use Su in MPa.")] = "polished",
     diameter: Annotated[str, Field(description="Effective round diameter for automatic Marin size, e.g. '20 mm'; 2.79..254 mm; estimate mode; '' omits.")] = "",
     size_factor: Annotated[float, Field(description="Marin size factor kb, dimensionless 0..2; 0 requires diameter in estimate mode, axial defaults to 1.")] = 0,
-    load_type: Annotated[str, Field(description="Estimate stress basis: bending, axial or torsion; kc=1, .85 or .59; torsion input is shear stress.")] = "bending",
+    load_type: Annotated[str, Field(description="Estimate/notch basis: bending, axial or torsion; Marin kc=1, .85 or .59; torsion uses shear stress and its Neuber fit.")] = "bending",
     temperature_factor: Annotated[float, Field(description="Caller Marin temperature factor kd, dimensionless >0..2, default 1; estimate mode, no temperature extrapolation.")] = 1,
     reliability: Annotated[float, Field(description="Estimate reliability percentage: 50, 90, 95, 99, 99.9 or 99.99; rounded Shigley normal-quantile factors.")] = 50,
     kt: Annotated[float, Field(description="Elastic notch concentration Kt, dimensionless 1..100; multiplies mean and elastic peak stress.")] = 1,
@@ -64,18 +64,26 @@ def sn(
         if ssu is not None and (kind != "estimate" or load_type != "torsion"):
             invalid("shear_ultimate_strength", "shear ultimate applies only to torsion estimates")
         kval = number(kt, "kt", 1, 100)
+        loading = choice(load_type, "load_type", ("bending", "axial", "torsion"))
         method = choice(notch_method, "notch_method", ("none", "peterson", "neuber"))
         kf = 1.
         if method != "none":
             radius = q(notch_radius, "notch_radius", "length")
             material_length = q(notch_material_length, "notch_material_length", "length", optional=True)
             if material_length is None:
+                if loading == "torsion" and method == "peterson":
+                    invalid("notch_material_length", "torsional Peterson correction requires a measured material length", "input.missing")
                 if corr.ultimate is None:
                     invalid("ultimate_strength", "automatic notch correlation requires steel ultimate strength", "input.missing")
                 # Dowling states the Peterson steel fit for Su>=550 MPa; Shigley's Neuber fit covers 340..1700 MPa.
                 su = number(corr.ultimate, "ultimate_strength", 550 if method == "peterson" else 345, 1500)
                 if method == "peterson":
                     material_length = .0254 * (2070 / su) ** 1.8 / 1000
+                elif loading == "torsion":
+                    # Shigley 6-35: Su in ksi, sqrt(a_s) in sqrt(inch).
+                    su_ksi = su / 6.894757293168361
+                    root_a = .190 - 2.51e-3 * su_ksi + 1.35e-5 * su_ksi**2 - 2.67e-8 * su_ksi**3
+                    material_length = root_a**2 * .0254
                 else:
                     # Shigley bending/axial fit, sqrt(a_N) in sqrt(mm).
                     root_a = 1.24 - 2.25e-3 * su + 1.60e-6 * su**2 - 4.11e-10 * su**3
@@ -116,7 +124,6 @@ def sn(
                 invalid("ultimate_strength", "steel estimate requires ultimate strength", "input.missing")
             su = number(corr.ultimate, "ultimate_strength", 400, 2000)
             finish = choice(surface_finish, "surface_finish", ("polished", *SURFACES))
-            loading = choice(load_type, "load_type", ("bending", "axial", "torsion"))
             kb = number(size_factor, "size_factor", 0, 2)
             d = q(diameter, "diameter", "length", optional=True)
             if kb and d is not None:
