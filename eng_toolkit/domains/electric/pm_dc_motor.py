@@ -376,19 +376,25 @@ def pm_dc_motor(
                 halfwidth = math.sqrt(max(0.0, vmax*vmax/norm-(winding_r*electrical*flux/norm)**2))
                 direct, quadrature = min(0.0, center+halfwidth), 0.0
             else:
-                low, high = 0.0, maximum_current
-                for _ in range(64):
-                    amplitude = (low+high)/2
-                    trial_d, trial_q = _mtpa(amplitude, flux, ld-lq)
-                    trial_t = _dq(trial_d, trial_q, omega, winding_r, ld, lq, flux, pairs)[2]
-                    if trial_t < requested:
-                        low = amplitude
-                    else:
-                        high = amplitude
-                if high-low > 1e-11*maximum_current:
-                    invalid("torque", "MTPA current bracket failed to converge", "electric.nonconvergence")
-                direct, quadrature = _mtpa(high, flux, ld-lq)
+                tau = requested/(1.5*pairs)
+                if ld == lq:
+                    direct, quadrature = 0.0, tau/flux
+                else:
+                    # MTPA is at least as good as id=0 or the 45-degree
+                    # reluctance-torque point. Both bound the required current.
+                    low, high = 0.0, min(maximum_current, tau/flux, math.sqrt(2*tau/abs(ld-lq)))
+                    for _ in range(64):
+                        amplitude = (low+high)/2
+                        trial_d, trial_q = _mtpa(amplitude, flux, ld-lq)
+                        trial_t = _dq(trial_d, trial_q, omega, winding_r, ld, lq, flux, pairs)[2]
+                        if trial_t < requested:
+                            low = amplitude
+                        else:
+                            high = amplitude
+                    direct, quadrature = _mtpa(high, flux, ld-lq)
                 trial = _dq(direct, quadrature, omega, winding_r, ld, lq, flux, pairs)
+                if not math.isclose(trial[2], requested, rel_tol=1e-10, abs_tol=0):
+                    invalid("torque", "MTPA torque residual failed to converge", "electric.nonconvergence")
                 if math.hypot(trial[0], trial[1]) > vmax*(1+1e-9):
                     # MTPA violates the voltage limit: solve the torque hyperbola
                     # against the voltage ellipse directly (exact requested torque).

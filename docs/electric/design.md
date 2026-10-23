@@ -182,7 +182,11 @@ Breakdown slip is `R2/hypot(Rth,Xth+X2)`. Mathematical breakdown outside slip
 The full T-circuit node solve supplies currents and the loss budget:
 `Pgap=3|I2|^2 R2/s`, rotor copper `s Pgap`, converted power `(1-s)Pgap`,
 shaft power `Pconverted-Pmechanical-Pstray`. Torque equals shaft power/speed at
-every valid operating point. `load_torque` is shaft torque and solves the stable
+every valid operating point. Input power is the nonnegative sum
+`Pin=Pstator_copper+Pcore+Pgap`, evaluated with compensated summation. This avoids
+loss of the small real input-current component when reactive current dominates;
+efficiency and power factor use this power in both results and curve CSVs.
+`load_torque` is shaft torque and solves the stable
 branch including fixed losses. The shaft-torque maximum is located before
 bracketing the load root. Loads above it refuse, even when below electromagnetic
 breakdown. Explicit speed/slip on an unstable constant-load branch receives a warning.
@@ -270,7 +274,14 @@ Field weakening maximizes positive torque over the current disk and resistive
 voltage ellipse. Surface-PM equal-inductance cases use analytic circle candidates.
 Salient cases use 129 bounded d-axis samples, at most eight local brackets and
 up to 64 golden-section refinements, checking current-bracket convergence.
-Requested torque first uses the MTPA current bisection. When that point violates
+Requested torque uses `id=0, iq=T/(1.5 p psi)` directly for equal inductances.
+For salient machines, the 64-step MTPA current bisection uses an upper bound of
+`min(Imax, tau/psi, sqrt(2 tau/abs(Ld-Lq)))`, where `tau=T/(1.5 p)`.
+The last two bounds come from feasible zero-d-axis and 45-degree current vectors,
+respectively. They keep the bracket on the requested-current scale even when the
+current limit is much larger. The computed torque must match the request within
+`1e-10` relative error, with no absolute allowance; otherwise the tool refuses
+`electric.nonconvergence` at `/torque`. When that point violates
 the voltage limit, the field-weakening solve works on the exact torque hyperbola
 `iq=T/(1.5 p s)`, `s=psi+(Ld-Lq) id>0`. Along it `id^2+iq^2` is strictly convex,
 so the minimum-current point is a hyperbola/voltage-ellipse intersection.
@@ -411,6 +422,10 @@ and profile feasibility CSVs compare RMS/peak torque and speed against the state
 limits. Constant-torque screening conservatively requires speed below rated
 speed as well as maximum speed. It does not invent a manufacturer's field-weakening
 curve. Reports say pass within stated limits or fail, never approved.
+Candidate comparisons allow rounding error of at most `1e-10` times each stated
+rating, with no absolute torque or speed allowance. Reported margins remain the
+signed differences in SI units; the result and both candidate CSVs share the
+same profile status.
 
 Bounds: gear ratio 1e-6..1e6, efficiency 1e-6..1, segment times 1e-9..1e9 s,
 load inertia/mass and effort <=1e12 in SI, speed <=1e9 in SI, 100 profile/duty/
@@ -444,10 +459,22 @@ buck gives `L=(Vin-Vo)D/(f DeltaI)`.
 
 Piecewise linear integration gives switch/diode/inductor average, peak and RMS
 currents, input capacitor AC RMS current and output capacitor charge swing.
+Input-capacitor variance is evaluated as
+`a DeltaI^2/12 + a(1-a) Imean^2`, where `a` is the fraction of the period drawing
+source current and `Imean` is the ramp midpoint. Boost uses the full conducting
+interval; buck and buck-boost use the switch-on interval. In boost CCM this
+reduces to `DeltaI^2/12`. The cycle retains `DeltaI` from volt-seconds separately
+from its DC current so subtracting rounded endpoints cannot erase small ripple.
+The ESR current swing uses that retained ripple for buck; boost and buck-boost
+use the inductor peak because their output current switches between zero and
+the diode current.
 Ripple is the conservative sum `charge_swing/C + ESR*current_peak_to_peak`;
 the two extrema need not occur together. Output ripple above 10% of DC voltage
-refuses because the stiff-output assumption no longer holds. ESR-only ripple
-at or above a target also refuses.
+refuses because the stiff-output assumption no longer holds. An ESR contribution
+alone above that limit refuses `electric.model_limit` at `/capacitor_esr`, even
+when capacitance is omitted. Below that limit, omitted capacitance still leaves
+total ripple and the stiff-output assumption unverified. ESR-only ripple at or
+above a target also refuses.
 
 Conduction losses use RMS current squared and diode average current. Duty uses
 interval-mean resistance drops, so ripple copper loss is a separately reported
@@ -527,3 +554,15 @@ seeded 200-case SciPy SLSQP comparison, Hz in EMF constants): 302 tests passed
 in 41.58 seconds, with the optional SciPy checks executed. `python -m eng_toolkit
 doctor` exited 0 and reported no failures. The repository-wide test suite was
 not run. Changes are left uncommitted for coordinator review.
+
+Verification on 2026-10-23 for second-review findings 1 through 5:
+`tests/test_electric_review2.py` contains 32 gateway regressions, including the
+six exact reported cases, 80-digit Decimal circuit and MTPA references, ripple
+below the DC current's floating-point resolution, and candidate CSV checks.
+All six reported cases failed before the fixes. The final run passed 374 tests
+in 43.70 seconds using `.venv/Scripts/python.exe -m pytest -q -x -o addopts=''`
+with all `tests/test_electric_*.py` files, `tests/test_surrogate_inputs.py`,
+`tests/test_gateway.py` and `tests/test_contract.py`. The optional SciPy checks
+executed. `git diff --check` passed. Finding 6 belongs to the separate shared
+gateway fix; no shared files changed. The repository-wide suite was not run,
+and changes remain uncommitted for the coordinator.

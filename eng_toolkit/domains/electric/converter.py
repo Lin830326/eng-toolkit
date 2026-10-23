@@ -23,6 +23,7 @@ class _Cycle:
     minimum: float
     peak: float
     inductance: float
+    ripple: float
 
     @property
     def idle(self):
@@ -106,11 +107,11 @@ def _cycle(topology, mode, current, frequency, inductance,
 
         duty = bisect(lambda d: load(d) - current, _DUTY_MIN, boundary_duty, "output_current")
         peak, diode = point(duty)
-        cycle = _Cycle("dcm", duty, diode, 0.0, peak, inductance)
+        cycle = _Cycle("dcm", duty, diode, 0.0, peak, inductance, peak)
     else:
         duty, mean, slope = _ccm_duty(topology, current, on_voltage, off_voltage, on_resistance, off_resistance)
         ripple = slope * duty / (inductance * frequency)
-        cycle = _Cycle("ccm", duty, 1 - duty, max(0.0, mean - ripple / 2), mean + ripple / 2, inductance)
+        cycle = _Cycle("ccm", duty, 1 - duty, max(0.0, mean - ripple / 2), mean + ripple / 2, inductance, ripple)
     if cycle.peak > 1e9:
         invalid("output_current", "derived peak current exceeds 1e9 A", "input.out_of_range")
     return cycle, critical_current
@@ -261,10 +262,15 @@ def converter(
         critical_inductance = ccm_slope * ccm_duty / (2 * ccm_mean * frequency)
         segments, capacitor_wave, source_wave = _waveforms(topology, cycle, io)
         il_average, il_square = _moments(segments)
-        source_average, source_square = _moments(source_wave)
+        source_average, _ = _moments(source_wave)
         _, capacitor_square = _moments(capacitor_wave)
         local_square = (cycle.minimum ** 2 + cycle.minimum * cycle.peak + cycle.peak ** 2) / 3
         local_mean = (cycle.minimum + cycle.peak) / 2
+        # Center the ramp before taking its second moment. Retain its ripple
+        # separately because subtracting peak and minimum can also lose it.
+        source_fraction = min(1.0, cycle.duty + cycle.diode) if topology == "boost" else cycle.duty
+        source_variance = source_fraction * (cycle.ripple ** 2 / 12
+                                             + (1 - source_fraction) * local_mean ** 2)
         switch_square, diode_square = cycle.duty * local_square, cycle.diode * local_square
         switch_loss, inductor_loss = rs * switch_square, rl * il_square
         diode_loss = vd * cycle.diode * local_mean
@@ -273,8 +279,11 @@ def converter(
         output_power = vo * io
         if ripple_copper > 0.05 * output_power:
             invalid("inductor_resistance", "ripple copper correction exceeds 5% of output power; use a switched-circuit model", "electric.model_limit")
-        charge_ripple, capacitor_current_pp = _charge_ripple(capacitor_wave, frequency)
+        charge_ripple, _ = _charge_ripple(capacitor_wave, frequency)
+        capacitor_current_pp = cycle.ripple if topology == "buck" else cycle.peak
         esr_ripple = capacitor_current_pp * esr
+        if esr_ripple > 0.1 * vo:
+            invalid("capacitor_esr", "ESR ripple alone exceeds 10% of DC voltage; stiff-output approximation is unsupported", "electric.model_limit")
         minimum_capacitance = None
         if voltage_target is not None:
             if voltage_target <= esr_ripple:
@@ -311,14 +320,14 @@ def converter(
             "idle_interval": (cycle.idle, "dimensionless"), "inductance": (induct, "H"),
             "critical_inductance": (critical_inductance, "H"), "critical_output_current": (critical_current, "A"),
             "output_voltage_signed": (-vo if topology == "buck_boost" else vo, "V"),
-            "inductor_ripple_peak_to_peak": (cycle.peak - cycle.minimum, "A"),
+            "inductor_ripple_peak_to_peak": (cycle.ripple, "A"),
             "inductor_current_average": (il_average, "A"), "inductor_current_minimum": (cycle.minimum, "A"),
             "inductor_current_peak": (cycle.peak, "A"), "inductor_current_rms": (math.sqrt(il_square), "A"),
             "switch_current_peak": (cycle.peak, "A"), "switch_current_rms": (math.sqrt(switch_square), "A"),
             "diode_current_peak": (cycle.peak, "A"), "diode_current_rms": (math.sqrt(diode_square), "A"),
             "diode_current_average": (cycle.diode * local_mean, "A"),
             "switch_voltage_stress": (stress, "V"), "diode_voltage_stress": (diode_stress, "V"),
-            "input_capacitor_current_rms": (math.sqrt(max(0.0, source_square - source_average ** 2)), "A"),
+            "input_capacitor_current_rms": (math.sqrt(source_variance), "A"),
             "output_capacitor_current_rms": (math.sqrt(capacitor_square), "A"),
             "output_ripple_esr_peak_to_peak": (esr_ripple, "V"),
             "switch_conduction_loss": (switch_loss, "W"), "diode_conduction_loss": (diode_loss, "W"),
@@ -358,7 +367,7 @@ def converter(
             result.data["control_to_output_ideal_ccm"] = None
             result.data["control_omission_reason"] = "Supply output_capacitance or target_output_ripple for ideal CCM control coefficients."
         if capacitance is None:
-            result.warnings.append("Output capacitance was not supplied; voltage ripple and the stiff-output assumption have not been checked.")
+            result.warnings.append("Output capacitance was not supplied; the ESR ripple limit was checked, but total voltage ripple and the stiff-output assumption remain unverified.")
         result.csv(handle, "converter_intervals.csv", ["interval", "fraction", "inductor_start_A", "inductor_end_A"],
                    [[name, duration, start, end] for name, (duration, start, end) in zip(("switch_on", "diode_on", "idle"), segments)])
         return result.done("duty_cycle")

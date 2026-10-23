@@ -267,7 +267,8 @@ def drive_sizing(
                 invalid(prefix, "maximum torque/speed must be at least the corresponding rated value")
             stats = _statistics(segments, candidate_inertia)
             margins = [continuous-stats["rms_torque"], peak-stats["peak_torque"], rated_speed-stats["peak_speed"], max_speed-stats["peak_speed"]]
-            passed = all(value >= -1e-10 for value in margins)
+            limits = (continuous, peak, rated_speed, max_speed)
+            passed = all(margin >= -1e-10*limit for margin, limit in zip(margins, limits))
             candidate_table.append({"name": name, "rotor_inertia_kg_m2": candidate_inertia,
                                     "rms_torque_N_m": stats["rms_torque"], "peak_torque_N_m": stats["peak_torque"],
                                     "rated_torque_margin_N_m": margins[0], "maximum_torque_margin_N_m": margins[1],
