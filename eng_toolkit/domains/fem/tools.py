@@ -141,6 +141,21 @@ def _mesh_model(job: JobHandle, model_path: str, size_mm: float) -> Meshed:
             f"model_path: the file holds {solid.solids} solids; this tool meshes exactly one (separate bodies cannot be tied together here)",
             {"path": shown, "solids": solid.solids},
         )
+    closed = brep.closure(solid)
+    if not closed.closed:  # an open shell still has an integrated volume, and loose faces would reach Gmsh: refuse both here
+        raise ToolFailure(
+            "input.invalid",
+            f"model_path: {shown!r} is not made of closed solids only: " + " and ".join(closed.problems())
+            + "; a finite element model needs a closed solid (an open shell encloses no material). Export the part as a closed solid",
+            {
+                "param": "/model_path",
+                "path": shown,
+                "open_shells": closed.open_shells,
+                "free_edges": closed.free_edges,
+                "faces_outside_solids": closed.faces_outside_solids,
+                "loose_face_ids": list(closed.loose_face_ids[:100]),
+            },
+        )
     warnings: list[str] = []
     if solid.roots_transferred < solid.roots_in_file:
         warnings.append(
