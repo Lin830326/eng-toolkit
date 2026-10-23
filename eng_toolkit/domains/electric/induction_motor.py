@@ -25,11 +25,13 @@ def _point(s, voltage, r1, x1, r2, x2, ym, omega_sync, fixed_loss, delta):
     node = voltage / (1 + complex(r1, x1) * (ym + yr))
     i1 = node * (ym + yr)
     i2 = node * yr
-    pin = 3 * voltage * i1.real
     stator = 3 * abs(i1) ** 2 * r1
     core = 3 * abs(node) ** 2 * ym.real
     rotor = 3 * abs(i2) ** 2 * r2
     airgap = 3 * abs(node) ** 2 * s * r2 / (r2 * r2 + (s * x2) ** 2)
+    # The input-current real part can lose all precision against reactive
+    # current. These nonnegative circuit powers retain the real input power.
+    pin = math.fsum((stator, core, airgap))
     converted = airgap * (1 - s)
     shaft = converted - fixed_loss
     speed = omega_sync * (1 - s)
