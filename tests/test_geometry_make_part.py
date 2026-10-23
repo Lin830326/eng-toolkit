@@ -84,10 +84,11 @@ def test_flange_on_a_bolt_circle(ocp):
 
 def test_box_sizes_and_area(ocp):
     r = run(spec([box(("80 mm", "40 mm", "10 mm"))]))
-    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([80, 40, 10], abs=1e-9)
+    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([80, 40, 10], abs=1e-6)
     assert r.values["surface_area"].quantity == pytest.approx(2 * (3200 + 800 + 400), abs=1e-6)
     assert r.values["surface_area"].unit == "millimeter ** 2"
-    assert r.data["bbox"] == {"min_mm": [0.0, 0.0, 0.0], "max_mm": [80.0, 40.0, 10.0]}
+    assert r.data["bbox"]["min_mm"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+    assert r.data["bbox"]["max_mm"] == pytest.approx([80.0, 40.0, 10.0], abs=1e-6)
 
 
 def test_cylinder_area(ocp):
@@ -97,21 +98,22 @@ def test_cylinder_area(ocp):
 
 def test_sphere_size_and_area(ocp):
     r = run(spec([sphere("30 mm")]))
-    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([30, 30, 30], abs=1e-9)
+    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([30, 30, 30], abs=1e-6)
     assert r.values["surface_area"].quantity == pytest.approx(4 * math.pi * 225, abs=1e-6)
     assert r.values["surface_area"].quantity == pytest.approx(2827.4334, abs=1e-4)
 
 
 def test_sphere_at_is_its_centre(ocp):
     r = run(spec([sphere("10 mm", at=("10 mm", "20 mm", "30 mm"))]))
-    assert r.data["bbox"] == {"min_mm": [5.0, 15.0, 25.0], "max_mm": [15.0, 25.0, 35.0]}
+    assert r.data["bbox"]["min_mm"] == pytest.approx([5.0, 15.0, 25.0], abs=1e-6)
+    assert r.data["bbox"]["max_mm"] == pytest.approx([15.0, 25.0, 35.0], abs=1e-6)
 
 
 def test_frustum_size_follows_the_axis(ocp):
     up = run(spec([cone("40 mm", "20 mm", "30 mm")]))
-    assert [up.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([40, 40, 30], abs=1e-9)
+    assert [up.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([40, 40, 30], abs=1e-6)
     along_x = run(spec([cone("40 mm", "20 mm", "30 mm", axis="+x")]))
-    assert [along_x.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([30, 40, 40], abs=1e-9)
+    assert [along_x.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([30, 40, 40], abs=1e-6)
     assert along_x.values["volume"].quantity == pytest.approx(math.pi * 10 * 700, abs=1e-6)
 
 
@@ -146,7 +148,7 @@ def test_l_bracket_is_one_solid_with_the_hand_size(ocp):
     text = spec([box(("60 mm", "40 mm", "5 mm")), box(("5 mm", "40 mm", "25 mm"), at=("0 mm", "0 mm", "5 mm"))])
     r = run(text)
     assert r.data["solids"] == 1
-    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([60, 40, 30], abs=1e-9)
+    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([60, 40, 30], abs=1e-6)
 
 
 # --------------------------------------------------------------------------- the probe part end to end
@@ -388,9 +390,9 @@ def test_results_follow_the_output_unit(ocp):
     r = run(spec([box(("100 mm", "50 mm", "20 mm"))]), output_unit="cm", density="2.7 g/cm^3")
     assert r.value.unit == "centimeter ** 3" and r.value.quantity == pytest.approx(100.0, abs=1e-9)
     assert r.values["surface_area"].quantity == pytest.approx(160.0, abs=1e-9)
-    assert r.values["size_x"].quantity == pytest.approx(10.0, abs=1e-9)
+    assert r.values["size_x"].quantity == pytest.approx(10.0, abs=1e-6)
     assert r.values["mass"].quantity == pytest.approx(0.27, abs=1e-9)
-    assert r.data["bbox"]["max_mm"] == [100.0, 50.0, 20.0]
+    assert r.data["bbox"]["max_mm"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-6)
 
 
 def test_provenance_names_the_engine_and_lists_no_input_files(ocp):

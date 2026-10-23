@@ -99,13 +99,13 @@ def test_box_mass_properties_match_the_hand_calculation(models):
     assert r.values["volume"].quantity == pytest.approx(100000.0, abs=1e-6)
     assert r.values["surface_area"].quantity == pytest.approx(16000.0, abs=1e-6)
     assert r.values["surface_area"].unit == "millimeter ** 2"
-    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([100.0, 50.0, 20.0], abs=1e-9)
+    assert [r.values[k].quantity for k in ("size_x", "size_y", "size_z")] == pytest.approx([100.0, 50.0, 20.0], abs=1e-6)
     assert r.values["size_x"].unit == "millimeter"
     assert r.values["mass"].quantity == pytest.approx(0.27, abs=1e-9)
     assert r.values["mass"].unit == "kilogram"
     assert r.data["centroid_mm"] == pytest.approx([50.0, 25.0, 10.0], abs=1e-9)
-    assert r.data["bbox_min_mm"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-9)
-    assert r.data["bbox_max_mm"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-9)
+    assert r.data["bbox_min_mm"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+    assert r.data["bbox_max_mm"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-6)
     assert r.data["solids"] == 1
     assert r.data["faces_by_kind"] == {"plane": 6}
     assert r.data["holes"] == []
@@ -118,9 +118,9 @@ def test_results_are_converted_to_the_output_unit(models):
     assert r.value.unit == "centimeter ** 3"
     assert r.value.quantity == pytest.approx(100.0, abs=1e-9)
     assert r.values["surface_area"].quantity == pytest.approx(160.0, abs=1e-9)
-    assert r.values["size_x"].quantity == pytest.approx(10.0, abs=1e-9)
+    assert r.values["size_x"].quantity == pytest.approx(10.0, abs=1e-6)
     assert r.values["mass"].quantity == pytest.approx(0.27, abs=1e-9)
-    assert r.data["bbox_max_mm"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-9)
+    assert r.data["bbox_max_mm"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-6)
 
 
 def test_a_standing_warning_says_what_the_numbers_are(models):
@@ -143,8 +143,8 @@ def test_probe_part_matches_the_hand_calculation(models):
     assert r.values["surface_area"].quantity == pytest.approx(PROBE_AREA, abs=1e-3)
     assert r.values["mass"].quantity == pytest.approx(0.26557343, abs=1e-6)
     assert r.data["faces_by_kind"] == {"plane": 6, "cylinder": 5}
-    assert r.data["bbox_max_mm"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-9)
-    assert r.data["bbox_min_mm"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-9)
+    assert r.data["bbox_max_mm"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-6)
+    assert r.data["bbox_min_mm"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
 
 
 def test_the_hole_is_recognised_and_the_fillets_are_not(models):
@@ -311,7 +311,7 @@ def test_two_disjoint_boxes_are_two_solids_with_the_summed_volume(models):
     r = run(models["two_boxes"])
     assert r.data["solids"] == 2
     assert r.values["volume"].quantity == pytest.approx(200000.0, abs=1e-5)
-    assert r.values["size_x"].quantity == pytest.approx(300.0, abs=1e-9)
+    assert r.values["size_x"].quantity == pytest.approx(300.0, abs=1e-6)
     assert r.data["faces_by_kind"] == {"plane": 12}
 
 

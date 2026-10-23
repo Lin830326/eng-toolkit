@@ -35,7 +35,7 @@ class MassProperties:
     volume_mm3: float | None  # None unless the shape holds a closed solid of positive volume
     area_mm2: float
     centroid_mm: Vec3  # of the volume, or of the surface when there is no volume
-    bbox_min_mm: Vec3  # exact (BRepBndLib.AddOptimal), not OCCT's loose box
+    bbox_min_mm: Vec3  # conservative Add bounds, including topology/triangulation gaps or spline control hulls
     bbox_max_mm: Vec3
 
 

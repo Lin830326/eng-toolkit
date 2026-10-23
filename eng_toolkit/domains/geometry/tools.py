@@ -24,10 +24,11 @@ from eng_toolkit.domains.geometry import dfm
 from eng_toolkit.domains.geometry import part as partspec
 from eng_toolkit.domains.geometry import queries as grammar
 from eng_toolkit.domains.geometry import view as viewer
+from eng_toolkit.domains.geometry import _numeric
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.licenses import install_hint
 from eng_toolkit.runner import Computed, JobHandle, run_tool
-from eng_toolkit.units import UnitsError, parse_quantity, require_positive, ureg
+from eng_toolkit.units import UnitsError, parse_quantity
 
 ENGINE_MEASURE = "eng_toolkit.geometry.measure"
 ENGINE_MAKE_PART = "eng_toolkit.geometry.make_part"
@@ -38,7 +39,6 @@ TOOL_NAMES: tuple[str, ...] = ("measure", "make_part", "check_dfm", "convert", "
 MAX_INVENTORY_LIMIT = 500
 PART_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 PART_FORMATS: tuple[str, ...] = ("step", "glb", "stl", "brep")  # the order the files are written in
-MESH_DEFLECTION_MM = (0.001, 100.0)
 MAX_HOLES_IN_DATA = 50
 READBACK_TOLERANCE = 1e-6
 AXIS_VECTORS: dict[str, tuple[float, float, float]] = {
@@ -233,8 +233,8 @@ def _area_mm2(entity: brep.Entity, inv: brep.Inventory) -> float:
 @server.tool(
     name="measure",
     description=(
-        "Exact measurements of a 3D CAD model file (.step .stp .iges .igs .brep; read in millimetres): "
-        "volume, surface area, bounding-box size, optional mass, an inventory of faces by kind and of round "
+        "B-rep measurements of a 3D CAD model file (.step .stp .iges .igs .brep; read in millimetres): "
+        "convergence-checked volume and surface area, conservative bounding-box size, optional mass, an inventory of faces by kind and of round "
         "holes (diameter, depth, through or blind), and up to 20 queries. 'queries' is a ';'-separated list of "
         "'distance A B', 'angle A B' (degrees), 'diameter A', 'radius A', 'area A' and "
         "'thickness P(x, y, z) <axis>' (wall thickness along a ray). A and B are F<n> (face number from "
@@ -276,13 +276,8 @@ def measure(
     }
 
     def compute(job: JobHandle) -> Computed:
-        unit_obj = parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units
-        unit = str(unit_obj)
-        per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
-        density_kg_m3 = None
-        if density.strip():
-            rho = require_positive(parse_quantity(density, name="density", dimension="density"), name="density")
-            density_kg_m3 = float(rho.to("kilogram / meter ** 3").magnitude)
+        unit_obj, unit, per_mm = _numeric.output_scale(output_unit)
+        density_kg_m3 = _numeric.density_kg_m3(density)
         if not 0 <= inventory_limit <= MAX_INVENTORY_LIMIT:
             raise _invalid(
                 f"inventory_limit must be between 0 and {MAX_INVENTORY_LIMIT}, got {inventory_limit}",
@@ -300,6 +295,7 @@ def measure(
             )
         model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
         solid = brep.read_solid(model_file, param="model_path")
+        brep.validate_bounds(solid)
         if solid.faces == 0:
             raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
         closed = brep.closure(solid)
@@ -359,7 +355,7 @@ def measure(
             values[name] = length(extent)
         if density_kg_m3 is not None and props.volume_mm3 is not None:
             values["mass"] = QuantityOut(
-                quantity=float(f"{density_kg_m3 * props.volume_mm3 * 1e-9:.12g}"), unit="kilogram"
+                quantity=_numeric.mass_kg(density_kg_m3, props.volume_mm3), unit="kilogram"
             )
         if solid.solids > 1:
             warnings.append(
@@ -438,6 +434,8 @@ def measure(
             "centroid_mm": _list(props.centroid_mm),
             "bbox_min_mm": _list(props.bbox_min_mm),
             "bbox_max_mm": _list(props.bbox_max_mm),
+            "bbox_kind": "conservative, including topology tolerances and spline control hulls",
+            "integration_relative_tolerance": 1e-8,
             "step_roots": {"in_file": solid.roots_in_file, "transferred": solid.roots_transferred},
             "closure": closed.summary(inventory_limit),  # loose_face_ids: ids as in data.faces
             "queries": results,
@@ -455,7 +453,8 @@ def measure(
         compute=_with_pointers(compute, _measure_default),
         engines=("cadquery-ocp-novtk", "numpy"),
         standing_warnings=(
-            "Measures are exact B-rep properties of the file as read, not of a tessellation. Units are millimetres "
+            "Measures use exact B-rep surfaces with convergence-checked numerical integrals. Bounding boxes and sizes are conservative, "
+            "including topology tolerances and spline control hulls. Units are millimetres "
             "as OpenCASCADE reads them (STEP and IGES carry their unit; BREP numbers are taken as millimetres). "
             "Face and hole ids are specific to this file's bytes and this OpenCASCADE version (see "
             "face_ids_valid_for); do not reuse them for another or re-exported file.",
@@ -566,9 +565,7 @@ def check_dfm(
         name = process.strip().lower()
         if name not in dfm.PROCESSES:
             raise dfm.unsupported_process(process)
-        unit_obj = parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units
-        unit = str(unit_obj)
-        per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
+        unit_obj, unit, per_mm = _numeric.output_scale(output_unit)
         axis_name = tool_axis.strip().lower()
         if axis_name not in dfm.AXES:
             raise _invalid_param("tool_axis", f"{tool_axis!r} is not one of {list(dfm.AXES)}", allowed=list(dfm.AXES))
@@ -585,6 +582,7 @@ def check_dfm(
         deadline("read")
         model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
         solid = brep.read_solid(model_file, param="model_path")
+        brep.validate_bounds(solid)
         deadline("read")
         file_hash = job.input_files[-1].sha256
         if solid.faces == 0:
@@ -712,7 +710,7 @@ def check_dfm(
 
 MAKE_PART_DESCRIPTION = (
     "Build a 3D part from a declarative JSON spec (nothing is executed) and write STEP, optionally GLB, STL and BREP, "
-    "with exact volume, surface area, bounding-box size and optional mass. Needs the optional cad engine "
+    "with convergence-checked volume and surface area, conservative bounding-box size and optional mass. Needs the optional cad engine "
     f"({install_hint('cadquery-ocp-novtk')}).\n"
     f"{partspec.grammar_text()}\n"
     'Divide by plain numbers ("$L / 4"), not by lengths. '
@@ -762,20 +760,9 @@ def make_part(
     }
 
     def compute(job: JobHandle) -> Computed:
-        unit_obj = parse_quantity(f"1 {output_unit}", name="output_unit", dimension="length").units
-        unit = str(unit_obj)
-        per_mm = float(ureg.Quantity(1.0, "millimeter").to(unit).magnitude)
-        density_kg_m3 = None
-        if density.strip():
-            rho = require_positive(parse_quantity(density, name="density", dimension="density"), name="density")
-            density_kg_m3 = float(rho.to("kilogram / meter ** 3").magnitude)
-        deflection_mm = float(parse_quantity(mesh_deflection, name="mesh_deflection", dimension="length").to("millimeter").magnitude)
-        if not MESH_DEFLECTION_MM[0] <= deflection_mm <= MESH_DEFLECTION_MM[1]:
-            raise _invalid_param(
-                "mesh_deflection",
-                f"must be between {MESH_DEFLECTION_MM[0]:g} mm and {MESH_DEFLECTION_MM[1]:g} mm, got {deflection_mm:g} mm",
-                limits_mm=list(MESH_DEFLECTION_MM),
-            )
+        unit_obj, unit, per_mm = _numeric.output_scale(output_unit)
+        density_kg_m3 = _numeric.density_kg_m3(density)
+        deflection_mm = conversion.parse_deflection(mesh_deflection, range_family="input.invalid")
         if not PART_NAME.fullmatch(name):
             raise _invalid_param("name", f"{name!r} must be 1 to 64 ASCII letters, digits, '_' or '-'", pattern=PART_NAME.pattern)
         wanted = _part_formats(formats)
@@ -786,6 +773,7 @@ def make_part(
 
         parsed = partspec.parse_spec(spec)
         built = partspec.build(parsed, open_file=open_model)
+        brep.validate_bounds(built.solid, param="/spec")
         props = brep.mass_properties(built.solid)
 
         with tempfile.TemporaryDirectory(prefix="eng-toolkit-") as scratch:
@@ -834,7 +822,7 @@ def make_part(
         for axis, lo, hi in zip(("size_x", "size_y", "size_z"), props.bbox_min_mm, props.bbox_max_mm):
             values[axis] = length(hi - lo)
         if density_kg_m3 is not None:
-            values["mass"] = QuantityOut(quantity=float(f"{density_kg_m3 * volume_mm3 * 1e-9:.12g}"), unit="kilogram")
+            values["mass"] = QuantityOut(quantity=_numeric.mass_kg(density_kg_m3, volume_mm3), unit="kilogram")
 
         warnings = list(built.warnings)
         callouts = {h.feature: h for h in built.holes if h.thread or h.fit}
@@ -856,6 +844,8 @@ def make_part(
             "imports": [item.to_dict() for item in built.imports],
             "params": dict(parsed.params),
             "bbox": {"min_mm": list(props.bbox_min_mm), "max_mm": list(props.bbox_max_mm)},
+            "bbox_kind": "conservative, including topology tolerances and spline control hulls",
+            "integration_relative_tolerance": 1e-8,
             "solids": built.solid.solids,
             "faces": built.solid.faces,
             "readback": {

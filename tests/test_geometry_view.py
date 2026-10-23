@@ -185,7 +185,8 @@ def test_the_glb_is_well_formed_and_carries_faces_legend_and_units(cad, tmp_path
     extras = parsed["node"]["extras"]
     assert extras["tool"] == "geometry_view" and extras["tool_version"]
     assert extras["units"] == {"model_unit": "millimetre", "unit": "metre", "up_axis": "+Y", "conversion": "model (x, y, z) mm -> glTF (x, z, -y) / 1000 m"}
-    assert extras["model_bbox_mm"] == {"min": [0.0, 0.0, 0.0], "max": [100.0, 50.0, 20.0]}
+    assert extras["model_bbox_mm"]["min"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+    assert extras["model_bbox_mm"]["max"] == pytest.approx([100.0, 50.0, 20.0], abs=1e-6)
     assert extras["face_ids_valid_for"] == r.provenance.input_files[0].sha256
     legend = {row["group"]: row for row in extras["legend"]}
     assert set(legend) == {"plane", "cylinder", "cone", "sphere", "torus", "bspline", "other", "edges"}

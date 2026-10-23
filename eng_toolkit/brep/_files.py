@@ -103,6 +103,19 @@ def read_solid(path: Path, *, param: str | None = None) -> Solid:
 def triangulate(solid: Solid, deflection_mm: float) -> Mesh:
     """Tessellate every face with the given linear deflection; each face keeps its own nodes."""
     _occ.load()
+    from eng_toolkit.brep._mesh_process import needs_isolation
+
+    if needs_isolation(solid._handle):
+        from eng_toolkit.brep._view import estimate_triangles, tessellate_faces
+        from eng_toolkit.brep._mesh_process import MESH_TRIANGLES
+
+        estimate = estimate_triangles(solid, deflection_mm).total
+        if estimate > MESH_TRIANGLES:
+            raise ToolFailure("input.out_of_range", "freeform mesh estimate exceeds the triangle budget; use a coarser mesh_deflection",
+                              {"param": "/mesh_deflection", "estimated": True, "triangles": estimate, "limit": MESH_TRIANGLES})
+
+        mesh = tessellate_faces(solid, deflection_mm, with_edges=False)
+        return Mesh(vertices=mesh.vertices, triangles=mesh.triangles, deflection_mm=deflection_mm)
     from OCP.BRep import BRep_Tool
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
     from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED

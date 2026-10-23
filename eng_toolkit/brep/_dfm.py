@@ -270,10 +270,14 @@ def cylinder_facts(solid: Solid, inv: Inventory, *, deadline: Callable[[str], No
 class _Samples:
     """Points of planar faces: the centres of their largest mesh triangles.  The whole shape is meshed once, up front."""
 
-    def __init__(self, shape, faces, deflection: float):
+    def __init__(self, shape, faces, deflection: float, *, deadline=None):
         from OCP.BRepMesh import BRepMesh_IncrementalMesh
+        from eng_toolkit.brep._mesh_process import needs_isolation, isolated_mesh
 
-        BRepMesh_IncrementalMesh(shape, deflection, False, 0.5, True)
+        if needs_isolation(shape):
+            faces = _faces(isolated_mesh(shape, deflection, deadline=deadline))
+        else:
+            BRepMesh_IncrementalMesh(shape, deflection, False, 0.5, True)
         self._faces = faces
         self._cache: dict[int, list[np.ndarray]] = {}
 
@@ -320,10 +324,12 @@ def facing_pairs(
     * Planes: two planar faces with opposite outward normals, each on the other's material side, whose shadows overlap;
       the gap is the exact plane offset.  A pair is kept only when a ray from a point of the overlap, through the
       material, meets nothing before the second face.
-    * Cylinders: a concave and a convex cylinder face on one axis with the same axial extent and span; the gap is the
+    * Cylinders: a concave and a convex cylinder face on one axis with overlapping axial and angular ranges; the gap is the
       difference of the radii, confirmed by a radial ray that meets exactly those two surfaces first.
     """
     _occ.load()
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+
     if deadline is not None:
         deadline("pairs")
     shape = solid._handle
@@ -331,10 +337,10 @@ def facing_pairs(
     lo = np.min([f.bbox_min_mm for f in inv.faces], axis=0)
     hi = np.max([f.bbox_max_mm for f in inv.faces], axis=0)
     diagonal = float(np.linalg.norm(hi - lo))
-    nudge = max(1e-6 * diagonal, 1e-5)
     deflection = max(CHORD_FRACTION * diagonal, 1e-3)
     intersector = _IndexedIntersector(shape, deadline=deadline, phase="pairs")
-    samples = _Samples(shape, faces, deflection)
+    classifier = BRepClass3d_SolidClassifier(shape)
+    samples = _Samples(shape, faces, deflection, deadline=deadline)
     if deadline is not None:
         deadline("pairs")
     pairs: list[FacingPair] = []
@@ -372,6 +378,7 @@ def facing_pairs(
                     complete = False
                     break
                 tested += 1
+                nudge = min(1e-5, gap * 1e-4)
                 for source, target, out in ((a, b, n), (b, a, -n)):
                     wall = None
                     for point in samples.of(source.id, SAMPLES_PER_FACE):
@@ -379,6 +386,8 @@ def facing_pairs(
                             deadline("pairs")
                         if not _inside(faces[target.id - 1], point - out * gap):
                             continue  # the point's shadow misses the other face: air or another feature is across from it
+                        if not _in_material(classifier, point - out * nudge):
+                            continue
                         found = _hits(intersector, point - out * nudge, -out, gap)
                         if found and abs(found[0] - (gap - nudge)) <= 1e-6:
                             wall = point - out * (gap / 2.0)
@@ -418,19 +427,26 @@ def facing_pairs(
                 continue
             ends = sorted(float((np.array(p) - base) @ axis) for p in (inner.start_mm, inner.end_mm))
             outer_ends = sorted(float((np.array(p) - base) @ axis) for p in (outer.start_mm, outer.end_mm))
-            if abs(ends[0] - outer_ends[0]) > SAME_MM or abs(ends[1] - outer_ends[1]) > SAME_MM:
-                continue
-            if abs(inner.span_rad - outer.span_rad) > 1e-6:
+            low, high = max(ends[0], outer_ends[0]), min(ends[1], outer_ends[1])
+            if high - low <= SAME_MM:
                 continue
             if tested >= MAX_PAIR_TESTS:
                 complete = False
                 break
             tested += 1
-            middle = np.array(inner.mid_point_mm)
-            on_axis = base + ((middle - base) @ axis) * axis
-            radial = np.array(inner.radial)
-            found = _hits(intersector, on_axis, radial, outer.radius_mm + 1.0)
-            if len(found) >= 2 and abs(found[0] - inner.radius_mm) <= 1e-6 and abs(found[1] - outer.radius_mm) <= 1e-6:
+            on_axis = base + (low + high) / 2 * axis
+            for radial, span in _angular_overlap(inner, outer):
+                inside = on_axis + radial * inner.radius_mm
+                outside = on_axis + radial * outer.radius_mm
+                if not (_inside(faces[inner.face_id - 1], inside) and _inside(faces[outer.face_id - 1], outside)):
+                    continue
+                nudge = min(1e-5, gap * 1e-4)
+                start = inside + nudge * radial
+                if not _in_material(classifier, start):
+                    continue
+                found = _hits(intersector, start, radial, gap)
+                if not found or abs(found[0] - (gap - nudge)) > 1e-6:
+                    continue
                 pairs.append(
                     FacingPair(
                         kind="cylinder",
@@ -439,14 +455,41 @@ def facing_pairs(
                         point_mm=_tuple(on_axis + radial * (inner.radius_mm + outer.radius_mm) / 2.0),
                         inner_radius_mm=_r(inner.radius_mm),
                         outer_radius_mm=_r(outer.radius_mm),
-                        span_rad=_r(inner.span_rad),
+                        span_rad=_r(span),
                     )
                 )
+                break
         if not complete:
             break
     if deadline is not None:
         deadline("pairs")
     return PairSearch(pairs=tuple(pairs), tested=tested, complete=complete)
+
+
+def _in_material(classifier, point):
+    from OCP.TopAbs import TopAbs_IN
+
+    classifier.Perform(_pnt(point), 1e-7)
+    return classifier.State() == TopAbs_IN
+
+
+def _angular_overlap(inner: CylinderFact, outer: CylinderFact):
+    """Interior directions in the common angular intervals, including seam wrapping."""
+    if inner.span_rad >= 2 * math.pi - 1e-6:
+        return [(np.array(outer.radial), outer.span_rad)]
+    if outer.span_rad >= 2 * math.pi - 1e-6:
+        return [(np.array(inner.radial), inner.span_rad)]
+    first = np.array(inner.radial)
+    second = np.cross(np.array(inner.axis), first)
+    angle = math.atan2(float(second @ outer.radial), float(first @ outer.radial))
+    found = []
+    for shift in (-2 * math.pi, 0.0, 2 * math.pi):
+        low = max(-inner.span_rad / 2, angle + shift - outer.span_rad / 2)
+        high = min(inner.span_rad / 2, angle + shift + outer.span_rad / 2)
+        if high - low > 1e-6:
+            mid = (low + high) / 2
+            found.append((math.cos(mid) * first + math.sin(mid) * second, high - low))
+    return found
 
 
 # --------------------------------------------------------------------------- reach
@@ -475,7 +518,7 @@ def face_access(
     deflection = max(CHORD_FRACTION * diagonal, 1e-3)
     reach = 2.0 * diagonal + 1.0
     intersector = _IndexedIntersector(shape, deadline=deadline, phase="access")
-    samples = _Samples(shape, faces, deflection)
+    samples = _Samples(shape, faces, deflection, deadline=deadline)
     unit = {label: _unit(np.array(v, dtype=np.float64)) for label, v in directions.items()}
     found = []
     for info in inv.faces:

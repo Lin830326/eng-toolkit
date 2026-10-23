@@ -537,6 +537,7 @@ def view(
     source = job.input_file(model_path, param="/model_path", extensions=brep.SOLID_EXTENSIONS, max_bytes=conversion.MAX_INPUT_BYTES)
     original = job.input_files[-1]
     solid = brep.read_solid(source, param="model_path")
+    brep.validate_bounds(solid)
     deadline("read")
     if solid.faces == 0:
         raise _failure("input.invalid", "/model_path", f"no faces in {original.path!r}", path=original.path)
@@ -638,6 +639,8 @@ def view(
         "legend": legend,
         "units": {"model_unit": "millimetre", "unit": "metre", "up_axis": "+Y", "conversion": CONVERSION_TEXT},
         "model_bbox_mm": {"min": [float(v) for v in props.bbox_min_mm], "max": [float(v) for v in props.bbox_max_mm]},
+        "model_bbox_kind": "conservative, including topology tolerances and spline control hulls",
+        "integration_relative_tolerance": 1e-8,
         "face_ids": "F<n> as in geometry_measure for the same file bytes (face_ids_valid_for) and OpenCASCADE version",
         "face_ids_valid_for": sha,
         "mesh_deflection_mm": deflection_mm,
@@ -703,6 +706,8 @@ def view(
             "findings": finding_rows,
             "units": node_extras["units"],
             "model_bbox_mm": node_extras["model_bbox_mm"],
+            "model_bbox_kind": node_extras["model_bbox_kind"],
+            "integration_relative_tolerance": 1e-8,
         },
     )
 
@@ -770,6 +775,7 @@ def view(
             "deflection_mm": deflection_mm,
             "angular_deflection_rad": 0.5,
             "area_exact_mm2": float(f"{props.area_mm2:.12g}"),
+            "area_method": "adaptive B-rep integration, successive tolerances agree within 1e-8 relative",
             "area_mesh_mm2": float(f"{mesh_area:.12g}"),
             "float32_coordinate_error_bound_mm": float(f"{float32_bound:.6g}"),
             "glb": {
