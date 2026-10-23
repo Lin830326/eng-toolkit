@@ -93,15 +93,28 @@ def _bbox(shape) -> tuple[Vec3, Vec3]:
     from OCP.BRepBndLib import BRepBndLib
 
     box = Bnd_Box()
-    # Add includes triangulation deflection and topology tolerances in the gap;
-    # without triangulation it uses analytic/control-hull bounds. CornerMin/Max
-    # include that gap. AddOptimal can miss extrema of rational surfaces.
+    if _all_faces_analytic(shape):
+        BRepBndLib.AddOptimal_s(shape, box, False, False)  # exact for planes, cylinders, cones, spheres, tori
+        if box.IsVoid():
+            raise ToolFailure("input.invalid", "the shape has no extent")
+        return _vec(box.CornerMin()), _vec(box.CornerMax())
+    # Freeform faces: Add includes triangulation deflection and topology tolerances in the gap;
+    # without triangulation it uses control-hull bounds. AddOptimal can miss extrema of rational surfaces.
     BRepBndLib.Add_s(shape, box, True)
     if box.IsVoid():
         raise ToolFailure("input.invalid", "the shape has no extent")
     return tuple(math.nextafter(c, -math.inf) for c in box.CornerMin().Coord()), tuple(
         math.nextafter(c, math.inf) for c in box.CornerMax().Coord()
     )
+
+
+def _all_faces_analytic(shape) -> bool:
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Plane, GeomAbs_Cylinder, GeomAbs_Cone, GeomAbs_Sphere, GeomAbs_Torus
+
+    analytic = (GeomAbs_Plane, GeomAbs_Cylinder, GeomAbs_Cone, GeomAbs_Sphere, GeomAbs_Torus)
+    faces = _faces(shape)
+    return bool(faces) and all(BRepAdaptor_Surface(face).GetType() in analytic for face in faces)
 
 
 def validate_bounds(solid: Solid, *, param: str = "/model_path") -> None:

@@ -710,7 +710,7 @@ def check_dfm(
 
 MAKE_PART_DESCRIPTION = (
     "Build a 3D part from a declarative JSON spec (nothing is executed) and write STEP, optionally GLB, STL and BREP, "
-    "with convergence-checked volume and surface area, conservative bounding-box size and optional mass. Needs the optional cad engine "
+    "with exact volume, surface area, bounding-box size and optional mass. Needs the optional cad engine "
     f"({install_hint('cadquery-ocp-novtk')}).\n"
     f"{partspec.grammar_text()}\n"
     'Divide by plain numbers ("$L / 4"), not by lengths. '
