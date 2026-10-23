@@ -19,6 +19,7 @@ import itertools
 import json
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
@@ -201,9 +202,9 @@ def _plain(cell: str) -> str:
     return cell.strip(" \t")
 
 
-def numeric_cells(cells: list[str], lines: list[int], column: str) -> np.ndarray:
+def numeric_cells(cells: list[str], lines: list[int], column: str, *, exact: bool = False) -> np.ndarray:
     """Strict decimal numbers from the cells of one column (a refusal points at /data_file/<line>/<column>)."""
-    out = np.empty(len(cells))
+    out = np.empty(len(cells), dtype=object if exact else float)
     match = NUMBER.fullmatch
     for i, cell in enumerate(cells):
         t = _plain(cell)
@@ -214,7 +215,7 @@ def numeric_cells(cells: list[str], lines: list[int], column: str) -> np.ndarray
         if not abs(value) <= VALUE_ABS_MAX:  # also catches inf from 1e999
             fail(cell_pointer(lines[i], column), f"data_file line {lines[i]}, column {short(column, 30)}: {short(t, 30)} is beyond the supported magnitude {VALUE_ABS_MAX:g}",
                  "input.out_of_range", line=lines[i], column=display(column[:MAX_LABEL]), limit=VALUE_ABS_MAX, reason="out of range")
-        out[i] = value
+        out[i] = Decimal(t) if exact else value
     return out
 
 
@@ -278,32 +279,19 @@ def csv_series(
 
 # ----------------------------------------------------------------------------------------------- inline JSON
 
-_DUP = "\x00duplicate-key"  # marker placed by the object hook (a JSON key cannot reach here with a NUL: json escapes would be needed)
-
-
 def _no_constants(token: str):
     fail("series", f"'series' contains {token}; NaN and infinity are not allowed")
 
 
-def _pairs(pairs: list[tuple[str, Any]]) -> dict:
-    out: dict = {}
-    for key, value in pairs:
-        if key in out:
-            out.setdefault(_DUP, key)
-        else:
-            out[key] = value
-    return out
-
-
-def number_list(obj: Any, pointer: str, *, allow_empty: bool = False) -> np.ndarray:
+def number_list(obj: Any, pointer: str, *, allow_empty: bool = False, exact: bool = False) -> np.ndarray:
     if not isinstance(obj, list):
         fail(pointer, f"{pointer} must be a list of numbers")
     if len(obj) > MAX_POINTS:
         fail(pointer, f"{pointer} has {len(obj)} values; at most {MAX_POINTS} points per series", "input.out_of_range", limit=MAX_POINTS)
     if not obj and not allow_empty:
         fail(pointer, f"{pointer} is empty")
-    if not set(map(type, obj)) <= {int, float}:
-        bad = next(i for i, v in enumerate(obj) if type(v) not in (int, float))
+    if not set(map(type, obj)) <= {int, float, Decimal}:
+        bad = next(i for i, v in enumerate(obj) if type(v) not in (int, float, Decimal))
         fail(f"{pointer}/{bad}", f"{pointer}/{bad} is not a plain number (text, true/false, null and lists are not numbers)")
     try:
         arr = np.array(obj, dtype=float)
@@ -314,17 +302,28 @@ def number_list(obj: Any, pointer: str, *, allow_empty: bool = False) -> np.ndar
     if bad.any():
         i = int(np.argmax(bad))
         fail(f"{pointer}/{i}", f"{pointer}/{i} is beyond the supported magnitude {VALUE_ABS_MAX:g}", "input.out_of_range", limit=VALUE_ABS_MAX)
-    return arr
+    return np.array(obj, dtype=object) if exact else arr
 
 
-def inline_series(raw: Any, notes: list[str], *, text_x: bool = False, allow_err: bool = False, max_series: int = MAX_SERIES) -> list[Series]:
+def inline_series(raw: Any, notes: list[str], *, text_x: bool = False, allow_err: bool = False, max_series: int = MAX_SERIES, exact_y: bool = False) -> list[Series]:
     """Series from JSON text ``[{"name": "a", "x": [...], "y": [...]}]``; x may be omitted (0, 1, 2, ...)."""
     if not isinstance(raw, str):
         fail("series", "'series' must be JSON text")
     if len(raw) > MAX_SERIES_TEXT:
         fail("series", f"'series' is {len(raw)} characters long; at most {MAX_SERIES_TEXT} (give a CSV file instead)", "input.out_of_range", limit=MAX_SERIES_TEXT)
+    duplicates: dict[int, tuple[dict, str]] = {}
+
+    def pairs_hook(pairs: list[tuple[str, Any]]) -> dict:
+        item: dict = {}
+        for key, value in pairs:
+            if key in item:
+                duplicates.setdefault(id(item), (item, key))
+            else:
+                item[key] = value
+        return item
+
     try:
-        obj = json.loads(raw, parse_constant=_no_constants, object_pairs_hook=_pairs)
+        obj = json.loads(raw, parse_constant=_no_constants, object_pairs_hook=pairs_hook, parse_float=Decimal if exact_y else float)
     except ToolFailure:
         raise
     except (ValueError, RecursionError) as exc:
@@ -342,8 +341,8 @@ def inline_series(raw: Any, notes: list[str], *, text_x: bool = False, allow_err
         p = f"series/{i}"
         if not isinstance(item, dict):
             fail(p, f"/{p} must be an object with 'name', 'x' and 'y'")
-        if _DUP in item:
-            dup = item[_DUP]
+        if id(item) in duplicates:
+            _, dup = duplicates[id(item)]
             fail(f"{p}/{pointer_token(dup)}", f"/{p} repeats the key {short(dup)}; every key may appear once")
         extra = sorted(k for k in item if k not in keys)
         if extra:
@@ -359,7 +358,7 @@ def inline_series(raw: Any, notes: list[str], *, text_x: bool = False, allow_err
         seen.add(name)
         if "y" not in item:
             fail(f"{p}/y", f"/{p} has no 'y' list")
-        y = number_list(item["y"], f"{p}/y")
+        y = number_list(item["y"], f"{p}/y", exact=exact_y)
         labels = None
         if "x" in item:
             if text_x:
@@ -372,6 +371,8 @@ def inline_series(raw: Any, notes: list[str], *, text_x: bool = False, allow_err
                 for j, lab in enumerate(xs):
                     if isinstance(lab, bool) or not isinstance(lab, (str, int, float)):
                         fail(f"{p}/x/{j}", f"/{p}/x/{j} must be a text label or a number")
+                    if not isinstance(lab, str) and not -VALUE_ABS_MAX <= lab <= VALUE_ABS_MAX:
+                        fail(f"{p}/x/{j}", f"/{p}/x/{j} is beyond the supported magnitude {VALUE_ABS_MAX:g}", "input.out_of_range", limit=VALUE_ABS_MAX)
                     text = lab if isinstance(lab, str) else repr(lab)
                     if len(text) > MAX_LABEL:
                         fail(f"{p}/x/{j}", f"/{p}/x/{j} is {len(text)} characters long; at most {MAX_LABEL}", "input.out_of_range", limit=MAX_LABEL)
