@@ -23,8 +23,8 @@ and adds per-face colours and face identity.
 | `show_edges` | `true` | add the B-rep edges as one `GL_LINES` primitive |
 
 Every refusal carries `details.param` as a JSON pointer (`/model_path`, `/highlight`, `/limits/min_wall`, ...): the tool
-wraps its compute and rewrites the parameter names that the shared parsers report (`limits.min_wall` becomes
-`/limits/min_wall`); a refusal about the file (not a solid, budget aside) points at `/model_path`, a time-budget refusal
+wraps its compute and rewrites the parameter names that the shared parsers report (`mesh_deflection` becomes
+`/mesh_deflection`; `dfm.parse_limits` already reports `/limits` or `/limits/<key>`); a refusal about the file (not a solid, budget aside) points at `/model_path`, a time-budget refusal
 at `/max_seconds`.
 
 ## Colours
@@ -72,12 +72,18 @@ Findings with no face are listed in `data.findings_not_coloured` and in `view.js
 warning. This happens: `cad_fixtures.probe_part()` checked as `sheet_metal` gives `sheet.thickness` as an error with no
 face and no edge (no uniform sheet thickness found) (tested).
 
-A finding may concern more faces than its `face_ids` list: `sheet.thickness_uniform` lists the first 50 and gives the
-full count in `extra.faces_total` (the full list is not kept anywhere in `dfm.py`, and `geometry_check_dfm`'s own output
-is unchanged). The view colours the 50 it is given and discloses the rest: every finding row carries `faces_named`,
-`faces_total` and `faces_not_coloured`, `data.findings_partly_coloured` lists the findings with uncoloured faces, and a
-warning names each one. Example (tested): a 200 x 200 x 2 mm plate with an 8 x 8 grid of 3 x 3 x 1 mm bosses as sheet
-metal: 320 faces off the sheet thickness, 50 red, 270 not coloured.
+A finding may concern more faces than `geometry_check_dfm` lists: `sheet.thickness_uniform` lists the first 50 face ids
+in its output and gives the full count in `details.faces_total`. The DFM code keeps the complete list on the in-process
+finding (`Finding.full_face_ids`, read through `dfm.all_face_ids`); it is never written into a tool result, so
+`geometry_check_dfm`'s output (and its `inputs_hash`) is unchanged. The view colours **every** face of a finding from that
+complete list, and `face_ids` in `data.findings_*` and `view.json` is the complete list (its first 50 are the ids
+`geometry_check_dfm` lists; `faces_listed_by_geometry_check_dfm` says how many it lists). `faces_named` (faces in the
+complete list), `faces_total` and `faces_not_coloured` (faces of the finding that could not be coloured: an id with no such
+face in the model, or a total larger than the list) disclose what is left; `data.findings_partly_coloured` lists the
+findings with `faces_not_coloured > 0` and a warning names each one. No rule produces such a finding now, so the list is
+empty in practice. Example (tested, `tests/test_geometry_gaps.py`): a 200 x 200 x 2 mm plate with an 8 x 8 grid of
+3 x 3 x 1 mm bosses as sheet metal: 320 faces off the sheet thickness, all 320 red (before this fix: 50 red, 270 neutral
+and disclosed); `geometry_check_dfm` still lists 50 ids and `faces_total` 320.
 
 `highlighted_face_count` is the number of faces singled out by the colouring: the faces named by at least one finding
 (`dfm`), the listed faces (`highlight`), 0 for `none` and `face_kind`.
@@ -137,7 +143,8 @@ axis conversion.
 `faces` has one row per face in id order: `id`, `kind`, `group`, `color`, `finding_ids` (`D<n>`), `triangle_count`,
 `area_mm2` (exact, from the inventory) and `area_mesh_mm2` (sum of the face's triangles, read back from the GLB bytes).
 `findings` lists every DFM finding with its id, rule, severity, check, message, measured value and limit (mm or ratio),
-face and edge ids, location, `coloured`, `faces_named`, `faces_total` and `faces_not_coloured`.
+face ids (the complete list) and edge ids, location, `coloured`, `faces_named`, `faces_total`, `faces_not_coloured` and
+`faces_listed_by_geometry_check_dfm`.
 
 ## Face-id correspondence
 
@@ -184,9 +191,11 @@ sha256, deflection, exact and mesh area, float32 error bound, accessor bounds) a
 | the running count after any face above 600,000 (second line of defence) | `input.too_large`, same message with "reached" | `/mesh_deflection` |
 | model diagonal / deflection above 5e6 (meshing time guard of `geometry_convert`) | `input.out_of_range` | `/mesh_deflection` |
 | more than 2500 faces with `dfm` (`dfm.MAX_FACES`), more than 20000 otherwise | `input.too_large` | `/model_path` |
-| no closed solid with positive volume | `geometry.not_a_solid` (the refusal of `geometry_check_dfm`) | `/model_path` |
-| a solid with an open shell, or faces outside every solid | `geometry.not_a_solid` with `open_shells`, `free_edges`, `faces_outside_solids` | `/model_path` |
-| a limit value that overflows (a 400-digit number) | `input.out_of_range` (or the parser's own family) | `/limits/<key>` |
+| no closed solid with positive volume | `geometry.not_a_solid` (`dfm.require_closed_solids`, the refusal of `geometry_check_dfm`) | `/model_path` |
+| a solid with an open shell, or faces outside every solid | `geometry.not_a_solid` with `open_shells`, `free_edges`, `faces_outside_solids`, `loose_face_ids` (the same refusal) | `/model_path` |
+| a bad limit (`dfm.parse_limits`, the validator of `geometry_check_dfm`): a value that overflows (a 400-digit number), is infinite or out of range (also after the conversion to mm) | `input.out_of_range` | `/limits/<key>` |
+| a limit that is not a positive number or length, a bare number for a length, the wrong dimension, an unknown key | `input.invalid`, `units.bare_number`, `units.parse_error`, `units.dimension_mismatch` | `/limits/<key>` |
+| `limits` not a JSON object, not valid JSON, nested too deeply | `input.invalid` | `/limits` |
 | `.stl` | `input.unsupported_format` | `/model_path` |
 | coordinates beyond 1 km or not finite | `input.out_of_range` | `/model_path` |
 | face id above the face count | `geometry.unknown_entity` (lists the unknown ids and the face count) | `/highlight` |
@@ -258,9 +267,12 @@ about 100 bytes per triangle) is unchanged.
 `mass_properties` reports a volume for any shape holding a solid with positive volume, which also accepts a solid
 whose shell is open (a box with five faces, saved as BREP, has a "volume") and a compound of a solid with loose faces
 beside it. `brep.closure` checks every shell of every solid for free edges (an edge used by one face of the shell; seams
-and degenerate edges excepted) and counts the faces that lie in no solid. Either refuses the file with
-`geometry.not_a_solid`. `geometry_measure` and `geometry_check_dfm` do not run this check and share the gap (out of scope
-here).
+and degenerate edges excepted) and counts (and numbers, `loose_face_ids`) the faces that lie in no solid. Either refuses
+the file with `geometry.not_a_solid`. The refusal is `dfm.require_closed_solids`, shared with `geometry_check_dfm`, which
+now refuses the same files with the same details. `geometry_measure` runs the same `brep.closure` but reports instead of
+refusing: a solid with an open shell gets no volume or mass (surface area is the primary value), and loose faces beside
+closed solids are left out of the volume (`brep.mass_properties(..., volume="solids")`), listed in `data.closure` and
+warned about.
 
 ## Review fixes (before / after)
 
@@ -268,10 +280,23 @@ here).
 | --- | --- | --- | --- |
 | 1 | memory and time before meshing | sphere r 60 mm at 0.001 mm: 603,802 triangles, 4.1 GB, 29.8 s with `max_seconds=5`; r 300 mm: over 23 GB and 10 min | both refused before meshing in well under a second (`input.out_of_range` at `/mesh_deflection`, estimate and a fitting deflection); cap 600,000; budget and count checked per face; `geometry_convert` refuses the same sphere before meshing |
 | 2 | DFM legend said error = exact, warn = heuristic | `sheet.thickness_uniform` (error, heuristic) shown as "exact rule violated" | legend says severity only; `check` per finding in `data` and `view.json` |
-| 3 | faces beyond a finding's 50 listed ids | 50 red, 270 silently neutral | same colours, plus `faces_named`/`faces_total`/`faces_not_coloured`, `data.findings_partly_coloured` and a warning |
-| 4 | overflowing limit blamed on `/model_path` | `{"min_wall": "<400 nines> mm"}` -> `/model_path` | `/limits/min_wall` (each key parsed on its own first) |
+| 3 | faces beyond a finding's 50 listed ids | 50 red, 270 silently neutral | same colours, plus `faces_named`/`faces_total`/`faces_not_coloured`, `data.findings_partly_coloured` and a warning; later (geometry gaps, below) all 320 coloured |
+| 4 | overflowing limit blamed on `/model_path` | `{"min_wall": "<400 nines> mm"}` -> `/model_path` | `/limits/min_wall` (each key parsed on its own first); later moved into `dfm.parse_limits` (geometry gaps, below) |
 | 5 | doc claimed no rule gives a faceless finding | false (probe part as sheet metal) | doc corrected, case tested |
 | 6 | open shells and loose faces accepted | a box plus a loose face, and an open 5-face shell as a solid, were coloured | refused with `geometry.not_a_solid`; a colour group with no triangles writes no primitive (no empty accessor) |
+
+## Geometry gaps (before / after)
+
+Regression tests in `tests/test_geometry_gaps.py`.
+
+| Gap | Before | After |
+| --- | --- | --- |
+| closure in `geometry_check_dfm` | an open 5-face box saved as BREP, and a box with a loose 10 x 10 face, were checked | both refused like here (`geometry.not_a_solid`, `/model_path`, same details); one check, `dfm.require_closed_solids` on `brep.closure` |
+| closure in `geometry_measure` | the open box: 80000 mm3; box + loose face: 99714.29 mm3 (the face's share of the volume integral) | the open box: no volume or mass, surface area primary, warning; box + loose face: 100000 mm3 (the solid alone), the face in `data.closure.loose_face_ids` and a warning |
+| all faces of a finding | 50 of 320 red | 320 of 320 red; `geometry_check_dfm` output unchanged (50 ids, `faces_total` 320) |
+| closure in `geometry_convert` | open box: `volume_in` 80000 mm3, and its STEP output failed with `geometry.readback_mismatch`; box + loose face: `volume_in` 99714.29 mm3 | converted to all four formats with no volume claimed, a warning and a `no_volume` loss (`docs/geometry-convert/design.md`) |
+| pointers in the other geometry tools | `geometry_check_dfm`, `geometry_measure`, `geometry_convert` named some parameters bare (`max_seconds`) or not at all | every refusal names a JSON pointer, by the rule of `view.pointer` |
+| limits | the view's own per-key pre-pass; `geometry_check_dfm` gave `engine.failure` for a 400-digit limit | one validator, `dfm.parse_limits`, for both tools: `/limits/<key>` for every bad key (an unknown key too, before `/limits`), `/limits` for the text |
 
 ## Not done
 

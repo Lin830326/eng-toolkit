@@ -21,7 +21,7 @@ import numpy as np
 
 from eng_toolkit import brep
 from eng_toolkit.errors import ToolFailure
-from eng_toolkit.units import UnitsError, parse_quantity, require_positive
+from eng_toolkit.units import UnitsError, parse_quantity
 
 PROCESSES: tuple[str, ...] = ("cnc_milling", "sheet_metal")
 RECOGNISED_UNSUPPORTED: tuple[str, ...] = (
@@ -50,6 +50,8 @@ LIMIT_MAX_LENGTH_MM = 1e5  # a limit above 100 m is not a manufacturing limit; r
 LIMIT_MAX_RATIO = 1e6
 LIMIT_MAX_COUNT = 6  # there are six axis directions
 WALL_SEARCH_FACTOR = 5.0  # walls are searched up to this multiple of the minimum-wall limit
+MAX_FACE_IDS_LISTED = 50  # face ids a finding lists in geometry_check_dfm's output (the full list stays in-process)
+MAX_LIMITS_CHARS = 4096  # the limits JSON text
 
 # key -> (kind, default, description); kind "length" takes a string with a unit, "ratio" and "count" a plain number
 LIMIT_DEFAULTS: dict[str, dict[str, tuple[str, Any, str]]] = {
@@ -101,6 +103,15 @@ class Finding:
     location_mm: tuple[float, float, float] | None = None
     basis: str = ""  # what makes it exact or heuristic
     extra: dict[str, Any] = field(default_factory=dict)
+    # Every face the finding concerns, when ``face_ids`` lists only the first ones (sheet.thickness_uniform lists 50 and
+    # gives the count in ``extra['faces_total']``).  For in-process callers (geometry_view colours all of them); it is
+    # never written into a tool result, so geometry_check_dfm's output is unchanged.
+    full_face_ids: list[int] | None = field(default=None, repr=False, compare=False)
+
+
+def all_face_ids(finding: Finding) -> list[int]:
+    """The complete face list of a finding: ``full_face_ids`` when the rule kept one, else ``face_ids``."""
+    return list(finding.full_face_ids) if finding.full_face_ids is not None else list(finding.face_ids)
 
 
 @dataclass
@@ -116,62 +127,130 @@ def _bad(message: str, **details: Any) -> ToolFailure:
     return ToolFailure("input.invalid", message, details)
 
 
+def limit_pointer(key: str) -> str:
+    """The JSON pointer (RFC 6901) of one key of ``limits``: ``/limits/min_wall``."""
+    return "/limits/" + key.replace("~", "~0").replace("/", "~1")
+
+
+def _shown(text: str, limit: int = 64) -> str:
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _limit_error(family: str, key: str, message: str, **details: Any) -> ToolFailure:
+    return ToolFailure(family, f"limits.{_shown(key)}: {message}", {"param": limit_pointer(key), **details})
+
+
 def _within(key: str, value: float, ceiling: float, unit: str) -> None:
+    suffix = f" {unit}" if unit else ""
+    if not math.isfinite(value):
+        raise _limit_error("input.out_of_range", key, f"is not a finite number; the largest value accepted is {ceiling:g}{suffix}", maximum=ceiling)
     if value > ceiling:
-        raise ToolFailure(
-            "input.out_of_range",
-            f"limits.{key}: {value:g}{(' ' + unit) if unit else ''} is above the largest value accepted ({ceiling:g}{(' ' + unit) if unit else ''})",
-            {"param": f"limits.{key}", "maximum": ceiling},
-        )
+        raise _limit_error("input.out_of_range", key, f"{value:g}{suffix} is above the largest value accepted ({ceiling:g}{suffix})", maximum=ceiling)
+
+
+def _parse_limit(key: str, kind: str, value: Any) -> float:
+    """One limit, validated on its own: every refusal names ``/limits/<key>``, and a number too large for a float (a
+    400-digit integer), an infinity or a NaN is ``input.out_of_range`` rather than an arithmetic error."""
+    if kind == "length":
+        if not isinstance(value, str):
+            raise _limit_error("units.bare_number", key, 'give a length with a unit, e.g. "1 mm"')
+        name = f"limits.{_shown(key)}"
+        try:
+            quantity = parse_quantity(value, name=name, dimension="length")
+            millimetres = float(quantity.to("millimeter").magnitude)
+        except UnitsError as exc:
+            # parse_quantity's only input.invalid is a magnitude that is not finite (inf, NaN, 1e400)
+            family = "input.out_of_range" if exc.family == "input.invalid" else exc.family
+            raise ToolFailure(family, exc.message, {**exc.details, "param": limit_pointer(key)}) from None
+        except (ArithmeticError, ValueError, TypeError) as exc:  # OverflowError: an integer beyond any float
+            raise _limit_error("input.out_of_range", key, f"the value is outside the supported range ({type(exc).__name__})", maximum=LIMIT_MAX_LENGTH_MM) from None
+        _within(key, millimetres, LIMIT_MAX_LENGTH_MM, "mm")
+        if millimetres <= 0.0:
+            raise _limit_error("input.invalid", key, f"must be > 0, got {_shown(value)!r}", received=_shown(value))
+        return millimetres
+    ceiling = float(LIMIT_MAX_COUNT if kind == "count" else LIMIT_MAX_RATIO)
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise _limit_error("input.invalid", key, "must be a number")
+    try:
+        number = float(value)
+    except OverflowError:
+        raise _limit_error("input.out_of_range", key, f"the value is outside the supported range (largest accepted {ceiling:g})", maximum=ceiling) from None
+    except ValueError:
+        raise _limit_error("input.invalid", key, f"{_shown(str(value))!r} is not a number") from None
+    _within(key, number, ceiling, "")
+    if number <= 0.0:
+        raise _limit_error("input.invalid", key, f"must be a positive number, got {_shown(repr(value))}")
+    return number
 
 
 def parse_limits(process: str, raw: str) -> dict[str, float]:
-    """The limits for ``process``: defaults overridden by the JSON object ``raw``.  Lengths come back in mm."""
+    """The limits for ``process``: defaults overridden by the JSON object ``raw``.  Lengths come back in mm.
+
+    The one validator of the limits of ``geometry_check_dfm`` and ``geometry_view``: every refusal carries
+    ``details.param``, ``/limits`` for the text as a whole and ``/limits/<key>`` for one key (an unknown key, a value
+    that is not a positive number or length, or one out of range, also after the conversion to millimetres).
+    """
     table = LIMIT_DEFAULTS[process]
     given: dict[str, Any] = {}
+    if len(raw) > MAX_LIMITS_CHARS:
+        raise _bad(f"limits: {len(raw)} characters; at most {MAX_LIMITS_CHARS}", param="/limits", limit=MAX_LIMITS_CHARS)
     if raw.strip():
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise _bad(f"limits: not valid JSON ({exc.msg} at position {exc.pos})", param="limits") from exc
+            raise _bad(f"limits: not valid JSON ({exc.msg} at position {exc.pos})", param="/limits") from None
+        except RecursionError:
+            raise _bad("limits: nested too deeply to be read", param="/limits") from None
+        except ValueError as exc:  # an integer with more digits than Python converts
+            raise ToolFailure("input.out_of_range", f"limits: a number is outside the supported range ({_shown(str(exc), 120)})", {"param": "/limits"}) from None
         if not isinstance(parsed, dict):
-            raise _bad("limits: must be a JSON object such as {\"min_wall\": \"1 mm\"}", param="limits")
+            raise _bad("limits: must be a JSON object such as {\"min_wall\": \"1 mm\"}", param="/limits")
         unknown = sorted(set(parsed) - set(table))
         if unknown:
-            raise _bad(
-                f"limits: {unknown} are not limits of process {process!r}; allowed: {sorted(table)}",
-                param="limits",
-                allowed=sorted(table),
+            raise ToolFailure(
+                "input.invalid",
+                f"limits: {[_shown(k) for k in unknown[:10]]}{' ...' if len(unknown) > 10 else ''} are not limits of process "
+                f"{process!r}; allowed: {sorted(table)}",
+                {"param": limit_pointer(unknown[0]), "allowed": sorted(table), "unknown": [_shown(k) for k in unknown[:100]]},
             )
         given = parsed
-    out: dict[str, float] = {}
-    for key, (kind, default, _) in table.items():
-        value = given.get(key, default)
-        try:
-            if kind == "length":
-                if not isinstance(value, str):
-                    raise UnitsError("units.bare_number", f"limits.{key}: give a length with a unit, e.g. \"1 mm\"", {"param": f"limits.{key}"})
-                quantity = require_positive(parse_quantity(value, name=f"limits.{key}", dimension="length"), name=f"limits.{key}")
-                out[key] = float(quantity.to("millimeter").magnitude)
-                _within(key, out[key], LIMIT_MAX_LENGTH_MM, "mm")
-            else:
-                if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-                    raise _bad(f"limits.{key}: must be a number", param=f"limits.{key}")
-                number = float(value)
-                if not math.isfinite(number) or number <= 0.0:
-                    raise _bad(f"limits.{key}: must be a positive number, got {value!r}", param=f"limits.{key}")
-                out[key] = number
-                _within(key, number, LIMIT_MAX_COUNT if kind == "count" else LIMIT_MAX_RATIO, "")
-        except (UnitsError, ToolFailure):
-            raise
-        except ValueError as exc:
-            raise _bad(f"limits.{key}: {value!r} is not a number", param=f"limits.{key}") from exc
-    return out
+    return {key: _parse_limit(key, kind, given.get(key, default)) for key, (kind, default, _) in table.items()}
 
 
 def defaults_used(process: str, raw: str) -> list[str]:
     given = set(json.loads(raw)) if raw.strip() else set()
     return [key for key in LIMIT_DEFAULTS[process] if key not in given]
+
+
+def require_closed_solids(solid: brep.Solid, volume_mm3: float | None, *, purpose: str) -> brep.Closure:
+    """Refuse (``geometry.not_a_solid`` at ``/model_path``) a file that is not made of closed solids only: no solid with
+    positive volume, a solid with an open shell (free edges), or faces outside every solid.  The one check of
+    ``geometry_check_dfm`` and ``geometry_view``, on :func:`eng_toolkit.brep.closure`; ``purpose`` says why the tool
+    needs closed solids (it completes the sentence of the message)."""
+    if solid.solids == 0 or volume_mm3 is None:
+        raise ToolFailure(
+            "geometry.not_a_solid",
+            f"model_path holds {solid.faces} faces but no closed solid with positive volume (solids found: {solid.solids}); "
+            f"{purpose}, so a shell or loose surfaces are refused. Export the part as a solid",
+            {"param": "/model_path", "solids": solid.solids, "faces": solid.faces},
+        )
+    closed = brep.closure(solid)
+    if not closed.closed:
+        raise ToolFailure(
+            "geometry.not_a_solid",
+            "model_path is not made of closed solids only: " + " and ".join(closed.problems()) + f"; {purpose}: an open shell "
+            "encloses no material and a loose face is not part of any solid. Export the part as closed solids",
+            {
+                "param": "/model_path",
+                "solids": closed.solids,
+                "shells": closed.shells,
+                "open_shells": closed.open_shells,
+                "free_edges": closed.free_edges,
+                "faces_outside_solids": closed.faces_outside_solids,
+                "loose_face_ids": list(closed.loose_face_ids[:100]),  # the first 100, numbered as geometry_measure numbers faces
+            },
+        )
+    return closed
 
 
 def unsupported_process(process: str) -> ToolFailure:
@@ -490,13 +569,14 @@ def check_sheet_metal(
                 measured_unit="count",
                 limit=0.0,
                 test="faces off the sheet thickness == 0",
-                face_ids=off[:50],
+                face_ids=off[:MAX_FACE_IDS_LISTED],
                 location_mm=inv.faces[off[0] - 1].origin_mm or tuple(inv.faces[off[0] - 1].bbox_min_mm),
                 basis=(
                     "heuristic interpretation of exact data: a face is an edge face when it touches two faces of the sheet "
                     "thickness; the rest is reported"
                 ),
                 extra={"other_thicknesses_mm": sorted({p.gap_mm for p in other_pairs}), "faces_total": len(off)},
+                full_face_ids=list(off),
             )
         )
 
@@ -670,12 +750,16 @@ __all__ = [
     "AXES",
     "LIMIT_DEFAULTS",
     "MAX_FACES",
+    "MAX_FACE_IDS_LISTED",
     "NOT_PERFORMED",
     "PROCESSES",
     "Finding",
     "Report",
+    "all_face_ids",
     "defaults_used",
+    "limit_pointer",
     "parse_limits",
+    "require_closed_solids",
     "run",
     "unsupported_process",
 ]

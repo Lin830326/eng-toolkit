@@ -974,9 +974,14 @@ def test_step_written_in_metres_is_read_back_in_millimetres(tmp_path):
     # numbers 0.1, 0.05, 0.02; the reader must return millimetres, so the top face is still at z = 20.
     from OCP.Interface import Interface_Static
 
-    Interface_Static.SetCVal_s("write.step.unit", "M")
+    # The STEP parameters exist only once a writer has been created: set before it, the unit is silently ignored (SetCVal
+    # returns False) unless an earlier test happened to create a writer (tests/dfm_fixtures.py::write_step_inches).
+    writer = STEPControl_Writer()
+    assert Interface_Static.SetCVal_s("write.step.unit", "M")
+    metre_box = tmp_path / "box_m.step"
     try:
-        metre_box = _write_step(BRepPrimAPI_MakeBox(100.0, 50.0, 20.0).Shape(), tmp_path / "box_m.step")
+        writer.Transfer(BRepPrimAPI_MakeBox(100.0, 50.0, 20.0).Shape(), STEPControl_AsIs)
+        assert writer.Write(str(metre_box)) == IFSelect_RetDone
     finally:
         Interface_Static.SetCVal_s("write.step.unit", "MM")
     assert "SI_UNIT($,.METRE.)" in metre_box.read_text(errors="ignore")

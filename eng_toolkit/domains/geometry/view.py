@@ -39,7 +39,7 @@ MEMORY_PER_TRIANGLE_KB = 6.6
 MAX_FACES = 20000  # faces of a model coloured by none, face_kind or highlight; dfm keeps its own limit (dfm.MAX_FACES)
 MAX_SECONDS = (1, 600)
 MAX_PATH_CHARS = 1024
-MAX_TEXT_CHARS = 4096  # highlight and limits
+MAX_TEXT_CHARS = 4096  # highlight (limits: dfm.MAX_LIMITS_CHARS, the same 4096)
 MAX_WORD_CHARS = 64  # process, tool_axis, color_by
 MAX_LISTED = 200  # faces per group and findings listed in data; view.json holds all of them
 JSON_NAME = "view.json"
@@ -93,15 +93,17 @@ def srgb_to_linear(hex_colour: str) -> list[float]:
     return [*out, 1.0]
 
 
-def pointer(details: dict[str, Any], family: str) -> str:
+def pointer(details: dict[str, Any], family: str, *, default: str = "/model_path") -> str:
     """The JSON pointer a refusal names: the given param (``limits.min_wall`` -> ``/limits/min_wall``), or the input the
-    failure is about."""
+    failure is about (``default``: the model file).  Used by every geometry tool's refusals."""
     raw = details.get("param")
+    if isinstance(raw, str) and raw.strip().startswith("/") and raw.strip("/ "):
+        return raw.strip()  # already a pointer (dfm.parse_limits: /limits/<key>, keys escaped as RFC 6901 says)
     if isinstance(raw, str) and raw.strip("/ "):
         return "/" + raw.strip().lstrip("/").replace(".", "/")
     if family == "geometry.time_budget_exceeded":
         return "/max_seconds"
-    return "/model_path"
+    return default
 
 
 # --------------------------------------------------------------------------- parameters (pure)
@@ -130,31 +132,6 @@ def parse_highlight(raw: str) -> list[int]:
             raise _failure("input.invalid", "/highlight", f"{shown!r} is not a face id; use F<n> with n >= 1, e.g. 'F3,F7'")
         ids.add(int(match.group(1)))
     return sorted(ids)
-
-
-def parse_limits(process: str, raw: str) -> dict[str, float]:
-    """``dfm.parse_limits``, with each key first parsed on its own so that a value that overflows (a 400-digit number)
-    is refused at its own pointer ``/limits/<key>`` instead of escaping as an arithmetic error."""
-    try:
-        given = json.loads(raw) if raw.strip() else {}
-    except (ValueError, RecursionError):
-        given = None  # dfm.parse_limits reports the JSON error
-    if isinstance(given, dict):
-        for key, value in given.items():
-            if key not in dfm.LIMIT_DEFAULTS[process]:
-                continue  # dfm.parse_limits names the unknown keys
-            try:
-                dfm.parse_limits(process, json.dumps({key: value}))
-            except ToolFailure:
-                raise
-            except (ArithmeticError, ValueError, TypeError) as exc:
-                raise _failure("input.out_of_range", f"/limits/{key}", f"the value is outside the supported range ({type(exc).__name__})") from None
-    try:
-        return dfm.parse_limits(process, raw)
-    except ToolFailure:
-        raise
-    except (ArithmeticError, ValueError, TypeError, RecursionError) as exc:
-        raise _failure("input.invalid", "/limits", f"cannot be read ({type(exc).__name__})") from None
 
 
 def too_many_triangles(count: int, deflection_mm: float, *, estimated: bool) -> ToolFailure:
@@ -448,12 +425,15 @@ def read_back(data: bytes) -> ReadBack:
 # --------------------------------------------------------------------------- colouring
 
 
-def _finding_entry(n: int, f: dfm.Finding, coloured: bool) -> dict[str, Any]:
+def _finding_entry(n: int, f: dfm.Finding, face_count: int) -> dict[str, Any]:
     def number(value: float | None) -> dict[str, Any] | None:
         if value is None:
             return None
         return {"value": float(f"{value:.12g}"), "unit": "mm" if f.measured_unit == "mm" else f.measured_unit}
 
+    named = dfm.all_face_ids(f)
+    colourable = sum(1 for i in named if 1 <= i <= face_count)
+    total = faces_total(f)
     return {
         "id": f"D{n}",
         "rule": f.rule,
@@ -462,23 +442,25 @@ def _finding_entry(n: int, f: dfm.Finding, coloured: bool) -> dict[str, Any]:
         "message": f.message,
         "measured": number(f.measured),
         "limit": number(f.limit),
-        "face_ids": list(f.face_ids),
+        "face_ids": named,
         "edge_ids": list(f.edge_ids),
         "location_mm": None if f.location_mm is None else [float(v) for v in f.location_mm],
-        "coloured": coloured,
-        "faces_named": len(f.face_ids),
-        "faces_total": faces_total(f),
-        "faces_not_coloured": faces_total(f) - len(f.face_ids),
+        "coloured": colourable > 0,
+        "faces_named": len(named),
+        "faces_total": total,
+        "faces_not_coloured": total - colourable,
+        "faces_listed_by_geometry_check_dfm": len(f.face_ids),
     }
 
 
 def faces_total(f: dfm.Finding) -> int:
-    """How many faces a finding concerns: a rule may list only the first ones in ``face_ids`` and give the full count in
-    ``extra['faces_total']`` (sheet.thickness_uniform lists 50); the faces beyond the list cannot be coloured."""
+    """How many faces a finding concerns: its complete face list (``dfm.all_face_ids``, which keeps the faces
+    ``geometry_check_dfm`` leaves out of its list of 50), or the count in ``extra['faces_total']`` if that is larger."""
+    named = len(dfm.all_face_ids(f))
     total = f.extra.get("faces_total") if isinstance(f.extra, dict) else None
-    if isinstance(total, int) and not isinstance(total, bool) and total >= len(f.face_ids):
+    if isinstance(total, int) and not isinstance(total, bool) and total >= named:
         return total
-    return len(f.face_ids)
+    return named
 
 
 def _groups(mode: str, inv: brep.Inventory, highlight: list[int], findings: list[dfm.Finding]) -> tuple[list[str], dict[int, list[str]]]:
@@ -496,7 +478,7 @@ def _groups(mode: str, inv: brep.Inventory, highlight: list[int], findings: list
     rank = {severity: i for i, severity in enumerate(dfm.SEVERITIES)}  # error first
     worst: dict[int, int] = {}
     for n, f in enumerate(findings, start=1):
-        for face_id in f.face_ids:
+        for face_id in dfm.all_face_ids(f):  # every face of the finding, also those geometry_check_dfm does not list
             if 1 <= face_id <= count:
                 worst[face_id] = min(worst.get(face_id, len(rank)), rank[f.severity])
                 named.setdefault(face_id, []).append(f"D{n}")
@@ -533,9 +515,7 @@ def view(
     axis_name = parse_word(tool_axis, "/tool_axis")
     if axis_name not in dfm.AXES:
         raise _failure("input.invalid", "/tool_axis", f"{tool_axis!r} is not one of {list(dfm.AXES)}", allowed=list(dfm.AXES))
-    if len(limits) > MAX_TEXT_CHARS:
-        raise _failure("input.invalid", "/limits", f"{len(limits)} characters; at most {MAX_TEXT_CHARS}", limit=MAX_TEXT_CHARS)
-    limit_mm = parse_limits(process_name, limits)
+    limit_mm = dfm.parse_limits(process_name, limits)  # the validator of geometry_check_dfm: /limits or /limits/<key>
     parse_word(mesh_deflection, "/mesh_deflection")
     deflection_mm = conversion.parse_deflection(mesh_deflection)
     parse_word(name, "/name")
@@ -561,33 +541,7 @@ def view(
     if solid.faces == 0:
         raise _failure("input.invalid", "/model_path", f"no faces in {original.path!r}", path=original.path)
     props = brep.mass_properties(solid)
-    if solid.solids == 0 or props.volume_mm3 is None:
-        raise ToolFailure(
-            "geometry.not_a_solid",
-            f"model_path holds {solid.faces} faces but no closed solid with positive volume (solids found: {solid.solids}); "
-            "a coloured view is made of a solid only, so a shell or loose surfaces are refused. Export the part as a solid",
-            {"param": "/model_path", "solids": solid.solids, "faces": solid.faces},
-        )
-    closed = brep.closure(solid)
-    if closed.open_shells or closed.faces_outside_solids:
-        problems = []
-        if closed.open_shells:
-            problems.append(f"{closed.open_shells} of {closed.shells} shells of its solids are open ({closed.free_edges} free edges)")
-        if closed.faces_outside_solids:
-            problems.append(f"{closed.faces_outside_solids} faces lie outside any solid (loose faces or shells)")
-        raise ToolFailure(
-            "geometry.not_a_solid",
-            "model_path is not made of closed solids only: " + " and ".join(problems) + "; a coloured view is made of closed "
-            "solids only, so the part's faces cannot be told from stray geometry. Export the part as closed solids",
-            {
-                "param": "/model_path",
-                "solids": closed.solids,
-                "shells": closed.shells,
-                "open_shells": closed.open_shells,
-                "free_edges": closed.free_edges,
-                "faces_outside_solids": closed.faces_outside_solids,
-            },
-        )
+    dfm.require_closed_solids(solid, props.volume_mm3, purpose="a coloured view is made of closed solids only")
     conversion._bounds_check(props)
     face_limit = dfm.MAX_FACES if mode == "dfm" else MAX_FACES
     if solid.faces > face_limit:
@@ -709,14 +663,14 @@ def view(
             raise ToolFailure("geometry.readback_mismatch", f"F{face_id} read back with {count} triangles", {"param": "/model_path"})
 
     coloured_ids = set(named)
-    finding_rows = [_finding_entry(n, f, coloured=any(1 <= i <= len(inv.faces) for i in f.face_ids)) for n, f in enumerate(findings, start=1)]
+    finding_rows = [_finding_entry(n, f, len(inv.faces)) for n, f in enumerate(findings, start=1)]
     coloured_rows = [row for row in finding_rows if row["coloured"]]
     uncoloured_rows = [row for row in finding_rows if not row["coloured"]]
     for row in finding_rows:
         if row["faces_not_coloured"]:
             warnings.append(
-                f"{row['id']} ({row['rule']}) concerns {row['faces_total']} faces but names only {row['faces_named']}; the other "
-                f"{row['faces_not_coloured']} cannot be coloured and look neutral (geometry_check_dfm lists the same {row['faces_named']})"
+                f"{row['id']} ({row['rule']}) concerns {row['faces_total']} faces; {row['faces_not_coloured']} of them could not be "
+                "coloured (no such face in the model, or not named by the rule) and look neutral"
             )
     singled = sorted(coloured_ids) if mode == "dfm" else (highlight_ids if mode == "highlight" else [])
     colour_of = {group: colour for group, colour, _ in palette}

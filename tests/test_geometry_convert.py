@@ -526,13 +526,13 @@ def test_empty_and_garbage_cad_files_are_refused(cad, tmp_path, name):
 
 def test_an_unknown_output_format_is_refused_before_the_file_is_read(tmp_path):
     r = failed(run(tmp_path / "does-not-matter.step", "obj"), "input.invalid")
-    assert r.error.details["param"] == "output_format"
+    assert r.error.details["param"] == "/output_format"  # JSON pointer (was the bare name)
     assert r.provenance.input_files == []
 
 
 def test_a_bad_name_is_refused(cad, tmp_path):
     r = failed(run(cad.write_step(cad.box(), tmp_path / "b.step"), "stl", name="a b"), "input.invalid")
-    assert r.error.details["param"] == "name"
+    assert r.error.details["param"] == "/name"
 
 
 def test_missing_engine_gives_an_install_hint_but_stl_to_stl_still_works(cad, tmp_path, monkeypatch):
@@ -572,7 +572,7 @@ def test_a_step_with_1e150_coordinates_never_yields_a_non_finite_result(cad, tmp
 def test_a_mesh_too_fine_for_the_model_size_is_refused(cad, tmp_path):
     cube = cad.write_step(cad.box(length=5000.0, width=5000.0, height=5000.0), tmp_path / "cube.step")  # 8660 mm across
     r = failed(run(cube, "stl", mesh_deflection="0.001 mm"), "input.out_of_range")  # ratio 8.7e6 > 5e6
-    assert r.error.details["param"] == "mesh_deflection"
+    assert r.error.details["param"] == "/mesh_deflection"
     assert run(cube, "stl", mesh_deflection="0.01 mm").ok  # ratio 8.7e5
 
 
