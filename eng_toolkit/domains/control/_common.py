@@ -36,6 +36,7 @@ DOMAINS = ("continuous", "discrete")
 SAMPLE_TIME_RANGE = (1e-9, 1e9)
 TIME_RANGE = (1e-9, 1e9)
 FREQ_RANGE = (1e-6, 1e6)
+_INT_LIMIT = 10**300  # a JSON integer beyond this cannot be turned into a float (OverflowError); it is out of every range anyway
 
 STANDING = (
     "Classical linear time-invariant SISO analysis. Polynomials are exact as given; root-based results (poles, damping, "
@@ -62,6 +63,8 @@ def plain_number(value: Any, *, name: str, lo: float, hi: float, lo_open: bool =
     """A JSON number in ``[lo, hi]``.  Outside is ``input.invalid`` (or ``input.out_of_range`` with ``range_error``); NaN and infinity never pass."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise UnitsError("input.invalid", f"'{name}' must be a plain number, got {str(value)[:40]!r}", {"param": name})
+    if isinstance(value, int) and abs(value) > _INT_LIMIT:
+        raise UnitsError("input.out_of_range", f"'{name}' is far outside the supported range {lo:g} .. {hi:g}", {"param": name, "min": lo, "max": hi})
     number = float(value)
     if not math.isfinite(number):
         raise UnitsError("input.invalid", f"'{name}' is not finite", {"param": name})
@@ -73,6 +76,8 @@ def plain_number(value: Any, *, name: str, lo: float, hi: float, lo_open: bool =
 
 
 def whole_number(value: Any, *, name: str, lo: int, hi: int, range_error: bool = True) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > _INT_LIMIT:
+        raise UnitsError("input.out_of_range", f"'{name}' must be between {lo} and {hi}", {"param": name, "min": lo, "max": hi})
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise UnitsError("input.invalid", f"'{name}' must be a whole number, got {str(value)[:40]!r}", {"param": name})
     if float(value) != int(value):

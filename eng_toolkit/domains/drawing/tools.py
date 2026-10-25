@@ -13,6 +13,8 @@ from __future__ import annotations
 import importlib.util
 import os
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
@@ -215,7 +217,7 @@ def make_views(
         model_file = job.input_file(model_path, param="model_path", extensions=brep.SOLID_EXTENSIONS)
         solid = brep.read_solid(model_file, param="model_path")
         if solid.faces == 0:
-            raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"path": job.input_files[-1].path})
+            raise ToolFailure("input.invalid", f"model_path: no faces in {job.input_files[-1].path!r}", {"param": "/model_path", "path": job.input_files[-1].path})
         projections = [brep.project(solid, name, hidden=hidden_lines) for name in names]
         hole_data = _Holes()
         if mode == "auto":
@@ -426,6 +428,17 @@ def _read_values(full: dict[str, Any]) -> tuple[dict[str, QuantityOut], str]:
     return values, "page_count"
 
 
+@contextmanager
+def _reading(param: str) -> Iterator[None]:
+    """A refusal about the content of the file named by ``param`` points at that argument (``details.param``)."""
+    try:
+        yield
+    except ToolFailure as exc:
+        if exc.family.startswith(("drawing.", "input.")):
+            exc.details.setdefault("param", "/" + param.lstrip("/"))
+        raise
+
+
 @server.tool(name="read", description=READ_DESCRIPTION)
 def read(
     path: Annotated[str, Field(description="Path to the drawing: .dxf, .pdf or .dwg (a .dwg needs LibreDWG's dwg2dxf, installed by the user)")],
@@ -448,12 +461,13 @@ def read(
             dwg.require_tool(shown)  # before the file is opened: a missing program costs nothing
         file = job.input_file(path, param="path", extensions=(*READERS, ".dwg"), max_bytes=limits.max_file_bytes, too_large_family="drawing.too_large")
         converted: dwg.Converted | None = None
-        if file.suffix.lower() in (".dwg", ".dxf") and dwg.needs_conversion(file):
-            _require_engine(*READERS[".dxf"][1:])
-            converted = dwg.convert(job, file, shown=shown, max_output_bytes=limits.max_file_bytes)
-        target, module, dist = READERS[".dxf" if converted else file.suffix.lower()]
-        _require_engine(module, dist)
-        outcome = run_isolated(target, [str(converted.path if converted else file), limits.as_dict()], timeout_s=timeout_s, memory_mb=memory_mb)
+        with _reading("path"):
+            if file.suffix.lower() in (".dwg", ".dxf") and dwg.needs_conversion(file):
+                _require_engine(*READERS[".dxf"][1:])
+                converted = dwg.convert(job, file, shown=shown, max_output_bytes=limits.max_file_bytes)
+            target, module, dist = READERS[".dxf" if converted else file.suffix.lower()]
+            _require_engine(module, dist)
+            outcome = run_isolated(target, [str(converted.path if converted else file), limits.as_dict()], timeout_s=timeout_s, memory_mb=memory_mb)
         full = outcome.value
         if converted:  # the reader saw the DXF that dwg2dxf wrote; say so in the file record as well
             full["file"] = {**full["file"], "name": Path(path).name, "dxf_name": dwg.OUTPUT_NAME, "dxf_bytes": full["file"]["bytes"], "bytes": job.input_files[-1].bytes, "source_format": "dwg"}

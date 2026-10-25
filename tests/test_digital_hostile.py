@@ -271,7 +271,7 @@ async def test_without_yosys_the_tools_say_where_to_get_it(monkeypatch, tmp_path
 @needs_yosys
 @pytest.mark.asyncio
 async def test_a_chain_that_overflows_the_parser_stack_is_a_structured_failure():
-    text = "module t(input a, output y);\n  assign y = a" + " & a" * 140_000 + ";\nendmodule\n"  # about 560 KB, under the size limit
+    text = "module t(input a, output y);\n  assign y = a" + (" & a" * 100 + "\n") * 1_400 + ";\nendmodule\n"  # 140 000 terms on 1 400 lines, about 560 KB: under the size and line limits
     r = await via_gateway("synthesize", {"top": "t", "source": text, "timeout_seconds": 20})
     refused(r, "engine.failure")
     assert "stack overflow" in r.error.message and "too deeply" in r.error.message

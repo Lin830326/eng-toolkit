@@ -12,6 +12,7 @@ applies and ``Outcome.memory_cap_applied`` says so.
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import importlib
 import json
 import os
@@ -101,7 +102,7 @@ def run_isolated(
                 {**limits, "returncode": proc.returncode, "stderr_tail": tail},
             )
         try:
-            reply = json.loads(answer.read_text(encoding="utf-8"))
+            reply = jsonsafe.loads(answer.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise ToolFailure("engine.failure", f"unreadable answer from the reading process: {exc}", limits) from exc
     if reply.get("ok"):
@@ -186,7 +187,7 @@ def _limit_memory_windows(limit: int) -> bool:
 
 
 def _child_main() -> None:
-    request = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+    request = jsonsafe.loads(sys.stdin.buffer.read().decode("utf-8"))
     answer = Path(request["answer"])
     applied = _limit_memory(int(request["memory_mb"]))
     try:
@@ -196,7 +197,7 @@ def _child_main() -> None:
         reply: dict[str, Any] = {"ok": True, "value": value, "memory_cap_applied": applied}
         text = strict_json(reply)
     except ToolFailure as exc:
-        text = strict_json({"ok": False, "family": exc.family, "message": exc.message, "details": json.loads(json.dumps(exc.details, default=str))})
+        text = strict_json({"ok": False, "family": exc.family, "message": exc.message, "details": jsonsafe.loads(json.dumps(exc.details, default=str))})
     except MemoryError:
         text = json.dumps({"ok": False, "family": "engine.resource_limit", "message": "the file needs more memory than the limit allows", "details": {}})
     except BaseException as exc:  # noqa: BLE001 - whatever the parser did, the parent gets a structured answer

@@ -15,6 +15,7 @@ Moreland's diverging map, 2009); see ``docs/fem/design.md``.
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -604,7 +605,7 @@ def read_source(job: JobHandle, result_dir: str, mesh_file: str, results_file: s
             "fem.not_a_static_result", f"result_dir: the directory holds no valid manifest of a fem_static job ({why})", {"param": param}
         )
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = jsonsafe.loads(manifest_path.read_text(encoding="utf-8"))
         except (UnicodeDecodeError, ValueError, RecursionError):
             raise not_static("manifest.json is not JSON") from None
         listed = manifest.get("files") if isinstance(manifest, dict) else None
@@ -626,7 +627,7 @@ def read_source(job: JobHandle, result_dir: str, mesh_file: str, results_file: s
                     {"param": param, "file": name},
                 )
         try:
-            result = json.loads(paths["result.json"].read_text(encoding="utf-8"))
+            result = jsonsafe.loads(paths["result.json"].read_text(encoding="utf-8"))
         except (UnicodeDecodeError, ValueError, RecursionError):
             raise not_static("result.json is not JSON") from None
         if not isinstance(result, dict) or result.get("ok") is not True or not isinstance(result.get("values"), dict):
@@ -934,7 +935,7 @@ def read_back(data: bytes) -> ReadBack:
     if magic != GLB_MAGIC or version != 2 or length != len(data):
         raise bad("not a GLB 2.0 of its stated length")
     json_length, json_type = struct.unpack_from("<II", data, 12)
-    document = json.loads(data[20 : 20 + json_length].decode("utf-8"))
+    document = jsonsafe.loads(data[20 : 20 + json_length].decode("utf-8"))
     start = 20 + json_length
     bin_length, bin_type = struct.unpack_from("<II", data, start)
     if json_type != GLB_JSON or bin_type != GLB_BIN or start + 8 + bin_length != len(data):

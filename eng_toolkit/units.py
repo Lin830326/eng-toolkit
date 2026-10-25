@@ -17,6 +17,7 @@ return contract.
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import math
 import re
 from numbers import Real
@@ -31,6 +32,34 @@ from eng_toolkit.errors import ToolFailure
 # One shared registry.  ``autoconvert_offset_to_baseunit`` lets "20 degC" convert cleanly.
 ureg = UnitRegistry(autoconvert_offset_to_baseunit=True)
 Q_ = ureg.Quantity
+
+# pint preprocesses unit text with regular expressions whose cost grows with the square of its length (16 000 digits take
+# 4 s, 200 000 take minutes), so a quantity or unit written longer than any real one is refused before pint sees it.
+MAX_QUANTITY_TEXT = 400
+
+
+def check_text_length(text: str, *, name: str) -> None:
+    if len(text) > MAX_QUANTITY_TEXT:
+        raise ToolFailure(
+            "input.invalid",
+            f"'{name}' is {len(text)} characters long; a quantity or unit is at most {MAX_QUANTITY_TEXT}",
+            {"param": name, "length": len(text), "limit": MAX_QUANTITY_TEXT},
+        )
+
+
+def _bounded(method):
+    def wrapper(input_string, *args, **kwargs):
+        if isinstance(input_string, str):
+            check_text_length(input_string, name="unit")
+        return method(input_string, *args, **kwargs)
+
+    wrapper.__name__ = method.__name__
+    return wrapper
+
+
+for _entry in ("parse_expression", "parse_units", "parse_unit_name"):
+    if hasattr(ureg, _entry):
+        setattr(ureg, _entry, _bounded(getattr(ureg, _entry)))
 
 # Dimension names -> pint dimensionality strings.
 DIMENSIONS: dict[str, str] = {
@@ -55,6 +84,14 @@ DIMENSIONS: dict[str, str] = {
 
 class UnitsError(ToolFailure):
     """Structured unit error; maps 1:1 onto :class:`eng_toolkit.contract.ToolError`."""
+
+
+def _float_or_refuse(value: Any, *, name: str) -> float:
+    """``float(value)``; an integer too large for a float is out of range, not an OverflowError."""
+    try:
+        return float(value)
+    except OverflowError:
+        raise UnitsError("input.out_of_range", f"'{name}' is a number too large to represent", {"param": name}) from None
 
 
 def _is_bare_number(raw: Any) -> bool:
@@ -115,6 +152,10 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
     """
     if raw is None:
         raise UnitsError("input.missing", f"'{name}' is required", {"param": name})
+    if isinstance(raw, str):
+        check_text_length(raw, name=name)
+    elif isinstance(raw, Mapping) and isinstance(raw.get("unit"), str):
+        check_text_length(raw["unit"], name=name)
 
     if isinstance(raw, Quantity):
         _reject_compound_offsets(str(raw.units), name=name)
@@ -147,8 +188,9 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
                 {"param": name, "received": dict(raw)},
             )
         _reject_compound_offsets(unit, name=name)
+        magnitude_in = _float_or_refuse(value, name=name)
         try:
-            qty = Q_(float(value), unit)
+            qty = Q_(magnitude_in, unit)
         except (pint.errors.UndefinedUnitError, pint.errors.DefinitionSyntaxError, ValueError) as exc:
             raise UnitsError(
                 "units.parse_error",
@@ -160,7 +202,7 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
         import json
 
         try:
-            decoded = json.loads(raw)
+            decoded = jsonsafe.loads(raw)
         except json.JSONDecodeError as exc:
             raise UnitsError(
                 "units.parse_error",
@@ -206,7 +248,7 @@ def parse_quantity(raw: Any, *, name: str, dimension: str | None = None) -> Quan
             {"param": name, "received": repr(raw)},
         )
 
-    magnitude = float(qty.magnitude)
+    magnitude = _float_or_refuse(qty.magnitude, name=name)
     if not math.isfinite(magnitude):
         raise UnitsError("input.invalid", f"'{name}' is not finite ({magnitude})", {"param": name})
 

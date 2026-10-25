@@ -20,6 +20,7 @@ is approximate.
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -103,7 +104,7 @@ def parse_polynomial(raw: Any, *, param: str, var: str = "s") -> np.ndarray:
         raise _bad(f"'{param}' is empty; {_POINTER_LIST}", param)
     if text.startswith("["):
         try:
-            items = json.loads(text, parse_constant=_reject_constant)
+            items = jsonsafe.loads(text, parse_constant=_reject_constant)
         except RecursionError as exc:
             raise _bad(f"'{param}' is nested too deeply; {_POINTER_LIST}", param) from exc
         except ValueError as exc:

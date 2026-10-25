@@ -24,12 +24,24 @@ def json_pointer(param: str) -> str:
     return "/" + _INDEX.sub(r"/\1", param).replace(".", "/")
 
 
+MAX_MESSAGE = 8000
+MAX_DETAIL = 4000
+
+
+def _clip(value: Any, limit: int) -> Any:
+    if isinstance(value, str) and len(value) > limit:
+        return value[:limit] + f"... [{len(value) - limit} more characters]"
+    return value
+
+
 class ToolFailure(ValueError):
     def __init__(self, family: str, message: str, details: dict[str, Any] | None = None):
+        message = _clip(message, MAX_MESSAGE)
         super().__init__(message)
         self.family = family
         self.message = message
-        self.details = dict(details or {})
+        # A refusal echoes what was wrong, never the whole payload: a 5 MB string must not come back as a 5 MB error.
+        self.details = {k: _clip(v, MAX_DETAIL) for k, v in dict(details or {}).items()}
         # The contract says details.param is a JSON pointer; the carrier enforces it so that no caller can leak a bare name.
         if isinstance(self.details.get("param"), str):
             self.details["param"] = json_pointer(self.details["param"])

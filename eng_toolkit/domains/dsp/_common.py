@@ -10,6 +10,7 @@ dimension.  Nothing the caller sends is executed: frequencies go through a regul
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import hashlib
 import json
 import math
@@ -209,7 +210,7 @@ def array_from_json(text: Any, *, param: str, min_len: int = 1, samples: bool = 
     if len(text) > MAX_TEXT_CHARS:
         raise UnitsError("input.out_of_range", f"'{param}' is {len(text)} characters long, over the limit of {MAX_TEXT_CHARS}; at most {MAX_SAMPLES} samples are supported (give a file instead)", {"param": param, "limit_samples": MAX_SAMPLES})
     try:
-        obj = json.loads(text, parse_constant=_bad_constant)
+        obj = jsonsafe.loads(text, parse_constant=_bad_constant)
     except ToolFailure as exc:
         raise UnitsError(exc.family, exc.message.replace("'samples'", f"'{param}'"), {"param": param}) from None
     except (ValueError, RecursionError) as exc:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import csv
 import io
 import json
@@ -78,7 +79,7 @@ def json_value(text, param, default=None):
             result[k] = v
         return result
     try:
-        return json.loads(text, parse_float=lambda x: literal(x, param),
+        return jsonsafe.loads(text, parse_float=lambda x: literal(x, param),
                           parse_int=lambda x: literal(x, param),
                           parse_constant=lambda x: invalid(param, "nonfinite JSON literal " + x), object_pairs_hook=pairs)
     except (ValueError, RecursionError) as exc:

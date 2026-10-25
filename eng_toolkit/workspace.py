@@ -14,6 +14,7 @@ then ``./ws`` relative to the current working directory.
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import hashlib
 import json
 import math
@@ -110,7 +111,7 @@ class Job:
         return manifest_path
 
     def manifest(self) -> dict[str, Any]:
-        return json.loads((self.dir / "manifest.json").read_text(encoding="utf-8"))
+        return jsonsafe.loads((self.dir / "manifest.json").read_text(encoding="utf-8"))
 
 
 class Workspace:

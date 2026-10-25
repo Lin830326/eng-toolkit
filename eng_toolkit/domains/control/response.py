@@ -14,6 +14,7 @@ Method
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 from typing import Annotated, Any
@@ -60,7 +61,7 @@ def _matrix(raw: Any, *, name: str) -> np.ndarray:
     if len(raw) > MAX_MATRIX_TEXT:
         raise UnitsError("input.out_of_range", f"'{name}' is {len(raw)} characters long; the limit is {MAX_MATRIX_TEXT}", {"param": name})
     try:
-        value = json.loads(raw, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(f"the JSON constant {c} is not a number")))
+        value = jsonsafe.loads(raw, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(f"the JSON constant {c} is not a number")))
     except RecursionError as exc:
         raise UnitsError("input.invalid", f"'{name}' is nested too deeply; {_POINTER_SS}", {"param": name}) from exc
     except ValueError as exc:

@@ -11,6 +11,7 @@ Every value must be a finite number.  Errors name the row and column so the call
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -52,9 +53,11 @@ def _number(token: Any, row: int, col: int, param: str) -> float:
 
 def _from_json(text: str, param: str) -> list[list[Any]]:
     try:
-        data = json.loads(text)
+        data = jsonsafe.loads(text)
     except json.JSONDecodeError as exc:
         raise _bad(f"{param}: looks like JSON but is not valid ({exc.msg} at position {exc.pos})", param=param) from exc
+    except ValueError as exc:  # an integer with more digits than Python converts
+        raise ToolFailure("input.out_of_range", f"{param}: a number in the JSON is outside the supported range ({str(exc)[:80]})", {"param": param}) from exc
     if not isinstance(data, list):
         raise _bad(f"{param}: JSON must be a list of rows, e.g. [[1,2],[3,4]] or a list of numbers", param=param)
     rows = []

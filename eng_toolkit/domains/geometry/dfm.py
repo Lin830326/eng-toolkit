@@ -10,6 +10,7 @@ standard, and no finding claims conformance to one.
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import time
@@ -196,7 +197,7 @@ def parse_limits(process: str, raw: str) -> dict[str, float]:
         raise _bad(f"limits: {len(raw)} characters; at most {MAX_LIMITS_CHARS}", param="/limits", limit=MAX_LIMITS_CHARS)
     if raw.strip():
         try:
-            parsed = json.loads(raw)
+            parsed = jsonsafe.loads(raw)
         except json.JSONDecodeError as exc:
             raise _bad(f"limits: not valid JSON ({exc.msg} at position {exc.pos})", param="/limits") from None
         except RecursionError:
@@ -218,7 +219,7 @@ def parse_limits(process: str, raw: str) -> dict[str, float]:
 
 
 def defaults_used(process: str, raw: str) -> list[str]:
-    given = set(json.loads(raw)) if raw.strip() else set()
+    given = set(jsonsafe.loads(raw)) if raw.strip() else set()
     return [key for key in LIMIT_DEFAULTS[process] if key not in given]
 
 

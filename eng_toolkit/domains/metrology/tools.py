@@ -7,6 +7,7 @@ result into the contract.  The tables and rules live in :mod:`.iso286`, the stat
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import io
 import json
 import math
@@ -26,6 +27,7 @@ from eng_toolkit.domains.metrology.fit_search import (
     Candidate,
     search_fits,
 )
+from eng_toolkit.errors import ToolFailure
 from eng_toolkit.runner import Computed, JobHandle, run_tool
 from eng_toolkit.units import UnitsError, parse_quantity, require_positive, to_quantity_out, ureg
 
@@ -200,7 +202,7 @@ def _parse_link(item: Any, index: int, unit: str) -> tuple[stackup.Link, str | N
         direction = item.get("direction")
         if direction not in ("+", "-"):
             raise _invalid("'direction' must be '+' (adds to the result) or '-' (subtracts)", received=direction)
-    except UnitsError as exc:
+    except ToolFailure as exc:  # UnitsError is one; so is the length refusal of a quantity text
         field = exc.details.get("param")
         details = {**exc.details, "link_index": index, "link_name": name}
         if isinstance(field, str) and field:
@@ -213,8 +215,17 @@ def _parse_link(item: Any, index: int, unit: str) -> tuple[stackup.Link, str | N
 
 def _parse_chain(chain: str, unit: str) -> list[tuple[stackup.Link, str | None]]:
     try:
-        items = json.loads(chain)
-    except (TypeError, json.JSONDecodeError) as exc:
+        items = jsonsafe.loads(chain)
+    except ValueError as exc:
+        if not isinstance(exc, json.JSONDecodeError):  # an integer with more digits than Python converts
+            raise UnitsError("input.out_of_range", f"'chain' holds a number outside the supported range ({str(exc)[:80]})", {"param": "/chain"}) from exc
+        raise _invalid(
+            "'chain' must be a JSON array of link objects, e.g. "
+            '[{"name":"A","nominal":"50 mm","tol":"0.1 mm","direction":"+"}]',
+            received=str(chain)[:200],
+            param="/chain",
+        ) from exc
+    except TypeError as exc:
         raise _invalid(
             "'chain' must be a JSON array of link objects, e.g. "
             '[{"name":"A","nominal":"50 mm","tol":"0.1 mm","direction":"+"}]',

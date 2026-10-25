@@ -7,7 +7,8 @@ the bytes that were checked (the sanitised text is written to the job directory 
 
 What :func:`sanitize` does, in order:
 
-1. size (:data:`MAX_SOURCE_BYTES`), UTF-8, NUL and other control characters, line endings normalised to ``\\n``;
+1. size (:data:`MAX_SOURCE_BYTES`), UTF-8, NUL and other control characters, line endings normalised to ``\\n``, no line longer than
+   :data:`MAX_LINE_CHARS` (Yosys's scanner fails on one very long token; ``input.too_large``);
 2. line continuation (a backslash at the end of a line) is refused everywhere: it is the way a line comment or a macro body could
    be made to mean something different to the checker and to Yosys;
 3. one pass splits the text into code, comments, strings and escaped identifiers.  Comments and the insides of strings are blanked
@@ -33,6 +34,7 @@ from typing import Any
 from eng_toolkit.errors import ToolFailure
 
 MAX_SOURCE_BYTES = 1_000_000  # all sources of one design together
+MAX_LINE_CHARS = 8000  # one line of Verilog; Yosys's scanner fails on a single token near 64 000 characters, real RTL lines are far shorter
 MAX_MODULES = 200
 MAX_NAME_LENGTH = 64
 SNIPPET_CHARS = 80  # the most a message or detail ever echoes of the caller's text
@@ -52,6 +54,7 @@ _MACRO_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
 _WORD = re.compile(r"[A-Za-z0-9_$]")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")
 _MODULE = re.compile(r"(?<![A-Za-z0-9_$])(?:macro)?module(?![A-Za-z0-9_$])\s*([A-Za-z_][A-Za-z0-9_$]*)?")
+_LONG_LINE = re.compile(r"[^\n]{%d,}" % (MAX_LINE_CHARS + 1))
 _TOKEN = re.compile(
     r"""
       (?P<line>//[^\n]*)
@@ -150,6 +153,14 @@ def decode(raw: bytes | str, *, label: str, limit: int = MAX_SOURCE_BYTES) -> st
             "input.invalid",
             f"{label} line {_line_of(text, bad.start())}: the source holds the control character U+{ord(bad.group()):04X}",
             {"file": label, "line": _line_of(text, bad.start())},
+        )
+    long_line = _LONG_LINE.search(text)
+    if long_line:
+        line = _line_of(text, long_line.start())
+        raise ToolFailure(
+            "input.too_large",
+            f"{label} line {line}: the line is {len(long_line.group())} characters long; the limit is {MAX_LINE_CHARS} (put the statement on several lines)",
+            {"file": label, "line": line, "line_chars": len(long_line.group()), "limit_chars": MAX_LINE_CHARS},
         )
     return text
 
@@ -319,6 +330,7 @@ def find_module(sources: list[Source], name: str, *, param: str) -> None:
 def describe_limits() -> dict[str, Any]:
     return {
         "max_source_bytes": MAX_SOURCE_BYTES,
+        "max_line_chars": MAX_LINE_CHARS,
         "max_modules": MAX_MODULES,
         "allowed_directives": sorted(ALLOWED_DIRECTIVES),
         "allowed_system_tasks": sorted(ALLOWED_SYSTEM_TASKS),
@@ -328,6 +340,7 @@ def describe_limits() -> dict[str, Any]:
 __all__ = [
     "ALLOWED_DIRECTIVES",
     "ALLOWED_SYSTEM_TASKS",
+    "MAX_LINE_CHARS",
     "MAX_MODULES",
     "MAX_SOURCE_BYTES",
     "Source",

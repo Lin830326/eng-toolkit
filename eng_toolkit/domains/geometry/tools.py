@@ -781,7 +781,7 @@ def make_part(
             brep.write_step(built.solid, step_path, product_name=name)
             step_art = job.write_bytes(f"{name}.step", step_path.read_bytes(), fmt="step")
             written = props.volume_mm3 or 0.0
-            read_back = brep.read_solid(Path(step_art.path), param="step")
+            read_back = brep.read_solid(Path(step_art.path), param="step", caller_argument=False)
             read = brep.mass_properties(read_back).volume_mm3 or 0.0
             difference = abs(written - read) / max(abs(written), 1e-300)
             if read_back.solids != 1 or difference > READBACK_TOLERANCE:

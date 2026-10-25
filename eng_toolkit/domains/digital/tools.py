@@ -7,6 +7,7 @@ scrubbed environment).  The long version, with what is exact and what is not, is
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import re
 from collections.abc import Callable
@@ -90,7 +91,7 @@ def split_paths(raw: str, *, param: str) -> list[str]:
         return []
     if text.startswith("["):
         try:
-            items = json.loads(text)
+            items = jsonsafe.loads(text)
         except ValueError as exc:
             raise ToolFailure("input.invalid", f"{param}: not a valid JSON list of paths", {"param": param}) from exc
         if not isinstance(items, list) or not all(isinstance(i, str) for i in items):

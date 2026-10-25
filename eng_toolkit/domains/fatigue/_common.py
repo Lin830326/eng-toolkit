@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import csv
 import io
 import json
@@ -231,7 +232,7 @@ def json_numbers(text, param, cap=1000000):
     if stripped.count(",") >= cap:
         invalid(param, f"point cap is {cap}", "input.out_of_range")
     try:
-        values = json.loads(stripped, parse_float=lambda s: literal(s, param), parse_constant=lambda s: invalid(param, "nonfinite JSON", "input.out_of_range"))
+        values = jsonsafe.loads(stripped, parse_float=lambda s: literal(s, param), parse_constant=lambda s: invalid(param, "nonfinite JSON", "input.out_of_range"))
     except ToolFailure:
         raise
     except (ValueError, RecursionError):

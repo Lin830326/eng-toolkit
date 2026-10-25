@@ -13,6 +13,7 @@ back from the bytes of the file handed to the caller.  OpenCASCADE is reached on
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -376,7 +377,7 @@ def read_back(data: bytes) -> ReadBack:
     if magic != GLB_MAGIC or version != 2 or length != len(data):
         raise bad("not a GLB 2.0 of its stated length")
     json_length, json_type = struct.unpack_from("<II", data, 12)
-    document = json.loads(data[20 : 20 + json_length].decode("utf-8"))
+    document = jsonsafe.loads(data[20 : 20 + json_length].decode("utf-8"))
     start = 20 + json_length
     bin_length, bin_type = struct.unpack_from("<II", data, start)
     if json_type != GLB_JSON or bin_type != GLB_BIN or start + 8 + bin_length != len(data):

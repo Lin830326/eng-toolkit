@@ -11,6 +11,7 @@ Everything in the file is data.  A string that is printed on the sheet is checke
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -79,7 +80,7 @@ def parse(raw: bytes) -> Intent:
     if len(raw) > MAX_BYTES:
         raise ToolFailure("input.too_large", f"{PARAM}: the file is {len(raw)} bytes, over the {MAX_BYTES} byte limit", {"param": PARAM, "bytes": len(raw), "limit_bytes": MAX_BYTES})
     try:
-        document = json.loads(raw.decode("utf-8-sig"))
+        document = jsonsafe.loads(raw.decode("utf-8-sig"))
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise _bad("", f"not a JSON file ({type(exc).__name__})") from exc
     if not isinstance(document, dict):

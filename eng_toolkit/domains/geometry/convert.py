@@ -10,6 +10,7 @@ bytes of the file that is handed to the caller, not taken from the data structur
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -169,7 +170,7 @@ def parse_glb(data: bytes) -> GlbMesh:
         chunk_length, chunk_type = struct.unpack_from("<II", data, offset)
         body = data[offset + 8 : offset + 8 + chunk_length]
         if chunk_type == GLB_JSON:
-            document = json.loads(body.decode("utf-8"))
+            document = jsonsafe.loads(body.decode("utf-8"))
         elif chunk_type == GLB_BIN:
             blob = body
         offset += 8 + chunk_length
@@ -501,7 +502,7 @@ def _brep_output(
             brep.write_brep(solid, target)
         payload = target.read_bytes()
     artifact = job.write_bytes(f"{stem}.{fmt}", payload, fmt=fmt)
-    read_back = brep.read_solid(Path(artifact.path), param="output")  # the file itself, as the next reader will see it
+    read_back = brep.read_solid(Path(artifact.path), param="output", caller_argument=False)  # the file itself, as the next reader will see it
     read_props = brep.mass_properties(read_back)
     volume_out = read_props.volume_mm3 if read_props.volume_mm3 is not None else 0.0
     if exact_volume is not None:

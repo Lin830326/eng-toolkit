@@ -18,6 +18,7 @@ What this module decides, and why (the long version is ``docs/pcb/design.md``):
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -352,7 +353,7 @@ def prepare(
         pro = _sibling(handle, raw_path, ".kicad_pro", "project file", MAX_PROJECT_BYTES)
         if pro is not None:
             try:
-                data = json.loads(pro.read_bytes().decode("utf-8"), parse_constant=_reject_constant)
+                data = jsonsafe.loads(pro.read_bytes().decode("utf-8"), parse_constant=_reject_constant)
                 project, summary = sanitize_project(data, schematic=schematic)
                 (work / PROJECT_NAME).write_text(json.dumps(project, indent=2) + "\n", encoding="utf-8")
                 rule_set["project_file"] = summary
@@ -409,7 +410,7 @@ def read_json_report(path: Path, what: str) -> dict[str, Any]:
     if size > MAX_REPORT_BYTES:
         raise ToolFailure("engine.resource_limit", f"the {what} is {size} bytes, over the {MAX_REPORT_BYTES} byte limit", {"bytes": size})
     try:
-        data = json.loads(path.read_bytes().decode("utf-8"), parse_constant=_reject_constant)
+        data = jsonsafe.loads(path.read_bytes().decode("utf-8"), parse_constant=_reject_constant)
     except (ValueError, UnicodeDecodeError, RecursionError) as exc:
         raise ToolFailure("engine.failure", f"the {what} written by kicad-cli is not valid JSON: {str(exc)[:120]}", {}) from exc
     if not isinstance(data, dict):

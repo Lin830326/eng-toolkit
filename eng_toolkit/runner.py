@@ -36,6 +36,7 @@ from eng_toolkit import safefile
 from eng_toolkit.workspace import Workspace, json_safe
 
 ENV_READ_DIRS = "ENG_TOOLKIT_READ_DIRS"
+MAX_PATH_TEXT = 4096
 
 
 @dataclass
@@ -209,16 +210,27 @@ class JobHandle:
         ``provenance.input_files`` records the real path of the original, its size and the sha256 of the bytes.  Nothing is
         recorded for a path that fails a check.
         """
+        if not isinstance(raw, str) or "\x00" in raw or len(raw) > MAX_PATH_TEXT:
+            raise ToolFailure(
+                "input.invalid",
+                f"{param}: not a usable file path (it must be text of at most {MAX_PATH_TEXT} characters without NUL)",
+                {"param": param, "length": len(raw) if isinstance(raw, str) else None, "limit": MAX_PATH_TEXT},
+            )
         path = Path(raw).expanduser()
         roots = read_dirs()
-        if roots is not None and not _inside(path, [*roots, self._job.dir.parent]):
+        try:
+            inside = roots is None or _inside(path, [*roots, self._job.dir.parent])
+            is_file = path.is_file()
+        except (OSError, ValueError):  # a path the system cannot even stat (too long for Windows, reserved name)
+            raise ToolFailure("input.file_not_found", f"{param}: no such file {str(path)[:200]!r}", {"param": param}) from None
+        if not inside:
             raise ToolFailure(
                 "input.path_not_allowed",
                 f"{param}: this server only reads files below the directories named in {ENV_READ_DIRS} "
                 f"({len(roots)} configured) and its workspace; the path is outside them",
                 {"param": param, "allowed_directories": len(roots)},
             )
-        if not path.is_file():
+        if not is_file:
             raise ToolFailure("input.file_not_found", f"{param}: no such file {str(path)!r}", {"param": param, "path": str(path)})
         if path.suffix.lower() not in extensions:
             raise ToolFailure(

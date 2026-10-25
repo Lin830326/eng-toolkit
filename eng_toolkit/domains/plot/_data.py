@@ -13,6 +13,7 @@ at ``/data_file/<line>/<column>``.
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import csv
 import io
 import itertools
@@ -323,7 +324,7 @@ def inline_series(raw: Any, notes: list[str], *, text_x: bool = False, allow_err
         return item
 
     try:
-        obj = json.loads(raw, parse_constant=_no_constants, object_pairs_hook=pairs_hook, parse_float=Decimal if exact_y else float)
+        obj = jsonsafe.loads(raw, parse_constant=_no_constants, object_pairs_hook=pairs_hook, parse_float=Decimal if exact_y else float)
     except ToolFailure:
         raise
     except (ValueError, RecursionError) as exc:

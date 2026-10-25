@@ -54,11 +54,12 @@ def _read_brep(path: Path, unreadable):
     return shape
 
 
-def read_solid(path: Path, *, param: str | None = None) -> Solid:
+def read_solid(path: Path, *, param: str | None = None, caller_argument: bool = True) -> Solid:
     """Read a STEP, IGES or BREP file (STEP and IGES in millimetres; BREP numbers are taken as millimetres).
 
     The format follows the extension: ``.iges``/``.igs`` and ``.brep`` as named, anything else is read as STEP.
-    ``param`` names the caller's parameter in error messages.
+    ``param`` names the caller's parameter in error messages; with ``caller_argument`` (the default) it is also the ``details.param``
+    pointer of the refusal.  A caller that re-reads a file of its own making passes ``caller_argument=False``: no argument is to blame.
     """
     _occ.load()
     from OCP.IFSelect import IFSelect_RetDone
@@ -68,7 +69,10 @@ def read_solid(path: Path, *, param: str | None = None) -> Solid:
 
     def unreadable(why: str) -> ToolFailure:
         prefix = f"{param}: " if param else ""
-        return ToolFailure("input.invalid", f"{prefix}{why} in {str(path)!r}", {"path": str(path)})
+        details = {"path": str(path)}
+        if param and caller_argument:
+            details["param"] = "/" + param.lstrip("/")
+        return ToolFailure("input.invalid", f"{prefix}{why} in {str(path)!r}", details)
 
     suffix = path.suffix.lower()
     if suffix == ".brep":

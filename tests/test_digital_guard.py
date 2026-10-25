@@ -239,7 +239,7 @@ def test_sizes():
     with pytest.raises(ToolFailure) as caught:
         check("// " + "x" * (5 * 1024 * 1024))
     assert caught.value.family == "input.too_large"
-    ok = "module t; endmodule\n" + "// " + "x" * (guard.MAX_SOURCE_BYTES - 100) + "\n"
+    ok = "module t; endmodule\n" + ("// " + "x" * 997 + "\n") * ((guard.MAX_SOURCE_BYTES - 100) // 1001)  # lines are limited too
     assert check(ok).modules == ("t",)
 
 

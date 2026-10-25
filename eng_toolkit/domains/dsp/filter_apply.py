@@ -7,6 +7,7 @@ filtering is forward then backward on an odd-reflection extension with a steady-
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 from typing import Annotated, Any
@@ -60,7 +61,7 @@ def _sections(text: Any) -> np.ndarray:
     if not isinstance(text, str) or len(text) > 200_000:
         raise UnitsError("input.out_of_range", "'sos' must be JSON text of at most 200000 characters", {"param": "sos"})
     try:
-        obj = json.loads(text, parse_constant=_bad_constant)
+        obj = jsonsafe.loads(text, parse_constant=_bad_constant)
     except ToolFailure:
         raise
     except (ValueError, RecursionError) as exc:

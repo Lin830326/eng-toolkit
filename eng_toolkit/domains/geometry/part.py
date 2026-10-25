@@ -9,6 +9,7 @@ the parser, the tool description and the docs are generated from.  This module i
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import hashlib
 import json
 import math
@@ -882,11 +883,13 @@ def parse_spec(text: str) -> PartSpec:
     if size > MAX_SPEC_BYTES:
         raise _bad("", f"the spec is {size} bytes; the limit is {MAX_SPEC_BYTES}", limit_bytes=MAX_SPEC_BYTES)
     try:
-        document = json.loads(text)
+        document = jsonsafe.loads(text)
     except json.JSONDecodeError as exc:
         raise _bad("", f"not valid JSON: {exc.msg} (line {exc.lineno}, column {exc.colno})") from exc
     except RecursionError as exc:
         raise _bad("", "the JSON is nested too deeply") from exc
+    except ValueError as exc:  # an integer with more digits than Python converts
+        raise _bad("", f"a number in the JSON is outside the supported range ({str(exc)[:80]})") from exc
     if not isinstance(document, dict):
         raise _bad("", 'the spec must be a JSON object {"params": {...}, "features": [...]}', ["params", "features"])
     for key in document:

@@ -8,6 +8,7 @@ is stored with the result (``yosys-script.ys``) so a reviewer can read exactly w
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import os
 import re
@@ -98,7 +99,7 @@ class Outcome:
         if text is None:
             return None
         try:
-            return json.loads(text)
+            return jsonsafe.loads(text)
         except ValueError:
             return None
 

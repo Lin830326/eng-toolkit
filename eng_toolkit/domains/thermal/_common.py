@@ -15,6 +15,7 @@ as ``delta_degC`` and says so.  No tool takes a temperature difference as an inp
 
 from __future__ import annotations
 
+from eng_toolkit import jsonsafe
 import json
 import math
 import re
@@ -127,8 +128,8 @@ def _as_text(raw: Any) -> Any:
     """A ``{"value": .., "unit": ..}`` mapping (or its JSON string) as ``'<value> <unit>'``; anything else unchanged."""
     if isinstance(raw, str) and raw.strip().startswith("{"):
         try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
+            raw = jsonsafe.loads(raw)
+        except ValueError:  # malformed JSON, or an integer with more digits than Python converts
             return raw
     if isinstance(raw, Mapping) and isinstance(raw.get("unit"), str) and isinstance(raw.get("value"), (int, float)) and not isinstance(raw.get("value"), bool):
         return f"{float(raw['value'])!r} {raw['unit']}"
@@ -246,9 +247,9 @@ def split_list(raw: Any, *, name: str) -> list[Any]:
     text = raw.strip()
     if text.startswith("["):
         try:
-            items = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise UnitsError("input.invalid", f"'{name}': invalid JSON ({exc.msg})", {"param": name, "received": raw}) from exc
+            items = jsonsafe.loads(text)
+        except ValueError as exc:  # malformed JSON, or an integer with more digits than Python converts
+            raise UnitsError("input.invalid", f"'{name}': invalid JSON ({getattr(exc, 'msg', str(exc)[:80])})", {"param": name, "received": raw}) from exc
         if not isinstance(items, list):
             raise UnitsError("input.invalid", f"'{name}': expected a JSON array", {"param": name, "received": raw})
         return items
