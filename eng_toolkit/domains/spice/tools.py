@@ -193,7 +193,7 @@ def analysis_script(nl: nlmod.Netlist, analysis: str, *, sweep_source: str, star
                 {"param": "step", "points": count, "limit": MAX_SWEEP_POINTS},
             )
         signed = abs(h) if b > a else -abs(h)
-        return [f"dc {src} {ng.format_number(a)} {ng.format_number(b)} {ng.format_number(signed)}"], {
+        return [f"dc {src} {ng.format_number(a, '/start')} {ng.format_number(b, '/stop')} {ng.format_number(signed, '/step')}"], {
             "analysis": "dc",
             "source": src,
             "start": a,
@@ -221,7 +221,7 @@ def analysis_script(nl: nlmod.Netlist, analysis: str, *, sweep_source: str, star
             count = math.floor(points * span + 1e-9) + 1
         if count > MAX_AC_POINTS:
             raise ToolFailure("input.out_of_range", f"this sweep has {count} points, over the limit of {MAX_AC_POINTS}", {"param": "points", "points": count, "limit": MAX_AC_POINTS})
-        return [f"ac {kind} {points} {ng.format_number(f0)} {ng.format_number(f1)}"], {
+        return [f"ac {kind} {points} {ng.format_number(f0, '/start')} {ng.format_number(f1, '/stop')}"], {
             "analysis": "ac",
             "sweep": kind,
             "points_param": points,
@@ -244,7 +244,7 @@ def analysis_script(nl: nlmod.Netlist, analysis: str, *, sweep_source: str, star
             f"this transient has {count:g} points ((stop - start) / step), over the limit of {MAX_SWEEP_POINTS}; use a larger 'step' or a shorter run",
             {"param": "step", "points": count, "limit": MAX_SWEEP_POINTS},
         )
-    line = f"tran {ng.format_number(h)} {ng.format_number(t1)} {ng.format_number(t0)} {ng.format_number(h)}" + (" uic" if uic else "")
+    line = f"tran {ng.format_number(h, '/step')} {ng.format_number(t1, '/stop')} {ng.format_number(t0, '/start')} {ng.format_number(h, '/step')}" + (" uic" if uic else "")
     return [line], {"analysis": "tran", "start_s": t0, "stop_s": t1, "step_s": h, "uic": bool(uic), "points": count}
 
 
@@ -427,7 +427,7 @@ def simulate(
             artifacts.append(handle.write_text(name, text, fmt="spice"))
 
         deck = ng.build_deck(nl.body, script, chosen)
-        table, record, ngspice_warnings = ng.simulate(deck, job_dir, write_file=write_file, complex_columns=analysis == "ac", outputs=chosen)
+        table, record, ngspice_warnings = ng.simulate(deck, job_dir, write_file=write_file, complex_columns=analysis == "ac", outputs=chosen, netlist_param=netlist_param(netlist))
         computed = build_result(handle, table, chosen, described)
         log_file = job_dir / "ngspice.log"
         if log_file.is_file():

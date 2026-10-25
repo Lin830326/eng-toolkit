@@ -74,6 +74,7 @@ class Outcome:
     seconds: float
     version: str | None = None
     files: dict[str, Path] = field(default_factory=dict)
+    params: dict[str, str] = field(default_factory=dict)  # file name Yosys reads (src0.v) -> pointer to the tool argument the text came from
 
     def clean(self, text: str, limit: int = MESSAGE_CHARS) -> str:
         """Single-line printable ``text`` of at most ``limit`` characters, the job directory and the home directory hidden."""
@@ -163,11 +164,44 @@ def run_yosys(
         script=script,
         seconds=record.seconds,
         version=external.version(YOSYS, found),
+        params={source.name: source.param for source in sources if source.param},
     )
 
 
-def raise_if_failed(out: Outcome, *, what: str) -> None:
-    """Turn a non-zero exit into a :class:`ToolFailure` that names the file and line when Yosys gave them."""
+_TOP_NOT_FOUND = re.compile(r"^(?:Top )?[Mm]odule `\\?(?P<name>[^']+)' not found")
+_LAST_READ = re.compile(r"frontend: (src\d+\.v)")
+_GOLD_GATE = re.compile(r"\b(gold|gate) module")
+
+
+def blame(out: Outcome, item: dict[str, Any], *, tops: dict[str, str] | None = None, roles: dict[str, str] | None = None) -> str | None:
+    """The pointer to the tool argument a Yosys error comes from, or ``None`` when nothing the caller gave can be named.
+
+    Yosys names only the files the toolkit wrote (``src0.v``), so the answer is found in this order: the source the message points at
+    (its argument: ``/source``, ``/files``, ``/source_b`` ...); a top module that does not exist (``tops`` maps a module name to its
+    argument: ``/top``, ``/top_a`` ...); the design a miter error talks about (``roles`` maps ``gold`` and ``gate`` to an argument);
+    the last source Yosys read before it failed (for a design-wide error such as a module nobody defines), else the first source.
+    """
+    if item.get("_source") in out.params:
+        return out.params[item["_source"]]
+    message = item["message"]
+    found = _TOP_NOT_FOUND.match(message)
+    if found and tops and found.group("name") in tops:
+        return tops[found.group("name")]
+    role = _GOLD_GATE.search(message)
+    if role and roles and role.group(1) in roles:
+        return roles[role.group(1)]
+    read = _LAST_READ.findall(out.log)
+    if read and read[-1] in out.params:
+        return out.params[read[-1]]  # the last file Yosys read is the design it was building when it failed
+    return next(iter(out.params.values()), None)
+
+
+def raise_if_failed(out: Outcome, *, what: str, tops: dict[str, str] | None = None, roles: dict[str, str] | None = None) -> None:
+    """Turn a non-zero exit into a :class:`ToolFailure` that names the file and line when Yosys gave them.
+
+    An error Yosys reports about the caller's Verilog (``errors`` non-empty) carries ``details.param``: see :func:`blame`.  A crash,
+    a memory limit or a silent exit has no message to read, so it is the engine's problem and names no argument.
+    """
     if out.record.returncode == 0:
         return
     errors = [m for m in messages(out)[1]]
@@ -177,11 +211,11 @@ def raise_if_failed(out: Outcome, *, what: str) -> None:
         family = "digital.source_error" if first["rule"] == "syntax-error" else "digital.synthesis_error"
         if "No matching port" in first["message"] or "port width" in first["message"].lower():
             family = "digital.interface_mismatch"
-        raise ToolFailure(
-            family,
-            f"{what} failed: {where}{first['message']}",
-            {"file": first["file"], "line": first["line"], "rule": first["rule"], "yosys_message": first["message"]},
-        )
+        details: dict[str, Any] = {"file": first["file"], "line": first["line"], "rule": first["rule"], "yosys_message": first["message"]}
+        param = blame(out, first, tops=tops, roles=roles)
+        if param:
+            details["param"] = param
+        raise ToolFailure(family, f"{what} failed: {where}{first['message']}", details)
     said = out.relabel(out.clean(out.record.stderr_tail) or out.clean(out.record.stdout_tail))
     if "bad_alloc" in said or "out of memory" in said.lower():
         raise ToolFailure(
@@ -212,6 +246,12 @@ def _where(out: Outcome, text: str) -> tuple[str | None, int | None]:
     if ref is None:
         return None, None
     return out.labels.get(ref.group(1), ref.group(1)), int(ref.group(2))
+
+
+def _source_name(text: str) -> str | None:
+    """The first ``src<N>.v`` file name in ``text``: the file Yosys read, before ``relabel`` turned it into the caller's name."""
+    ref = _SOURCE_REF.search(text)
+    return ref.group(1) if ref else None
 
 
 def _lines_of(out: Outcome, text: str) -> list[int]:
@@ -281,6 +321,7 @@ def messages(out: Outcome, text: str | None = None) -> tuple[list[dict[str, Any]
         line = int(match.group("line")) if match.group("line") else None
         if file is None:
             file, line = _where(out, " ".join([raw, *detail]))
+        source_name = match.group("file") or _source_name(" ".join([raw, *detail]))
         key = (message, file or "", line)
         if key in seen:
             continue
@@ -294,6 +335,7 @@ def messages(out: Outcome, text: str | None = None) -> tuple[list[dict[str, Any]
             "line": line,
             "detail": [out.relabel(out.clean(d, MESSAGE_CHARS)) for d in detail[:10]],
             "_lines": _lines_of(out, " ".join([raw, *detail])),
+            "_source": source_name,
         }
         (errors if is_error else warnings).append(item)
     return warnings, errors

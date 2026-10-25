@@ -27,7 +27,7 @@ the name of the feature and the line; it is never silently altered.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from eng_toolkit.errors import ToolFailure
@@ -75,6 +75,7 @@ class Source:
     name: str
     text: str
     modules: tuple[str, ...]
+    param: str = ""  # JSON pointer to the tool argument the text came from ("/source", "/files", ...); empty when not known
 
 
 def unicode_text(raw: str, *, param: str) -> None:
@@ -159,11 +160,12 @@ def sanitize(raw: bytes | str, *, label: str, name: str, limit: int = MAX_SOURCE
     ``param`` is the name of the tool argument the text came from; every refusal then carries ``details.param`` as the pointer to it.
     """
     try:
-        return _sanitize(raw, label=label, name=name, limit=limit)
+        checked = _sanitize(raw, label=label, name=name, limit=limit)
     except ToolFailure as exc:
         if param:
             exc.details.setdefault("param", "/" + param.lstrip("/"))
         raise
+    return replace(checked, param="/" + param.lstrip("/")) if param else checked
 
 
 def _sanitize(raw: bytes | str, *, label: str, name: str, limit: int) -> Source:

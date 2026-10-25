@@ -214,7 +214,7 @@ def synthesize(
         ]
         out = flow.run_yosys(job, sources, script, timeout_s=limit)
         script_artifact = job.write_text("yosys-script.ys", out.script, fmt="yosys-script")
-        flow.raise_if_failed(out, what="synthesis")
+        flow.raise_if_failed(out, what="synthesis", tops={name: "/top"})
         stat = out.json_file("stat.json")
         stats = metrics.module_stats(stat, name)
         if stats is None:
@@ -312,7 +312,7 @@ def check(
         script_artifact = job.write_text("yosys-script.ys", out.script, fmt="yosys-script")
         findings, truncated = lint.findings(out)
         if out.record.returncode != 0 and not any(f["severity"] == "error" for f in findings):
-            flow.raise_if_failed(out, what="the check")
+            flow.raise_if_failed(out, what="the check", tops={name: "/top"} if name else None)
         errors = sum(1 for f in findings if f["severity"] == "error")
         warn = sum(1 for f in findings if f["severity"] == "warning")
         artifacts = [script_artifact, job.write_json("findings.json", findings), job.write_text("yosys-log-tail.txt", flow.log_tail(out), fmt="text")]
@@ -416,7 +416,12 @@ def equivalent(
             )
         result = equiv.verdict(out.log)
         if result is None:
-            flow.raise_if_failed(out, what="the equivalence check")
+            flow.raise_if_failed(
+                out,
+                what="the equivalence check",
+                tops={name_b: "/top_b", name_a: "/top_a"},
+                roles={"gold": sources_a[0].param, "gate": sources_b[0].param},
+            )
             raise ToolFailure("engine.failure", "Yosys finished without a SAT verdict", {"yosys_message": out.clean(out.log[-300:])})
         bounded = cycles > 0
         warnings = list(STANDING)

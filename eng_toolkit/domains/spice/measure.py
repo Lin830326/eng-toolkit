@@ -260,7 +260,7 @@ def spice_measure(
         at_value = _at(at, header[0]) if kind == "value_at" else None
         value, unit, details = measure(kind, header, cols, column, fraction=float(final_fraction), tolerance=float(tolerance), at=at_value)
         if not math.isfinite(value):
-            raise ToolFailure("engine.failure", "the measurement is not a finite number", {})
+            raise ToolFailure("engine.failure", "the measurement is not a finite number", {"param": "/column"})
         q = QuantityOut(quantity=value, unit=unit)
         warnings = ["A property of the sampled table: its accuracy is limited by the sample spacing and by the simulation's own error."]
         moving = details.get("last_sample_vs_steady_state_percent_of_step", 0.0)

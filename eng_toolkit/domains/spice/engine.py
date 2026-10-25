@@ -37,10 +37,13 @@ class Table:
     columns: dict[str, list[float]]  # op/dc/tran: output -> values; ac: "<output>.re" / "<output>.im"
 
 
-def format_number(value: float) -> str:
-    """A float as ngspice reads it (never an SI suffix, never inf or nan)."""
+def format_number(value: float, param: str = "/netlist") -> str:
+    """A float as ngspice reads it (never an SI suffix, never inf or nan).
+
+    ``param`` points at the tool argument the number came from (``/start``, ``/stop``, ``/step``, ``/points``; ``/netlist`` for component values).
+    """
     if not math.isfinite(value):  # pragma: no cover - callers bound their numbers
-        raise ToolFailure("input.invalid", "a non-finite number reached the deck", {})
+        raise ToolFailure("input.invalid", "a non-finite number reached the deck", {"param": param})
     return repr(float(f"{value:.12g}"))  # 9.999999999999999e-06 from a unit conversion becomes 1e-05
 
 
@@ -143,8 +146,14 @@ def simulate(
     write_file,
     complex_columns: bool,
     outputs: list[str],
+    netlist_param: str = "/netlist",
 ) -> tuple[Table, external.Record, list[str]]:
-    """Run the deck; raise ``engine.failure`` with ngspice's own words when it did not produce a clean table."""
+    """Run the deck; raise ``engine.failure`` with ngspice's own words when it did not produce a clean table.
+
+    An error ngspice reports in its log (unknown model, singular matrix, node with no path, no convergence) is about the circuit, so it
+    carries ``details.param`` = ``netlist_param`` (the argument the netlist came from).  A non-zero exit, a missing or malformed table and
+    the resource limits are the engine's own and name no argument.
+    """
     record, log = run_deck(deck, workdir, write_file=write_file)
     fatal, warnings = log_findings(log, (record.stderr_tail, record.stdout_tail))
     if record.returncode != 0:
@@ -154,7 +163,11 @@ def simulate(
             {"returncode": record.returncode, "ngspice": fatal},
         )
     if fatal:
-        raise ToolFailure("engine.failure", f"ngspice reported an error: {fatal[0]}", {"ngspice": fatal, "reason_code": "ngspice_error"})
+        raise ToolFailure(
+            "engine.failure",
+            f"ngspice reported an error: {fatal[0]}",
+            {"ngspice": fatal, "reason_code": "ngspice_error", "param": netlist_param},
+        )
     table = read_table(workdir / "table.csv", complex_columns=complex_columns, outputs=outputs)
     return table, record, warnings
 
