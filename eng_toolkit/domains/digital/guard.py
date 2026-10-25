@@ -153,8 +153,20 @@ def decode(raw: bytes | str, *, label: str, limit: int = MAX_SOURCE_BYTES) -> st
     return text
 
 
-def sanitize(raw: bytes | str, *, label: str, name: str, limit: int = MAX_SOURCE_BYTES) -> Source:
-    """Check one source and return it, or raise :class:`ToolFailure` (family ``input.*``) naming the construct and line."""
+def sanitize(raw: bytes | str, *, label: str, name: str, limit: int = MAX_SOURCE_BYTES, param: str | None = None) -> Source:
+    """Check one source and return it, or raise :class:`ToolFailure` (family ``input.*``) naming the construct and line.
+
+    ``param`` is the name of the tool argument the text came from; every refusal then carries ``details.param`` as the pointer to it.
+    """
+    try:
+        return _sanitize(raw, label=label, name=name, limit=limit)
+    except ToolFailure as exc:
+        if param:
+            exc.details.setdefault("param", "/" + param.lstrip("/"))
+        raise
+
+
+def _sanitize(raw: bytes | str, *, label: str, name: str, limit: int) -> Source:
     text = decode(raw, label=label, limit=limit)
     continuation = re.search(r"\\\n", text)
     if continuation:

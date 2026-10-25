@@ -25,7 +25,7 @@ async def test_netlist_text_and_file_conflict(tool, gateway, file_exists, tmp_pa
     result = await invoke(tool, {"netlist": DIVIDER, "netlist_file": str(path)}, gateway)
     assert result.ok is False and result.error.family == "input.invalid"
     assert result.error.message == "give exactly one of 'netlist' (the text) and 'netlist_file' (a path)"
-    assert result.error.details == {"params": ["netlist", "netlist_file"]}
+    assert result.error.details == {"params": ["netlist", "netlist_file"], "param": "/netlist"}
     assert result.provenance.input_files == []
     assert result.review_status == "unreviewed" and result.warnings == []
 
@@ -37,5 +37,5 @@ async def test_neither_netlist_source_keeps_missing_error(tool, gateway, args):
     result = await invoke(tool, args, gateway)
     assert result.ok is False and result.error.family == "input.missing"
     assert result.error.message == "give the netlist as text in 'netlist' or as a path in 'netlist_file'"
-    assert result.error.details == {"params": ["netlist", "netlist_file"]}
+    assert result.error.details == {"params": ["netlist", "netlist_file"], "param": "/netlist"}
     assert result.review_status == "unreviewed" and result.warnings == []

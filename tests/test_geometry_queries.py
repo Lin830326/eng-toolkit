@@ -95,7 +95,7 @@ def test_a_malformed_query_is_input_invalid_with_its_index_and_text(bad):
     assert failure.family == "input.invalid"
     assert failure.details["query_index"] == 1
     assert failure.details["query"] == bad
-    assert failure.details["param"] == "queries"
+    assert failure.details["param"] == "/queries"
     assert "q2" in failure.message
 
 

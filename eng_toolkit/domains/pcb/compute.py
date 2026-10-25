@@ -51,19 +51,36 @@ def _board_text(copy: Path) -> str:
     try:
         return sexp.decode(copy.read_bytes())
     except sexp.SexpError as exc:
-        raise ToolFailure("input.invalid", f"not a readable KiCad board: {exc.message}", {"reason": exc.kind, **exc.details}) from exc
+        raise ToolFailure("input.invalid", f"not a readable KiCad board: {exc.message}", {"reason": exc.kind, "param": "/board_path", **exc.details}) from exc
 
 
 def _schematic_text(copy: Path) -> str:
     try:
         return sexp.decode(copy.read_bytes())
     except sexp.SexpError as exc:
-        raise ToolFailure("input.invalid", f"not a readable KiCad schematic: {exc.message}", {"reason": exc.kind, **exc.details}) from exc
+        raise ToolFailure("input.invalid", f"not a readable KiCad schematic: {exc.message}", {"reason": exc.kind, "param": "/schematic_path", **exc.details}) from exc
+
+
+def _read_board(copy: Path, max_list: int) -> dict[str, Any]:
+    """Our reader on the staged board; a refusal about the file's content names ``board_path``, the argument that has to change."""
+    try:
+        return boardread.read_board(_board_text(copy), max_list=max_list)
+    except ToolFailure as exc:
+        exc.details.setdefault("param", "/board_path")
+        raise
+
+
+def _read_schematic(copy: Path) -> Any:
+    try:
+        return schread.read_schematic(_schematic_text(copy))
+    except ToolFailure as exc:
+        exc.details.setdefault("param", "/schematic_path")
+        raise
 
 
 def _limit(value: int, low: int, high: int, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-        raise _bad(f"{name} must be a whole number from {low} to {high}", **{name: str(value)[:40]})
+        raise _bad(f"{name} must be a whole number from {low} to {high}", param=f"/{name}", **{name: str(value)[:40]})
     return value
 
 
@@ -85,7 +102,7 @@ def _overrides(min_clearance: str, min_track_width: str) -> dict[str, float]:
 def info(handle: JobHandle, *, board_path: str, max_listed: int, check_with_kicad: bool) -> Computed:
     max_listed = _limit(max_listed, 0, MAX_LISTED, "max_listed")
     copy = handle.input_file(board_path, param="board_path", extensions=(".kicad_pcb",), max_bytes=sexp.MAX_FILE_BYTES)
-    data = boardread.read_board(_board_text(copy), max_list=max_listed)
+    data = _read_board(copy, max_listed)
     _check_finite(data, "result")
     warnings: list[str] = []
     outline = data["outline"]["extents_mm"]
@@ -264,7 +281,7 @@ def drc(
         kind="pcb",
         use_project_files=bool(use_project_files),
         overrides=overrides,
-        validate=lambda copy: boardread.read_board(_board_text(copy), max_list=0),
+        validate=lambda copy: _read_board(copy, 0),
     )
     board = prep.checked
     out = prep.work / "out"
@@ -353,7 +370,7 @@ def erc(handle: JobHandle, *, schematic_path: str, use_project_files: bool, max_
         kind="sch",
         use_project_files=bool(use_project_files),
         param="schematic_path",
-        validate=lambda copy: schread.read_schematic(_schematic_text(copy)),
+        validate=_read_schematic,
     )
     sch = prep.checked
     out = prep.work / "out"
@@ -413,13 +430,13 @@ def _layers(raw: str, board: dict[str, Any], kind: str) -> tuple[list[str], list
         return chosen, []
     names = [part.strip() for part in raw.split(",")]
     if len(names) > MAX_LAYERS:
-        raise _bad(f"layers lists {len(names)} names; the limit is {MAX_LAYERS}")
+        raise _bad(f"layers lists {len(names)} names; the limit is {MAX_LAYERS}", param="/layers")
     seen: list[str] = []
     for name in names:
         if not LAYER_NAME.match(name):
-            raise _bad(f"layer name {name[:40]!r} is not a KiCad layer name (letters, digits, '_' and '.' only)", layer=name[:40], available=available[:60])
+            raise _bad(f"layer name {name[:40]!r} is not a KiCad layer name (letters, digits, '_' and '.' only)", layer=name[:40], available=available[:60], param="/layers")
         if name not in available:
-            raise _bad(f"the board has no layer named {name!r}; its layers are {available}", layer=name, available=available[:60])
+            raise _bad(f"the board has no layer named {name!r}; its layers are {available}", layer=name, available=available[:60], param="/layers")
         if name not in seen:
             seen.append(name)
     return seen, []
@@ -428,15 +445,15 @@ def _layers(raw: str, board: dict[str, Any], kind: str) -> tuple[list[str], list
 def export(handle: JobHandle, *, board_path: str, export: str, layers: str) -> Computed:
     kind = (export or "").strip().lower()
     if kind not in EXPORTS:
-        raise _bad(f"export must be one of {list(EXPORTS)}", export=str(export)[:40])
+        raise _bad(f"export must be one of {list(EXPORTS)}", export=str(export)[:40], param="/export")
 
     def check(copy: Path) -> tuple[dict[str, Any], list[str]]:
-        board = boardread.read_board(_board_text(copy), max_list=0)
+        board = _read_board(copy, 0)
         chosen: list[str] = []
         if kind in ("gerbers", "pdf", "svg"):
             chosen, _ = _layers(layers, board, kind)
             if not chosen:
-                raise _bad("the board has no layer to plot")
+                raise _bad("the board has no layer to plot", param="/board_path")
         return board, chosen
 
     prep = program.prepare(handle, board_path, kind="pcb", use_project_files=False, validate=check)

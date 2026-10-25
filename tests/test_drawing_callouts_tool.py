@@ -367,12 +367,12 @@ def test_a_bad_features_file_is_input_invalid_with_its_pointer(models, tmp_path,
     path.write_text(content, encoding="utf-8")
     r = run(models["probe"], features_path=str(path))
     assert r.ok is False and r.error.family == "input.invalid"
-    assert r.error.details["param"] == "features_path" and r.error.details["pointer"] == pointer
+    assert r.error.details["param"] == "/features_path" and r.error.details["pointer"] == pointer
 
 
 def test_a_missing_features_file_and_a_wrong_extension(models, tmp_path):
     missing = run(models["probe"], features_path=str(tmp_path / "nope.json"))
-    assert missing.ok is False and missing.error.family == "input.file_not_found" and missing.error.details["param"] == "features_path"
+    assert missing.ok is False and missing.error.family == "input.file_not_found" and missing.error.details["param"] == "/features_path"
     wrong = tmp_path / "features.txt"
     wrong.write_text("{}")
     r = run(models["probe"], features_path=str(wrong))

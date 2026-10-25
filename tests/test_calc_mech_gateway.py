@@ -65,7 +65,7 @@ async def test_mech_tools_over_mcp_including_a_structured_error():
         )
     assert beam.ok and math.isclose(beam.value.quantity, 240.0, rel_tol=1e-9)
     assert bolt.ok and math.isclose(bolt.values["preload"].quantity, 20.0, rel_tol=1e-12)
-    assert bad.ok is False and bad.error.family == "units.bare_number" and bad.error.details["param"] == "equivalent_load"
+    assert bad.ok is False and bad.error.family == "units.bare_number" and bad.error.details["param"] == "/equivalent_load"
     assert json_string.ok and math.isclose(json_string.value.quantity, 2571.95, rel_tol=1e-5)
     for r in (beam, bolt, bad, json_string):
         assert r.review_status == "unreviewed"

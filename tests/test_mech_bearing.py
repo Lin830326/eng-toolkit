@@ -1,5 +1,6 @@
 """mech.bearing_life checked against hand calculations."""
 
+from eng_toolkit.errors import json_pointer
 import json
 import math
 
@@ -25,7 +26,7 @@ def _fails(family: str, param: str | None = None, **kwargs) -> ToolResult:
     assert r.ok is False and r.value is None
     assert r.error.family == family, r.error
     if param is not None:
-        assert r.error.details.get("param") == param, r.error
+        assert r.error.details.get("param") == json_pointer(param), r.error
     assert r.warnings == []
     return r
 

@@ -346,21 +346,21 @@ def test_min_clearance_above_max_clearance_is_rejected():
 def test_bad_basis_is_rejected(basis):
     r = _call(nominal="25 mm", min_clearance="0 mm", max_clearance="0.05 mm", basis=basis)
     _assert_error(r, "input.invalid")
-    assert r.error.details["param"] == "basis"
+    assert r.error.details["param"] == "/basis"
 
 
 @pytest.mark.parametrize("fit_set", ["", "all", "Preferred", "full"])
 def test_bad_fit_set_is_rejected(fit_set):
     r = _call(nominal="25 mm", min_clearance="0 mm", max_clearance="0.05 mm", fit_set=fit_set)
     _assert_error(r, "input.invalid")
-    assert r.error.details["param"] == "fit_set"
+    assert r.error.details["param"] == "/fit_set"
 
 
 @pytest.mark.parametrize("n", [0, 51, -1])
 def test_max_results_outside_1_to_50_is_rejected(n):
     r = _call(nominal="25 mm", min_clearance="0 mm", max_clearance="0.05 mm", max_results=n)
     _assert_error(r, "input.invalid")
-    assert r.error.details["param"] == "max_results"
+    assert r.error.details["param"] == "/max_results"
 
 
 @pytest.mark.parametrize("n", [1, 50])

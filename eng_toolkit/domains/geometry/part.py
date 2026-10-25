@@ -875,7 +875,10 @@ def parse_spec(text: str) -> PartSpec:
     """Parse and validate a spec; ``input.invalid`` carries ``details.pointer`` and ``details.allowed``."""
     if not isinstance(text, str):
         raise _bad("", "the spec must be a JSON string")
-    size = len(text.encode("utf-8"))
+    try:
+        size = len(text.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise _bad("", "the spec holds a character that is not valid Unicode text (a lone surrogate)") from None
     if size > MAX_SPEC_BYTES:
         raise _bad("", f"the spec is {size} bytes; the limit is {MAX_SPEC_BYTES}", limit_bytes=MAX_SPEC_BYTES)
     try:

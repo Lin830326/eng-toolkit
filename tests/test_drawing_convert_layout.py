@@ -104,7 +104,7 @@ def test_scales_that_are_iso_5455(text, expected):
 def test_scales_that_are_not_are_refused_with_the_allowed_list(text):
     with pytest.raises(ToolFailure) as e:
         V.parse_scale(text)
-    assert e.value.family == "input.invalid" and e.value.details["param"] == "scale" and "auto" in e.value.details["allowed"]
+    assert e.value.family == "input.invalid" and e.value.details["param"] == "/scale" and "auto" in e.value.details["allowed"]
 
 
 @pytest.mark.parametrize(("text", "fmt"), [("pdf", "pdf"), ("PDF", "pdf"), (".svg", "svg"), (" png ", "png"), ("dxf", "dxf")])

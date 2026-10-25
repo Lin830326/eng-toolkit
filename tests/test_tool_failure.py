@@ -6,11 +6,11 @@ from eng_toolkit.units import UnitsError
 
 
 def test_units_error_is_a_tool_failure_and_a_value_error():
-    err = UnitsError("units.parse_error", "bad", {"param": "x"})
+    err = UnitsError("units.parse_error", "bad", {"param": "/x"})
     assert isinstance(err, ToolFailure)
     assert isinstance(err, ValueError)
-    assert (err.family, err.message, err.details) == ("units.parse_error", "bad", {"param": "x"})
-    assert err.to_dict() == {"family": "units.parse_error", "message": "bad", "details": {"param": "x"}}
+    assert (err.family, err.message, err.details) == ("units.parse_error", "bad", {"param": "/x"})
+    assert err.to_dict() == {"family": "units.parse_error", "message": "bad", "details": {"param": "/x"}}
     assert str(err) == "bad"
 
 
@@ -42,9 +42,18 @@ def test_run_tool_converts_a_tool_failure_into_a_failed_result_without_warnings(
 
 def test_run_tool_still_converts_a_units_error():
     def compute(_):
-        raise UnitsError("units.bare_number", "no unit", {"param": "p"})
+        raise UnitsError("units.bare_number", "no unit", {"param": "/p"})
 
     r = run_tool(tool_name="test_failure", engine="test", version="0", inputs={}, compute=compute)
     assert r.ok is False
     assert r.error.family == "units.bare_number"
-    assert r.error.details == {"param": "p"}
+    assert r.error.details == {"param": "/p"}
+
+
+def test_param_is_always_a_json_pointer():
+    from eng_toolkit.errors import json_pointer
+
+    assert json_pointer("bore") == "/bore"
+    assert json_pointer("layers[1].thickness") == "/layers/1/thickness"
+    assert json_pointer("/a/b") == "/a/b"
+    assert ToolFailure("input.invalid", "m", {"param": "x[2]"}).details["param"] == "/x/2"

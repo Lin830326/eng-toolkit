@@ -30,7 +30,7 @@ def document(**changes):
 def invalid(raw, pointer):
     with pytest.raises(ToolFailure) as caught:
         F.parse(raw)
-    assert caught.value.family == "input.invalid" and caught.value.details["pointer"] == pointer and caught.value.details["param"] == "features_path"
+    assert caught.value.family == "input.invalid" and caught.value.details["pointer"] == pointer and caught.value.details["param"] == "/features_path"
     return caught.value
 
 

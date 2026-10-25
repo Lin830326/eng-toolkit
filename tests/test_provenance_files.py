@@ -110,7 +110,7 @@ def test_a_missing_file_is_input_file_not_found_and_lists_nothing(tmp_path):
     r = run(lambda job: job.input_file(str(tmp_path / "gone.txt"), param="model_path", extensions=(".txt",)))
     assert r.ok is False
     assert r.error.family == "input.file_not_found"
-    assert r.error.details["param"] == "model_path" and "gone.txt" in r.error.details["path"]
+    assert r.error.details["param"] == "/model_path" and "gone.txt" in r.error.details["path"]
     assert r.provenance.input_files == []
 
 
@@ -125,7 +125,7 @@ def test_an_unsupported_extension_is_reported_and_lists_nothing(tmp_path):
     r = run(lambda job: job.input_file(str(other), param="model_path", extensions=(".txt", ".csv")))
     assert r.ok is False
     assert r.error.family == "input.unsupported_format"
-    assert r.error.details == {"param": "model_path", "path": str(other), "supported": [".txt", ".csv"]}
+    assert r.error.details == {"param": "/model_path", "path": str(other), "supported": [".txt", ".csv"]}
     assert "'.bin'" in r.error.message and "model_path" in r.error.message
     assert r.provenance.input_files == []
 

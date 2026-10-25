@@ -351,7 +351,7 @@ def test_wide_characters_count_a_full_em():
 @pytest.mark.parametrize("text", ["front,top,front", "front,spam", "", " , "])
 def test_views_are_checked(text):
     e = failure(lambda: S.parse_views(text))
-    assert (e.family, e.details["param"]) == ("input.invalid", "views")
+    assert (e.family, e.details["param"]) == ("input.invalid", "/views")
 
 
 def test_views_are_normalised():

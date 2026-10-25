@@ -541,10 +541,10 @@ def test_wrong_files_and_wrong_arguments_have_their_own_errors(tmp_path):
     other.write_text("x", encoding="utf-8")
     failed(convert(other, "pdf"), "input.unsupported_format")
     for fmt in ("docx", "", "pdf,svg", "dwg"):
-        assert failed(convert(good, fmt), "input.invalid").error.details["param"] == "output_format"
-    assert failed(convert(good, "pdf", scale="1:3"), "input.invalid").error.details["param"] == "scale"
-    assert failed(convert(good, "pdf", sheet="A5"), "input.invalid").error.details["param"] == "sheet"
-    assert failed(convert(good, "dxf", dxf_version="R14"), "input.invalid").error.details["param"] == "dxf_version"
+        assert failed(convert(good, fmt), "input.invalid").error.details["param"] == "/output_format"
+    assert failed(convert(good, "pdf", scale="1:3"), "input.invalid").error.details["param"] == "/scale"
+    assert failed(convert(good, "pdf", sheet="A5"), "input.invalid").error.details["param"] == "/sheet"
+    assert failed(convert(good, "dxf", dxf_version="R14"), "input.invalid").error.details["param"] == "/dxf_version"
 
 
 def test_a_sheet_and_scale_that_do_not_fit_are_refused_and_a_page_over_the_limit_too(tmp_path):

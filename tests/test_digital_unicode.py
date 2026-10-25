@@ -27,7 +27,7 @@ def arguments(tool):
 def assert_invalid_text(result, param):
     refused(result, "input.invalid")
     assert result.error.message == f"{param}: the text is not valid Unicode text"
-    assert result.error.details == {"param": param}
+    assert result.error.details == {"param": "/" + param}
     strict_json(result)
     result.model_dump_json().encode("utf-8")
 

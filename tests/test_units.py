@@ -31,7 +31,7 @@ def test_bare_numbers_rejected(raw):
     with pytest.raises(UnitsError) as ei:
         parse_quantity(raw, name="bore", dimension="length")
     assert ei.value.family == "units.bare_number"
-    assert ei.value.details["param"] == "bore"
+    assert ei.value.details["param"] == "/bore"
 
 
 def test_mapping_with_empty_unit_is_bare_number():

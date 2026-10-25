@@ -1,5 +1,6 @@
 """The thermal domain through a real MCP client against the gateway: registry, schemas, unit handling and hostile inputs."""
 
+from eng_toolkit.errors import json_pointer
 import json
 import math
 import re
@@ -103,12 +104,12 @@ async def test_structured_errors_over_mcp():
         zero = await _call(client, "thermal_fin", {**FIN, "length": "0 mm"})
         absurd = await _call(client, "thermal_exchanger", {**EXCH_RATING, "ua": "1e308 W/K"})
         mismatch = await _call(client, "thermal_conduction", {**WALL, "contact_resistances": "1 m^2*K/W; 2 m^2*K/W"})
-    assert (bare.ok, bare.error.family, bare.error.details["param"]) == (False, "units.bare_number", "temperature_inner")
-    assert (delta.error.family, delta.error.details["param"]) == ("input.invalid", "temperature_inner")
-    assert wrong.error.family == "units.dimension_mismatch" and wrong.error.details["param"] == "area"
-    assert zero.error.family == "input.invalid" and zero.error.details["param"] == "length"
-    assert absurd.error.family == "input.out_of_range" and absurd.error.details["param"] == "ua"
-    assert mismatch.error.family == "input.invalid" and mismatch.error.details["param"] == "contact_resistances"
+    assert (bare.ok, bare.error.family, bare.error.details["param"]) == (False, "units.bare_number", "/temperature_inner")
+    assert (delta.error.family, delta.error.details["param"]) == ("input.invalid", "/temperature_inner")
+    assert wrong.error.family == "units.dimension_mismatch" and wrong.error.details["param"] == "/area"
+    assert zero.error.family == "input.invalid" and zero.error.details["param"] == "/length"
+    assert absurd.error.family == "input.out_of_range" and absurd.error.details["param"] == "/ua"
+    assert mismatch.error.family == "input.invalid" and mismatch.error.details["param"] == "/contact_resistances"
     for r in (bare, delta, wrong, zero, absurd, mismatch):
         assert r.value is None and r.warnings == [] and r.review_status == "unreviewed"
 
@@ -184,4 +185,4 @@ async def test_absurd_magnitudes_with_the_right_unit_are_out_of_range_like_calc_
             ("thermal_convection", {**CONV_FORCED, "velocity": "1e308 m/s"}, "velocity"),
         ):
             r = await _call(client, tool, args)
-            assert not r.ok and r.error.family == "input.out_of_range" and r.error.details["param"] == param, (tool, r.error)
+            assert not r.ok and r.error.family == "input.out_of_range" and r.error.details["param"] == json_pointer(param), (tool, r.error)

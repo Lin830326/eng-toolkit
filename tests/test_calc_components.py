@@ -1,5 +1,6 @@
 """calc.orifice_flow / pump_power / accumulator_precharge / cylinder_speed checked against hand calculations."""
 
+from eng_toolkit.errors import json_pointer
 import json
 import math
 
@@ -26,7 +27,7 @@ def _fails(tool, family: str, param: str | None = None, **kwargs) -> ToolResult:
     assert r.ok is False and r.value is None, r.values
     assert r.error.family == family, r.error
     if param is not None:
-        assert r.error.details.get("param") == param, r.error
+        assert r.error.details.get("param") == json_pointer(param), r.error
     assert r.warnings == []  # a failed call carries no result-scope warnings
     return r
 

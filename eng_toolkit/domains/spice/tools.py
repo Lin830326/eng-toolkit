@@ -57,7 +57,7 @@ def read_netlist(handle: JobHandle, netlist: str, netlist_file: str) -> str:
         raise ToolFailure(
             "input.invalid" if inline else "input.missing",
             "give exactly one of 'netlist' (the text) and 'netlist_file' (a path)" if inline else "give the netlist as text in 'netlist' or as a path in 'netlist_file'",
-            {"params": ["netlist", "netlist_file"]},
+            {"params": ["netlist", "netlist_file"], "param": "/netlist"},
         )
     if inline:
         return netlist
@@ -69,12 +69,22 @@ def read_netlist(handle: JobHandle, netlist: str, netlist_file: str) -> str:
         raise ToolFailure(
             "input.invalid",
             f"the netlist file is not valid UTF-8 (the byte at offset {exc.start} cannot be decoded)",
-            {"reason_code": "encoding", "offset": exc.start},
+            {"reason_code": "encoding", "offset": exc.start, "param": "/netlist_file"},
         ) from None
 
 
+def netlist_param(netlist: str) -> str:
+    """The pointer to the argument the netlist text came from: ``/netlist`` when text was given, else ``/netlist_file``."""
+    return "/netlist" if netlist and netlist.strip() else "/netlist_file"
+
+
 def load(handle: JobHandle, netlist: str, netlist_file: str) -> nlmod.Netlist:
-    return nlmod.parse(read_netlist(handle, netlist, netlist_file))
+    text = read_netlist(handle, netlist, netlist_file)
+    try:
+        return nlmod.parse(text)
+    except ToolFailure as exc:
+        exc.details.setdefault("param", netlist_param(netlist))
+        raise
 
 
 def _split_outputs(text: str) -> list[str]:
@@ -394,7 +404,7 @@ def simulate(
             raise ToolFailure(
                 "input.netlist_invalid",
                 f"the netlist cannot be simulated: line {first['line']}: {first['message']}" + (f" (and {len(nl.problems) - 1} more problems)" if len(nl.problems) > 1 else ""),
-                {"problems": nl.problems[:10], "problem_count": len(nl.problems)},
+                {"problems": nl.problems[:10], "problem_count": len(nl.problems), "param": netlist_param(netlist)},
             )
         chosen = choose_outputs(nl, outputs)
         script, described = analysis_script(

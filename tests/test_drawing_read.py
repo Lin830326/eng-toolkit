@@ -1,5 +1,6 @@
 """drawing_read as a tool: the contract, the size of what comes back, the path allow-list, the errors, and the round trip on drawing_make_views' own files."""
 
+from eng_toolkit.errors import json_pointer
 import inspect
 import json
 import os
@@ -215,7 +216,7 @@ def test_detail_full_adds_fields_to_the_items_but_not_more_items(tmp_path):
 @pytest.mark.parametrize(("kwargs", "param"), [({"detail": "everything"}, "detail"), ({"max_items": 0}, "max_items"), ({"max_items": 501}, "max_items"), ({"max_items": -3}, "max_items")])
 def test_bad_arguments_are_input_invalid_and_name_the_parameter(tmp_path, kwargs, param):
     r = failed(call(inch_drawing(tmp_path), **kwargs), "input.invalid")
-    assert r.error.details["param"] == param
+    assert r.error.details["param"] == json_pointer(param)
 
 
 # --------------------------------------------------------------------------- a PDF through the tool
@@ -248,7 +249,7 @@ def test_a_pdf_with_active_content_is_read_and_warned_about(tmp_path):
 
 def test_a_missing_file(tmp_path):
     r = failed(call(tmp_path / "nope.dxf"), "input.file_not_found")
-    assert r.error.details["param"] == "path"
+    assert r.error.details["param"] == "/path"
 
 
 def test_a_dwg_without_the_program_names_it_and_other_extensions_are_unsupported(tmp_path, monkeypatch):
@@ -311,7 +312,7 @@ def test_with_the_variable_only_those_directories_and_the_workspace_are_read(tmp
     monkeypatch.setenv("ENG_TOOLKIT_READ_DIRS", str(allowed))
     assert call(inside).ok
     r = failed(call(outside), "input.path_not_allowed")
-    assert r.error.details["param"] == "path" and str(other) not in r.error.message and "ENG_TOOLKIT_READ_DIRS" in r.error.message
+    assert r.error.details["param"] == "/path" and str(other) not in r.error.message and "ENG_TOOLKIT_READ_DIRS" in r.error.message
     assert not r.provenance.input_files
 
 

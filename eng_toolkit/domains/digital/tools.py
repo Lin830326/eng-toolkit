@@ -115,26 +115,26 @@ def gather(job: JobHandle, *, source: str, files: str, param_source: str, param_
     sources: list[guard.Source] = []
     total = 0
 
-    def add(raw: bytes | str, label: str) -> None:
+    def add(raw: bytes | str, label: str, param: str) -> None:
         nonlocal total
-        checked = guard.sanitize(raw, label=label, name=f"src{first_index + len(sources)}.v", limit=guard.MAX_SOURCE_BYTES)
+        checked = guard.sanitize(raw, label=label, name=f"src{first_index + len(sources)}.v", limit=guard.MAX_SOURCE_BYTES, param=param)
         total += len(checked.text.encode("utf-8"))
         if total > guard.MAX_SOURCE_BYTES:
             raise ToolFailure(
                 "input.too_large",
                 f"the sources of one design total over {guard.MAX_SOURCE_BYTES} bytes",
-                {"limit_bytes": guard.MAX_SOURCE_BYTES},
+                {"limit_bytes": guard.MAX_SOURCE_BYTES, "param": "/" + param},
             )
         sources.append(checked)
 
     if source.strip():
-        add(source, inline_label)
+        add(source, inline_label, param_source)
     for index, raw in enumerate(paths):
         copy = job.input_file(raw, param=param_files, extensions=SOURCE_SUFFIXES, max_bytes=guard.MAX_SOURCE_BYTES)
-        add(Path(copy).read_bytes(), Path(raw).name or f"{param_files}[{index}]")
+        add(Path(copy).read_bytes(), Path(raw).name or f"{param_files}[{index}]", param_files)
     modules = sum(len(s.modules) for s in sources)
     if modules > guard.MAX_MODULES:
-        raise ToolFailure("input.out_of_range", f"{modules} modules is over the limit of {guard.MAX_MODULES} per design", {"max_modules": guard.MAX_MODULES})
+        raise ToolFailure("input.out_of_range", f"{modules} modules is over the limit of {guard.MAX_MODULES} per design", {"max_modules": guard.MAX_MODULES, "param": "/" + (param_source if source.strip() else param_files)})
     return sources
 
 

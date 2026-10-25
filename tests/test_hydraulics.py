@@ -1,5 +1,6 @@
 """calc.hydraulics tools checked against hand calculations."""
 
+from eng_toolkit.errors import json_pointer
 import json
 import math
 from pathlib import Path
@@ -79,7 +80,7 @@ def test_cylinder_force_bare_number_is_structured_error():
     assert r.ok is False
     assert r.value is None
     assert r.error.family == "units.bare_number"
-    assert r.error.details["param"] == "bore"
+    assert r.error.details["param"] == "/bore"
     assert r.review_status == "unreviewed"
     # inputs.json is still written so the failed call is reproducible
     assert [a.format for a in r.artifacts] == ["json"]
@@ -89,7 +90,7 @@ def test_cylinder_force_dimension_mismatch():
     r = _call(cylinder_force, bore="100 mm", rod="50 mm", pressure="210 mm")
     assert r.ok is False
     assert r.error.family == "units.dimension_mismatch"
-    assert r.error.details["param"] == "pressure"
+    assert r.error.details["param"] == "/pressure"
 
 
 def test_cylinder_force_rod_not_smaller_than_bore():
@@ -200,7 +201,7 @@ def test_pipe_pressure_drop_rejects_kinematic_viscosity():
     )
     assert r.ok is False
     assert r.error.family == "units.dimension_mismatch"
-    assert r.error.details["param"] == "viscosity"
+    assert r.error.details["param"] == "/viscosity"
 
 
 def test_pipe_pressure_drop_rejects_bare_number():
@@ -214,7 +215,7 @@ def test_pipe_pressure_drop_rejects_bare_number():
     )
     assert r.ok is False
     assert r.error.family == "units.bare_number"
-    assert r.error.details["param"] == "diameter"
+    assert r.error.details["param"] == "/diameter"
 
 
 @pytest.mark.parametrize("field", ["diameter", "length", "flow_rate"])
@@ -225,7 +226,7 @@ def test_pipe_pressure_drop_rejects_non_positive(field):
     r = _call(pipe_pressure_drop, **kwargs)
     assert r.ok is False
     assert r.error.family == "input.invalid"
-    assert r.error.details["param"] == field
+    assert r.error.details["param"] == json_pointer(field)
 
 
 # --------------------------------------------------------------------------- warnings

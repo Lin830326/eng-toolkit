@@ -83,7 +83,7 @@ def _resolve(header: list[str], column: str, suffixes: tuple[str, ...] = ()) -> 
 
 def interpolate(xs: list[float], ys: list[float], x: float) -> float:
     if x < xs[0] or x > xs[-1]:
-        raise ToolFailure("measure.not_found", f"x = {x:g} is outside the data ({xs[0]:g} .. {xs[-1]:g})", {"min": xs[0], "max": xs[-1]})
+        raise ToolFailure("measure.not_found", f"x = {x:g} is outside the data ({xs[0]:g} .. {xs[-1]:g})", {"min": xs[0], "max": xs[-1], "param": "/at"})
     lo, hi = 0, len(xs) - 1
     while hi - lo > 1:
         mid = (lo + hi) // 2
@@ -133,7 +133,18 @@ def _step(xs: list[float], ys: list[float], fraction: float) -> tuple[float, flo
 
 
 def measure(kind: str, header: list[str], cols: list[list[float]], column: str, *, fraction: float, tolerance: float, at: float | None) -> tuple[float, str, dict[str, Any]]:
-    """``(value, unit, details)``; raises ``measure.not_found`` when the table does not contain what the measurement needs."""
+    """``(value, unit, details)``; raises ``measure.not_found`` when the table does not contain what the measurement needs.
+
+    A refusal that names no argument of its own points at ``csv_file``: the table is what has to change.
+    """
+    try:
+        return _measure(kind, header, cols, column, fraction=fraction, tolerance=tolerance, at=at)
+    except ToolFailure as exc:
+        exc.details.setdefault("param", "/csv_file")
+        raise
+
+
+def _measure(kind: str, header: list[str], cols: list[list[float]], column: str, *, fraction: float, tolerance: float, at: float | None) -> tuple[float, str, dict[str, Any]]:
     xs = cols[0]
     xname = header[0].lower()
     if any(b <= a for a, b in zip(xs, xs[1:])):

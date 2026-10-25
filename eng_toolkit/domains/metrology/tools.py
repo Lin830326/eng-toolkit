@@ -187,7 +187,9 @@ def _fit_band(item: dict[str, Any], unit: str) -> tuple[float, float, float]:
 
 def _parse_link(item: Any, index: int, unit: str) -> tuple[stackup.Link, str | None]:
     if not isinstance(item, dict):
-        raise _invalid(f"link {index + 1} must be a JSON object, got {type(item).__name__}", link_index=index)
+        raise _invalid(
+            f"link {index + 1} must be a JSON object, got {type(item).__name__}", link_index=index, param=f"/chain/{index}"
+        )
     name = str(item.get("name") or f"link{index + 1}")
     try:
         extra = sorted(set(item) - _LINK_KEYS)
@@ -199,11 +201,12 @@ def _parse_link(item: Any, index: int, unit: str) -> tuple[stackup.Link, str | N
         if direction not in ("+", "-"):
             raise _invalid("'direction' must be '+' (adds to the result) or '-' (subtracts)", received=direction)
     except UnitsError as exc:
-        raise UnitsError(
-            exc.family,
-            f"link {index + 1} ({name}): {exc.message}",
-            {**exc.details, "link_index": index, "link_name": name},
-        ) from exc
+        field = exc.details.get("param")
+        details = {**exc.details, "link_index": index, "link_name": name}
+        if isinstance(field, str) and field:
+            details["field"] = field.lstrip("/")
+        details["param"] = f"/chain/{index}/{details['field']}" if "field" in details else f"/chain/{index}"
+        raise UnitsError(exc.family, f"link {index + 1} ({name}): {exc.message}", details) from exc
     link = stackup.Link(name=name, nominal=nominal, plus=plus, minus=minus, sign=1 if direction == "+" else -1)
     return link, fit
 
@@ -216,11 +219,12 @@ def _parse_chain(chain: str, unit: str) -> list[tuple[stackup.Link, str | None]]
             "'chain' must be a JSON array of link objects, e.g. "
             '[{"name":"A","nominal":"50 mm","tol":"0.1 mm","direction":"+"}]',
             received=str(chain)[:200],
+            param="/chain",
         ) from exc
     if not isinstance(items, list) or not items:
-        raise _invalid("'chain' must be a non-empty JSON array of link objects", received=str(chain)[:200])
+        raise _invalid("'chain' must be a non-empty JSON array of link objects", received=str(chain)[:200], param="/chain")
     if len(items) > stackup.MAX_LINKS:
-        raise _invalid(f"'chain' has {len(items)} links; the maximum is {stackup.MAX_LINKS}")
+        raise _invalid(f"'chain' has {len(items)} links; the maximum is {stackup.MAX_LINKS}", param="/chain")
     return [_parse_link(item, i, unit) for i, item in enumerate(items)]
 
 

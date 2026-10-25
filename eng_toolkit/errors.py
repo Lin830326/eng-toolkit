@@ -10,7 +10,18 @@ around unit parsing, keeps working.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+
+_INDEX = re.compile(r"\[(\d+)\]")
+
+
+def json_pointer(param: str) -> str:
+    """The JSON pointer for a parameter written as ``name``, ``name[2]`` or ``/name/2`` (the contract's ``details.param``)."""
+    if param.startswith("/") or not param:
+        return param
+    return "/" + _INDEX.sub(r"/\1", param).replace(".", "/")
 
 
 class ToolFailure(ValueError):
@@ -18,7 +29,10 @@ class ToolFailure(ValueError):
         super().__init__(message)
         self.family = family
         self.message = message
-        self.details = details or {}
+        self.details = dict(details or {})
+        # The contract says details.param is a JSON pointer; the carrier enforces it so that no caller can leak a bare name.
+        if isinstance(self.details.get("param"), str):
+            self.details["param"] = json_pointer(self.details["param"])
 
     def to_dict(self) -> dict[str, Any]:
         return {"family": self.family, "message": self.message, "details": self.details}
@@ -36,4 +50,4 @@ class EngineUnavailable(ToolFailure):
         )
 
 
-__all__ = ["EngineUnavailable", "ToolFailure"]
+__all__ = ["EngineUnavailable", "ToolFailure", "json_pointer"]

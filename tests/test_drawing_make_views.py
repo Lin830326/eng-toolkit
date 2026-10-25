@@ -11,6 +11,7 @@ arithmetic is in tests/test_drawing_sheet.py):
     dimensions 100 (X) and 20 (Z) on the front view, 50 (Y) on the top view; the PDF page is A4: 841.89 x 595.28 pt
 """
 
+from eng_toolkit.errors import json_pointer
 import importlib.metadata
 import json
 import math
@@ -417,7 +418,7 @@ def test_an_ordinary_title_gets_no_space_warning(probe):
 @pytest.mark.parametrize("bad", ["a b", "a b", "a​b", "ab", "ab", "ab", "a﻿b", "ab"])
 def test_line_breaks_and_invisible_controls_are_still_rejected(models, bad):
     r = failed(run(models["probe"], title=bad), "input.invalid")
-    assert r.error.details["param"] == "title"
+    assert r.error.details["param"] == "/title"
 
 
 LITERAL = "%%c10 %%d %%p 50% %%%u %%065 100%"
@@ -610,7 +611,7 @@ def test_a_text_file_named_step(tmp_path, ocp):
 )
 def test_bad_arguments_are_input_invalid_and_name_the_parameter(models, kwargs, param):
     r = failed(run(models["probe"], **kwargs), "input.invalid")
-    assert r.error.details["param"] == param
+    assert r.error.details["param"] == json_pointer(param)
 
 
 def test_a_missing_ezdxf_gives_an_install_hint(models, monkeypatch):
