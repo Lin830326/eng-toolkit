@@ -20,12 +20,14 @@ NUMBER = re.compile(r"[-−+]?\d[\d,]*\.?\d*(?:[eE][-+]?\d+)?")
 
 
 SUPERSCRIPT = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")
+THOUSANDS_SPACE = re.compile(r"(?<=\d)[\u00a0\u202f\u2009 ](?=\d{3}(?!\d))")
 POWER_OF_TEN = re.compile(r"(\d(?:[\d,]*\.?\d*)?)\s*[x×*]\s*10\s*\^?\s*(\{?[-+]?\d+\}?)")
 
 
 def numbers(text: str) -> list[float]:
     """All numbers in the text, with '1.08 x 10^8' / '1.08x10⁸' forms read as 1.08e8."""
     text = text.replace("−", "-").translate(SUPERSCRIPT)
+    text = THOUSANDS_SPACE.sub("", text)  # "98 360.53" / "622 581" written with a (narrow) space as thousands separator
     text = POWER_OF_TEN.sub(lambda m: f"{m.group(1)}e{m.group(2).strip('{}')}", text)
     out = []
     for m in NUMBER.finditer(text):
@@ -101,7 +103,9 @@ def tasks(fx: dict[str, Path] | None) -> list[dict]:
             dict(id="D3_unsupported", prompt=f"Can you check {fx['clean_part']} for injection molding manufacturability (draft, undercuts)?",
                  words=["not supported|unsupported|cannot|can't|not available|isn't supported|not able|沒有|不支援|not (tool-)?checked|not covered|no tool|outside"]),
         ]
-    return t
+    from eval_tasks_flows import TASKS as FLOW_TASKS  # fatigue, motor/drive, optimize, plot, 3D view
+
+    return t + FLOW_TASKS
 
 
 def score(task: dict, answer: str) -> tuple[int, int, list[str]]:

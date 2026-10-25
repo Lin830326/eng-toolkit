@@ -17,6 +17,11 @@ artifacts preserve nonfinite inputs as quoted text. See the
 | skill `eng-toolkit` | unit rules, how to read results and errors, the tool map for all domains, the report format |
 | skill `eng-structural-check` + `/eng-structural-check` | beam, frame, truss, column, plate, vibration checks: model choice, inputs, hand check, convergence, utilization |
 | skill `eng-dfm-review` + `/eng-dfm-review` | CNC milling and sheet-metal review of a STEP/IGES/BREP file |
+| skill `eng-fatigue-check` + `/eng-fatigue-check` | infinite-life check with Marin factors and mean stress, rainflow + Miner damage, notches, strain-life, crack growth |
+| skill `eng-motor-drive-sizing` + `/eng-motor-drive-sizing` | motor and gearbox sizing for a motion profile, induction and PM motor operating points, converters, transformers, faults |
+| skill `eng-optimize` + `/eng-optimize` | minimise, linear programs, root finding, curve fitting with intervals, uncertainty propagation, design of experiments |
+| skill `eng-plot-results` + `/eng-plot-results` | charts (SVG) from other tools' CSV artifacts or inline series: Bode, S-N, histograms, station diagrams |
+| skill `eng-3d-view` + `/eng-3d-view` | coloured GLB of a part, DFM findings or an FEM stress/displacement result |
 | `/eng-toolkit-setup` | connection and dependency check, registration command |
 | prompt hook (`hooks/hooks.json`) | one short reminder line with every prompt: engineering numbers must come from the `mcp__eng-toolkit__` tools, not hand arithmetic. Delete `hooks/` to turn it off |
 
@@ -42,6 +47,11 @@ artifacts preserve nonfinite inputs as quoted text. See the
    ```
    /eng-structural-check 4 m steel cantilever (E 200 GPa, A 10000 mm2, I 1e8 mm4), 10 kN tip load: tip deflection and bending stress
    /eng-dfm-review C:\parts\bracket.step cnc_milling tool radius 3 mm, min wall 1.5 mm
+   /eng-fatigue-check 30 mm machined shaft, Su 690 MPa, bending 110 MPa amplitude with 60 MPa mean: infinite life?
+   /eng-motor-drive-sizing 10:1 reducer, 0.8 kg*m^2 load, 12 rad/s in 0.6 s, hold 1.8 s: peak and RMS motor torque
+   /eng-optimize fit T = Tinf + A*exp(-t/tau) to these cooling data with a 95 % interval on tau
+   /eng-plot-results Bode plot of the filter just designed
+   /eng-3d-view C:\parts\bracket.step colour by DFM findings
    ```
 
 ## Does it help? (Claude Haiku, `scripts/eval_plugin.py`)
@@ -56,5 +66,12 @@ answers plus whether an eng-toolkit tool was actually called. Findings so far:
   and its answers matched the verified reference numbers in 34 of 36 checks against 27 of 36.
 - The skills alone did not change that behaviour (the model rarely loads a skill for a "simple" question);
   the prompt hook does.
+
+- The five workflow skills for fatigue, motor and drive sizing, optimization, plotting and 3D views
+  (`scripts/eval_tasks_flows.py`, 15 tasks whose expected numbers come from the real tools plus an independent
+  calculation): Haiku without the plugin called an eng-toolkit tool in 6 of 15 runs and matched 64 of 85 checks;
+  with the plugin it called a tool in 15 of 15 and matched 85 of 85. The tasks that fail without the plugin are the
+  ones with no short closed form: S-N and crack-growth life, a drive duty cycle, an induction motor load point,
+  a field-weakening envelope, a nonlinear fit with confidence intervals.
 
 Run it yourself: `python scripts/eval_plugin.py --mcp-config mcp.json --plugin-dir plugin --model haiku --repeat 2`.

@@ -34,13 +34,18 @@ The `eng-toolkit` MCP server provides deterministic, unit-aware calculation tool
 - **electronics**: `spice_{simulate,measure,check_netlist}` (ngspice), `digital_{synthesize,check,equivalent}` (Yosys), `pcb_{info,drc,erc,export}` (KiCad), `fem_{mesh,static}` (Gmsh + CalculiX). These need external programs; run `toolkit_doctor` to see what is installed.
 - **geometry / drawing**: `geometry_measure`, `geometry_check_dfm`, `geometry_make_part` (build a part from a text spec), `geometry_convert` (STEP/IGES/BREP to STEP/BREP/STL/GLB), `geometry_view` (coloured GLB: by face kind, by DFM findings, or highlighted faces, for a 3D viewer); `drawing_make_views`, `drawing_read`, `drawing_convert`. Needs the `cad`/`drawing` extras.
 - **metrology**: `fit_limits` (ISO 286 fits), `fit_search`, `stackup_1d`, `form_error`, `position_tolerance`, `check_scan`.
-- **plot**: `plot_xy` (lines/scatter/step/stem, log axes, second axis, bands, fill-to-zero), `plot_panels` (stacked panels sharing x: Bode, waveforms), `plot_bar` (bars, histograms). They read the CSV artifacts other tools write (`artifacts[].path`, e.g. `filter_response.csv`, `member_1_stations.csv`) or inline series and return an SVG (`data.svg_inline` when small, file `plot.svg`). Use `x_scale=log` for frequency axes and S-N life axes; give axis labels with units; show the chart to the user when they asked to see a curve or diagram.
+- **plot**: `plot_xy` (lines/scatter/step/stem, log axes, second axis, bands, fill-to-zero), `plot_panels` (stacked panels sharing x: Bode, waveforms), `plot_bar` (bars, histograms). They read the CSV artifacts other tools write (`artifacts[].path`, e.g. `filter_response.csv`, `member_1_stations.csv`) or inline series and return an SVG (`data.svg_inline` when small, file `plot.svg`). Use `x_scale=log` for S-N life axes and for frequency tables that start above 0 Hz (a table with a 0 Hz row, such as `dsp_filter_design`'s linear grid, is refused on a log axis: plot it linear; `x_range` does not avoid the refusal); give axis labels with units; show the chart to the user when they asked to see a curve or diagram.
 - **toolkit**: `toolkit_list_tools` (everything installed), `toolkit_doctor` (engine/external program health).
 
 ## Workflows
 
 - Structural strength / deflection / buckling / vibration of beams, frames, trusses, columns: use the **eng-structural-check** skill (`/eng-structural-check`).
 - Manufacturability of a STEP/IGES/BREP part for CNC milling or sheet metal: use the **eng-dfm-review** skill (`/eng-dfm-review`).
+- Fatigue life, infinite-life check, rainflow and Miner damage, notch and strain-life, crack growth: **eng-fatigue-check** (`/eng-fatigue-check`).
+- Sizing a motor and gearbox for a motion profile, induction or PM motor operating point, converters, transformers, three-phase faults: **eng-motor-drive-sizing** (`/eng-motor-drive-sizing`).
+- Minimising, linear programs, solving equations, fitting measured data with confidence intervals, uncertainty propagation, design of experiments: **eng-optimize** (`/eng-optimize`).
+- Turning results (CSV artifacts or inline series) into a chart: **eng-plot-results** (`/eng-plot-results`).
+- A coloured 3D model (GLB) of a part, its DFM findings or an FEM stress/displacement result: **eng-3d-view** (`/eng-3d-view`).
 - A curve, spectrum, diagram or histogram the user wants to SEE: call the tool that makes the table, then `plot_xy`/`plot_panels`/`plot_bar` on its CSV artifact.
 - Anything else: pick the domain above, read the tool description for the inputs, call it, and follow the rules above.
 
