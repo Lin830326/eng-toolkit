@@ -60,6 +60,45 @@ the outer face at the radius difference. Identical endpoints or angular spans
 are no longer required. Finding gaps remain exact plane offsets or radius
 differences; sampled coverage is not a proof that every wall has been found.
 
+Two cylinders are on one axis when their axes are parallel (|sin| at most 1e-6)
+and the perpendicular offset between them is at most `brep.coaxial_tolerance_mm(gap)`,
+1e-3 of the radius difference and at least 1e-6 mm; the confirming radial ray may
+differ from the radius difference by the same amount. A bend drawn through
+3-point arcs whose via points are rounded to 4 decimals (user-acceptance scenario
+C4) has its inner and outer cylinders about 7e-5 mm apart; the former absolute
+1e-6 mm rejected it, so the bend went unseen. 1e-3 of a 3 mm sheet is 3 um, a
+hundredth of a sheet's own thickness tolerance.
+
+Faces that are in no exact plane or cylinder pair (tapered fins, a hole near a
+face, cones, free-form faces) are measured by `brep.normal_walls`: up to 12 sample
+points per face, mesh-triangle centres spread by farthest-point selection (so a
+hole wall is sampled all the way round) and projected onto the face, each cast a
+ray from 1e-5 mm inside the material along the inward normal. The ray's length in
+the material is the chord; the shortest chord per face pair is kept. Pairs whose
+chord is at most twice `min_wall` (and the shortest of all) are confirmed (the
+chord's middle is in the material) and refined: when the exact `BRepExtrema`
+closest distance between the two faces runs within 1 degree of both face normals
+and through the material, it replaces the chord and the wall is exact. A chord is
+an upper bound of the local wall; a thin spot between sample points can be missed.
+
+## Thickness queries
+
+`geometry_measure 'thickness P(x, y, z) <axis>'` classifies the start point first
+(`BRepClass3d_SolidClassifier`, 1e-6 mm), then reports the material the ray's line
+crosses (`brep.wall_segment`):
+
+* outside: between the first two exact hits along the axis (as before);
+* inside the material: the wall that contains the point, from the nearest face
+  behind it to the nearest face ahead of it. Before this the "first two hits" were
+  the far side of the wall and the next face, so the result was the next gap
+  (8.864 mm, a fin slot, for a point inside a 3.136 mm fin in scenario C1);
+* on a face: the wall that starts there, ahead when the ray enters the material,
+  behind when it leaves it.
+
+Each query entry gives `start` (`outside`, `inside`, `surface`), `entry_mm` and
+`exit_mm`; a start inside the material, or a wall behind a surface point, adds a
+warning that says so.
+
 ## Freeform meshing resources
 
 The curvature estimate now also reserves work proportional to spline knot-span

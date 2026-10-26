@@ -20,11 +20,16 @@ from eng_toolkit.brep._dfm import (
     EdgeFact,
     FaceAccess,
     FacingPair,
+    NormalWall,
+    NormalWallSearch,
     PairSearch,
+    coaxial_tolerance_mm,
     cylinder_facts,
     edge_facts,
     face_access,
+    face_extents,
     facing_pairs,
+    normal_walls,
 )
 from eng_toolkit.brep._created import Created, created_by
 from eng_toolkit.brep._files import SOLID_EXTENSIONS, read_solid, triangulate
@@ -67,7 +72,17 @@ from eng_toolkit.brep._model import (
 from eng_toolkit.brep._path import MAX_PATH_SEGMENTS, Path2, PathProblem, PathSegment, check_path
 from eng_toolkit.brep._occ import load as require_engine
 from eng_toolkit.brep._project import VIEW_FRAMES, Arc2, Ellipse2, Line2, Poly2, Prim2, Projection, ViewFrame, ViewName, project
-from eng_toolkit.brep._query import angle, distance, inventory, lookup, mass_properties, validate_bounds, wall_thickness
+from eng_toolkit.brep._query import (
+    WallSegment,
+    angle,
+    distance,
+    inventory,
+    lookup,
+    mass_properties,
+    validate_bounds,
+    wall_segment,
+    wall_thickness,
+)
 from eng_toolkit.brep._types import (
     Entity,
     FaceInfo,
@@ -119,6 +134,8 @@ __all__ = [
     "MassProperties",
     "Mesh",
     "MeshTopology",
+    "NormalWall",
+    "NormalWallSearch",
     "PairSearch",
     "Path2",
     "PathProblem",
@@ -137,10 +154,12 @@ __all__ = [
     "Vec3",
     "ViewFrame",
     "ViewName",
+    "WallSegment",
     "angle",
     "chamfer",
     "closure",
     "check_path",
+    "coaxial_tolerance_mm",
     "combine",
     "created_by",
     "cylinder_facts",
@@ -148,6 +167,7 @@ __all__ = [
     "edge_facts",
     "estimate_triangles",
     "face_access",
+    "face_extents",
     "facing_pairs",
     "fillet",
     "import_solid",
@@ -164,6 +184,7 @@ __all__ = [
     "mass_properties",
     "mesh_topology",
     "mirror",
+    "normal_walls",
     "parse_edge_selector",
     "parse_face_selector",
     "project",
@@ -178,6 +199,7 @@ __all__ = [
     "triangulate",
     "validity",
     "validate_bounds",
+    "wall_segment",
     "wall_thickness",
     "weld",
     "write_brep",

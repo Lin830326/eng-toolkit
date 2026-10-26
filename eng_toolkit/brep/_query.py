@@ -417,6 +417,7 @@ class _IndexedIntersector:
         self._hi = bounds[:, 3:] + margin[:, None]
         self._cache: dict[int, object] = {}
         self._parameters: list[float] = []
+        self._owners: list[int] = []  # 0-based face index of each raw hit in _parameters
 
     def Perform(self, line, start: float, end: float):
         if self._deadline is not None:
@@ -433,7 +434,8 @@ class _IndexedIntersector:
                 b = (self._hi[:, axis] - origin[axis]) / direction[axis]
                 near = np.maximum(near, np.minimum(a, b))
                 far = np.minimum(far, np.maximum(a, b))
-        found = []
+        found: list[float] = []
+        owners: list[int] = []
         for index in np.flatnonzero(near <= far):
             if self._deadline is not None:
                 self._deadline(self._phase)
@@ -441,8 +443,11 @@ class _IndexedIntersector:
                 self._cache[index] = _load_intersector(self._faces[index])
             intersector = self._cache[index]
             intersector.Perform(line, start, end)
-            found.extend(float(intersector.WParameter(k)) for k in range(1, intersector.NbPnt() + 1))
+            hits = [float(intersector.WParameter(k)) for k in range(1, intersector.NbPnt() + 1)]
+            found.extend(hits)
+            owners.extend([int(index)] * len(hits))
         self._parameters = found  # keep raw hits; _hits sorts and merges once across all faces
+        self._owners = owners
         if self._deadline is not None:
             self._deadline(self._phase)
 
@@ -451,6 +456,19 @@ class _IndexedIntersector:
 
     def WParameter(self, index: int) -> float:
         return self._parameters[index - 1]
+
+    def first_hit(self, origin: np.ndarray, direction: np.ndarray, reach: float) -> tuple[float, int] | None:
+        """``(distance, face id)`` of the nearest face the ray from ``origin`` meets within ``reach``, or None.
+
+        Face ids are 1-based, in the order of :func:`_faces` (the inventory's numbering)."""
+        from OCP.gp import gp_Lin
+
+        self.Perform(gp_Lin(_pnt(origin), _dir(direction)), 0.0, reach)
+        best: tuple[float, int] | None = None
+        for w, owner in zip(self._parameters, self._owners):
+            if best is None or w < best[0]:
+                best = (w, owner + 1)
+        return best
 
 
 def _bore(candidate: _Candidate, intersector, diagonal: float) -> tuple[np.ndarray, np.ndarray, bool] | None:
@@ -699,14 +717,70 @@ def angle(solid: Solid, a: Entity, b: Entity, *, inv: Inventory | None = None) -
     return math.acos(max(-1.0, min(1.0, cosine)))
 
 
-def wall_thickness(solid: Solid, at_mm: Vec3, direction: Vec3) -> float | None:
-    """Distance in mm between the first two exact hits of the ray from ``at_mm`` along ``direction``; None if it has fewer than two."""
+@dataclass(frozen=True)
+class WallSegment:
+    """The stretch of material a thickness ray measures: from ``entry_mm`` to ``exit_mm`` along the ray's line."""
+
+    thickness_mm: float
+    start: str  # where the start point is: "outside", "inside" (in the material) or "surface" (on a face)
+    entry_mm: Vec3
+    exit_mm: Vec3
+    behind: bool = False  # the material lies behind the start point (a surface point whose ray leaves the part)
+
+
+def _classify(shape, point: np.ndarray) -> str:
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
+
+    classifier = BRepClass3d_SolidClassifier(shape)
+    classifier.Perform(_pnt(point), SAME_MM)
+    state = classifier.State()
+    return "inside" if state == TopAbs_IN else "surface" if state == TopAbs_ON else "outside"
+
+
+def wall_segment(solid: Solid, at_mm: Vec3, direction: Vec3) -> WallSegment | None:
+    """The wall the ray from ``at_mm`` along ``direction`` measures, or None if there is none.
+
+    * Start point outside the part: the material between the first two exact hits (the first wall the ray crosses).
+    * Start point inside the material: the material segment that contains the point, from the nearest face behind it
+      to the nearest face ahead of it along the same line. The next gap or the next wall is never taken for it.
+    * Start point on a face (within 1e-6 mm): the material segment that begins there, ahead if the ray enters the
+      material, otherwise behind (``behind`` is True).
+    """
     _occ.load()
     ray = np.array(direction, dtype=np.float64)
     if not np.linalg.norm(ray) > 0.0:
         raise ToolFailure("input.invalid", "the ray direction is the zero vector")
-    lo, hi = _bbox(solid._handle)
+    ray = _unit(ray)
+    shape = solid._handle
+    lo, hi = _bbox(shape)
     origin = np.array(at_mm, dtype=np.float64)
     reach = float(np.linalg.norm(origin - (np.array(lo) + np.array(hi)) / 2.0) + np.linalg.norm(np.array(hi) - np.array(lo)) + 1.0)
-    hits = _hits(_load_intersector(solid._handle), origin, _unit(ray), reach)
-    return float(hits[1] - hits[0]) if len(hits) >= 2 else None
+    intersector = _load_intersector(shape)
+    state = _classify(shape, origin)
+
+    def at(distance: float) -> Vec3:
+        return _tuple(origin + distance * ray)
+
+    if state == "outside":
+        hits = _hits(intersector, origin, ray, reach)
+        if len(hits) < 2:
+            return None
+        return WallSegment(float(hits[1] - hits[0]), state, at(hits[0]), at(hits[1]))
+    ahead = [w for w in _hits(intersector, origin, ray, reach) if w > SAME_MM]
+    back = [w for w in _hits(intersector, origin, -ray, reach) if w > SAME_MM]
+    if state == "inside":
+        if not ahead or not back:
+            return None
+        return WallSegment(float(ahead[0] + back[0]), state, at(-back[0]), at(ahead[0]))
+    if ahead and _classify(shape, origin + 0.5 * ahead[0] * ray) == "inside":
+        return WallSegment(float(ahead[0]), state, at(0.0), at(ahead[0]))
+    if back and _classify(shape, origin - 0.5 * back[0] * ray) == "inside":
+        return WallSegment(float(back[0]), state, at(-back[0]), at(0.0), behind=True)
+    return None
+
+
+def wall_thickness(solid: Solid, at_mm: Vec3, direction: Vec3) -> float | None:
+    """The thickness of :func:`wall_segment` in mm; None if there is no wall."""
+    segment = wall_segment(solid, at_mm, direction)
+    return None if segment is None else segment.thickness_mm
