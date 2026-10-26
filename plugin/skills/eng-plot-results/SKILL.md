@@ -1,6 +1,6 @@
 ---
 name: eng-plot-results
-description: Use to turn results of other eng-toolkit tools (their CSV artifacts: filter response, Bode data, S-N curve, rainflow table, beam stations, channel profile, step response, spectrum) or numbers the user gives into an SVG chart with plot_xy, plot_panels or plot_bar. Covers choosing the chart, artifact paths and column names, labels with units, log axes, ranges, reference lines, histograms, checking the drawn data against the source tool, and handing over the SVG. Load eng-toolkit first.
+description: Use to turn results of other eng-toolkit tools (their CSV artifacts such as filter response, Bode data, S-N curve, rainflow table, beam stations, channel profile, step response, spectrum) or numbers the user gives into an SVG chart with plot_xy, plot_panels or plot_bar. Covers choosing the chart, artifact paths and column names, labels with units, log axes, ranges, reference lines, histograms, checking the drawn data against the source tool, and handing over the SVG. Load eng-toolkit first.
 ---
 
 # Plot results workflow (eng-toolkit)

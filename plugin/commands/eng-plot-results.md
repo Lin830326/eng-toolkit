@@ -1,6 +1,6 @@
 ---
 description: Plot results of eng-toolkit tools (or your own numbers) as an SVG chart
-argument-hint: <what to plot: source tool or data, axes, scales, ranges>
+argument-hint: <what to plot, source tool or data, axes, scales, ranges>
 ---
 
 Use the `eng-plot-results` skill (and `eng-toolkit` for the unit and reporting rules) to draw this chart with the eng-toolkit plot tools:
