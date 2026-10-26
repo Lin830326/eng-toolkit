@@ -41,3 +41,22 @@ def test_two_jobs_get_distinct_dirs():
 
 def test_is_writable(isolated_workspace):
     assert Workspace().is_writable() is True
+
+
+def test_a_relative_env_root_is_made_absolute_where_it_is_read(tmp_path, monkeypatch):
+    # UAT item 1: a relative ENG_TOOLKIT_WS broke every external program, which starts in the job folder
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ENG_TOOLKIT_WS", "rel/ws")
+    root = resolve_root()
+    assert root.is_absolute() and root == (tmp_path / "rel" / "ws")
+    ws = Workspace()
+    assert ws.root.is_absolute()
+    job = ws.new_job("t")
+    assert job.dir.is_absolute() and job.dir.parent == tmp_path / "rel" / "ws"
+    monkeypatch.chdir(tmp_path.parent)  # a later change of directory does not move the workspace
+    assert Path(job.dir).is_dir()
+
+
+def test_a_relative_explicit_root_is_absolute_too(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert Workspace("out").root == tmp_path / "out"

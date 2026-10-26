@@ -194,9 +194,67 @@ def test_the_environment_is_scrubbed_and_everything_points_into_the_job_director
         "XDG_DATA_HOME", "PROMPT",  # PROMPT: added by cmd.exe itself, which runs the .cmd shim
     }
     assert {k.upper() for k in seen if not k.startswith("=")} <= allowed, sorted(seen)
-    inside = [v for k, v in seen.items() if k.upper() in ("TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME")]
+    inside = [v for k, v in seen.items() if k.upper() in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME")]
     assert inside and all(Path(v).resolve().is_relative_to(job.resolve()) for v in inside), inside
-    assert all(Path(v).is_dir() for k, v in seen.items() if k.upper() in ("TEMP", "HOME"))
+    assert Path(seen[next(k for k in seen if k.upper() == "HOME")]).is_dir()
+    temps = {v for k, v in seen.items() if k.upper() in ("TEMP", "TMP", "TMPDIR")}
+    assert len(temps) == 1 and not Path(temps.pop()).resolve().is_relative_to(job.resolve())  # a short scratch folder elsewhere, see below
+
+
+def _scratch_of(call) -> Path:
+    return Path(next(v for k, v in call["env"].items() if k.upper() in ("TEMP", "TMP", "TMPDIR"))).parent
+
+
+def test_temporary_files_go_to_a_short_scratch_folder_that_is_removed_afterwards(job, fake):
+    X.run(TOOL, ["go"], workdir=job)
+    scratch = _scratch_of(fake.runs()[0])
+    assert scratch.name.startswith("etk") and len(str(scratch)) < 100
+    assert not scratch.exists()  # cleaned up when the program has ended
+    assert not (job / "tmp").exists()
+
+
+def test_a_failing_program_still_leaves_no_scratch_folder(job, fake):
+    fake.set(mode="ok", exit=3)
+    with pytest.raises(ToolFailure):
+        X.run(TOOL, ["go"], workdir=job)
+    assert not _scratch_of(fake.runs()[0]).exists()
+
+
+def test_what_a_program_leaves_in_its_scratch_folder_counts_against_the_output_cap(job, tmp_path):
+    scratch = tmp_path / "scratch-count"
+    scratch.mkdir()
+    (scratch / "big.bin").write_bytes(b"x" * 5000)
+
+    class Handle:
+        def fileno(self):
+            return os.open(os.devnull, os.O_RDONLY)
+
+    assert X._over(Handle(), Handle(), {}, job, 4000, scratch) == ("output", 5000)
+    assert X._over(Handle(), Handle(), {}, job, 4000, None) is None
+
+
+@pytest.mark.skipif(not WINDOWS, reason="the short alias of a long job directory is a Windows measure")
+def test_a_long_job_directory_is_shown_to_the_program_through_a_short_alias(tmp_path, fake):
+    job = tmp_path / ("d" * 150) / "job"
+    job.mkdir(parents=True)
+    (job / "in.txt").write_text("data")
+    fake.set(mode="ok", files={"out.txt": "made"}, stdout=f"saw {job}")
+    record = X.run(TOOL, [job / "in.txt", f"--dir={job}"], workdir=job)
+    call = fake.runs()[0]
+    assert len(call["cwd"]) < 80 and str(job) not in call["cwd"]  # the program works in the short alias...
+    assert all(str(job) not in a for a in call["argv"])
+    assert call["argv"][-2].endswith("in.txt") and call["argv"][-1] == "--dir=" + call["cwd"]
+    assert (job / "out.txt").read_text() == "made"  # ...and the files it makes are in the real directory
+    assert "out.txt" in [f.name for f in record.files]
+    assert str(job) not in record.stdout_tail and "saw <job>" in record.stdout_tail  # the alias reads <job> as well
+    assert (job / "in.txt").read_text() == "data"  # removing the alias left the directory alone
+
+
+def test_a_relative_job_directory_is_made_absolute_before_the_program_starts(tmp_path, fake, monkeypatch):
+    (tmp_path / "rel" / "job").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path / "rel")
+    X.run(TOOL, ["go"], workdir=Path("job"))
+    assert Path(fake.runs()[0]["cwd"]).resolve() == (tmp_path / "rel" / "job").resolve()
 
 
 def test_path_holds_the_additions_the_programs_own_folder_and_the_system_directories_only(job, fake, tmp_path, monkeypatch):

@@ -54,7 +54,9 @@ DRC_DESCRIPTION = (
     "lists missing connections; data.rule_set says which rules were used: KiCad's built-in defaults, or an allow-listed copy of the "
     "numbers in the <name>.kicad_pro and the <name>.kicad_dru next to the board (use_project_files=false ignores them), plus the "
     "min_clearance / min_track_width you pass (e.g. '0.15 mm'). A board with no Edge.Cuts outline always gets one invalid_outline error. "
-    "The raw KiCad report is an artifact. Footprint libraries are not visible to the run, so lib_footprint_issues warnings can appear. "
+    "The raw KiCad report is an artifact. Footprint libraries are not visible to the run, so lib_footprint_issues warnings can appear: they are split "
+    "out in data.violations.library_warnings (and values.library_warning_count) from the findings about the board. kicad-cli stops listing a kind of violation at "
+    "499 (clearance) or 199 (track_width and others): a count equal to that is a lower bound, flagged in data.violations.at_kicad_limit and a warning. "
     "Refuses non-KiCad files, absurd coordinates and deep nesting before KiCad starts; needs kicad-cli."
 )
 
@@ -64,7 +66,8 @@ ERC_DESCRIPTION = (
     "severity with the description and position in mm of each item; data.rule_set says which rules were used (KiCad's defaults, or the "
     "allow-listed severities and pin map from the <name>.kicad_pro next to the file; use_project_files=false ignores it). Only the one "
     "file is checked: sub-sheets in other files are not copied. Symbol libraries are not visible, so lib_symbol_issues warnings appear "
-    "for library symbols (the copy embedded in the file is used). Raw report is an artifact. Needs kicad-cli."
+    "for library symbols (the copy embedded in the file is used); they are split out in data.violations.library_warnings from the real findings. "
+    "Raw report is an artifact. Needs kicad-cli."
 )
 
 EXPORT_DESCRIPTION = (
@@ -101,7 +104,7 @@ def drc(
     min_clearance: Annotated[str, Field(description="Optional minimum copper clearance with unit, 0 to 100 mm, e.g. '0.2 mm'; empty = the rule set's own")] = "",
     min_track_width: Annotated[str, Field(description="Optional minimum track width with unit, 0 to 100 mm, e.g. '0.15 mm'; empty = the rule set's own")] = "",
     refill_zones: Annotated[bool, Field(description="True: refill zones before checking (slower); false: use the fills stored in the file")] = False,
-    max_violations: Annotated[int, Field(description="How many violations to list (0 to 1000); the counts by type are always complete")] = 100,
+    max_violations: Annotated[int, Field(description="How many violations to list (0 to 1000); counts by type are complete up to kicad-cli's own limit (499 clearance, 199 others)")] = 100,
 ) -> ToolResult:
     inputs = {
         "board_path": board_path,

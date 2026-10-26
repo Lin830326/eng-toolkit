@@ -130,3 +130,22 @@ def test_sonic_expansion_series_preserves_small_angle():
     # nu near M=1: 4sqrt(2)/(3(gamma+1))*(M-1)^1.5; leading-term relative error O(epsilon).
     expected = 4*math.sqrt(2)/(3*2.4)*epsilon**1.5
     close(v(r, "prandtl_meyer_angle"), expected, rel=1e-6, abs=1e-22)
+
+
+def test_zero_efficiency_at_shutoff_is_accepted_and_only_there():
+    # UAT F1: datasheets list 0 % at Q = 0.  Curve: head 20 - 200 Q, efficiency 0 -> 0.8 over 0..0.1 m3/s (eta = 8 Q), system 5 + 1000 Q^2.
+    points = "p,0 m^3/s,20 m,0;p,0.1 m^3/s,0 m,0.8"
+    r = ok(pump_system, pump_points=points, static_head="5 m", system_coefficient="1000 s^2/m^5")
+    flow = (-200+math.sqrt(100000))/2000  # root of 20 - 200 Q = 5 + 1000 Q^2
+    head = 20-200*flow
+    close(v(r, "operating_flow"), flow)
+    close(v(r, "efficiency"), 8*flow)
+    close(v(r, "shaft_power"), 1000*G*flow*head/(8*flow))
+    assert r.data["pumps"][0]["efficiency"] == pytest.approx(8*flow)
+    # a closed pump (above its shut-off head) in a parallel set has no power and no division by its zero shut-off efficiency
+    both = ok(pump_system, pump_points=points+";q,0 m^3/s,10 m,0;q,0.05 m^3/s,0 m,0.6", combination="parallel", static_head="15 m", system_coefficient="0 s^2/m^5")
+    assert both.data["pumps"][1]["check_valve_closed"] and v(both, "efficiency") == pytest.approx(8*0.025)
+    # zero is not allowed at an operating point, and the other bounds stay
+    for bad in ("p,0 m^3/s,20 m,0.6;p,0.05 m^3/s,10 m,0;p,0.1 m^3/s,0 m,0.8", "p,0 m^3/s,20 m,0.6;p,0.1 m^3/s,0 m,0.005", "p,0 m^3/s,20 m,-0.1;p,0.1 m^3/s,0 m,0.8"):
+        r = call(pump_system, pump_points=bad, static_head="5 m", system_coefficient="1000 s^2/m^5")
+        assert not r.ok and r.error.details["param"].startswith("/pump_points/")

@@ -204,3 +204,38 @@ def test_mechanisms(supports,members,loads):
     r = call(frame,**{**FRAME,"supports":supports,"members":members},loads=loads)
     assert not r.ok
     assert r.error.details["param"] == "/supports"
+
+
+def test_max_member_deflection_is_the_in_span_maximum_not_the_nodal_one():
+    # UAT S1-3: the nodal maximum is at the point-load node, the true maximum is elsewhere in the span.
+    # Simply supported, L = 2 m, EI = 200000 N m^2, P = 1000 N at a = 0.5 m from the left support (node c).
+    # Under the load v = P a^2 b^2 / (3 EI L) = 4.6875e-4 m; the maximum lies in the longer part at x = L - sqrt((L^2 - a^2)/3) = 0.88197 m
+    # and equals P a (L^2 - a^2)^1.5 / (9 sqrt(3) EI L) = 5.8231e-4 m (12 % more).
+    L, a, EI, P = 2.0, 0.5, 200000.0, 1000.0
+    r = ok(frame,nodes="a,0 m,0 m;c,0.5 m,0 m;b,2 m,0 m",members="e1,a,c,200 GPa,1000 mm^2,1e6 mm^4;e2,c,b,200 GPa,1000 mm^2,1e6 mm^4",
+           supports="a,pinned;b,roller_y",loads="c,0 N,-1000 N,0 N*m")
+    nodal = v(r,"maximum_nodal_displacement")
+    under_load = P*a**2*(L-a)**2/(3*EI*L)
+    close(nodal,under_load,rel=1e-9)
+    expected = P*a*(L**2-a**2)**1.5/(9*math.sqrt(3)*EI*L)
+    close(v(r,"max_member_deflection"),expected,rel=1e-9)
+    assert v(r,"max_member_deflection") > 1.12*nodal
+    location = r.data["max_member_deflection_location"]
+    assert location["member"] == "e2"
+    close(quantity(location["x"]),L-math.sqrt((L**2-a**2)/3)-a,rel=1e-6)  # local x on member e2, which starts at c
+    assert quantity(location["signed_local_deflection"]) < 0
+    assert any("max_member_deflection" in w and "exceeds the largest nodal" in w for w in r.warnings)
+    per_member = {m["id"]: quantity(m["maximum_abs_deflection"]) for m in r.data["members"]}
+    close(per_member["e2"],expected,rel=1e-9)
+    assert per_member["e1"] < expected
+
+
+def test_max_member_deflection_of_the_classical_cases():
+    # Cantilever tip P L^3/(3 EI) = 1000*8/(3*200000) = 1/75 m at x = L; uniform simply supported 5 w L^4/(384 EI) = 1/960 m at midspan.
+    tip = ok(frame,**FRAME,loads="b,0 N,-1000 N,0 N*m")
+    close(v(tip,"max_member_deflection"),1/75)
+    close(quantity(tip.data["max_member_deflection_location"]["x"]),2.0,rel=1e-9)
+    assert not any("exceeds the largest nodal" in w for w in tip.warnings)  # the nodal and the member maximum agree
+    uniform = ok(frame,**{**FRAME,"supports":"a,pinned;b,roller_y"},member_loads="e,uniform,local,0 N/m,-1000 N/m")
+    close(v(uniform,"max_member_deflection"),1/960)
+    close(quantity(uniform.data["max_member_deflection_location"]["x"]),1.0,rel=1e-7)

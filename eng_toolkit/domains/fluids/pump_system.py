@@ -12,7 +12,7 @@ from ._server import server
 
 @server.tool(description="Pump/system operating point from monotone head/efficiency point interpolation, Darcy-Weisbach or static+KQ^2 system, bracketed intersection. Series/parallel pumps, affinity scaling, NPSHa margin and dimensionless specific speed. No extrapolation; impeller trim ratio 0.9..1.0; constant-efficiency affinity approximation.")
 def pump_system(
-    pump_points: Annotated[str, Field(description="id,Q,H,eta records, e.g. 'p,0 m^3/s,20 m,0.6;p,0.1 m^3/s,0 m,0.7'; <=120 points, <=8 pumps, zero-flow start.")] = "",
+    pump_points: Annotated[str, Field(description="id,Q,H,eta records, e.g. 'p,0 m^3/s,20 m,0;p,0.1 m^3/s,0 m,0.7'; eta 0..1 at Q=0, 0.01..1 above; <=120 points, <=8 pumps.")] = "",
     combination: Annotated[str, Field(description="single, series (sum heads at common flow), or parallel (sum flows at common head with check valves).")]= "single",
     static_head: Annotated[str, Field(description="System elevation/pressure head, e.g. '5 m'; required, signed; excludes friction.")] = "",
     system_coefficient: Annotated[str, Field(description="System K in H=Hstatic+KQ^2, e.g. '1000 s^2/m^5'; '' requires pipe geometry instead.")] = "",
@@ -105,7 +105,7 @@ def pump_system(
         r.data["head_residual_m"] = max(residuals)
         r.data["head_tolerance_m"] = 1e-9*head_scale
         r.data["solver_scales"] = {"flow_m3_s": flow_scale, "head_m": head_scale}
-        shaft = sum(rho*G*flows[name]*heads[name]/c.efficiency(flows[name]) for name, c in curves.items())
+        shaft = sum(rho*G*flows[name]*heads[name]/c.efficiency(flows[name]) for name, c in curves.items() if flows[name] > 0)  # a closed pump has no hydraulic power, and its shut-off efficiency may be 0
         hydraulic = rho*G*flow*head
         r.add("operating_flow", flow, "m^3/s")
         r.add("operating_head", head, "m")

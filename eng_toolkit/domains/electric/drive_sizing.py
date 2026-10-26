@@ -70,6 +70,8 @@ def drive_sizing(
     distance: Annotated[str, Field(description="Signed generated move, e.g. 2 rad for rotary/direct or 1 m for linear models; exclusive with profile.")] = "",
     move_time: Annotated[str, Field(description="All models: rest-to-rest move duration, e.g. 2 s; required with distance.")] = "",
     acceleration_time: Annotated[str, Field(description="All models: symmetric acceleration/deceleration time, e.g. 0.5 s; blank gives a triangle with half the move time.")] = "",
+    cycle_time: Annotated[str, Field(description="With distance: repeat period, e.g. 4 s (>= move_time); the rest is a zero-speed dwell so RMS covers the cycle. Blank: move only.")] = "",
+    dwell_load: Annotated[str, Field(description="With cycle_time: signed external effort held in the dwell, e.g. 2 N*m; default zero (linear gravity always acts).")] = "",
     load_torque: Annotated[str, Field(description="Rotary/direct signed external torque for generated motion, e.g. 2 N*m; not allowed with profile.")] = "",
     load_force: Annotated[str, Field(description="Linear models: signed external force for generated motion, e.g. 50 N; not allowed with profile.")] = "",
     load_inertia: Annotated[str, Field(description="Positive load-side inertia, e.g. 0.2 kg*m^2; required only for rotary/direct.")] = "",
@@ -127,7 +129,7 @@ def drive_sizing(
         motion = []
         if profile_rows:
             for name, value in (("distance", distance), ("move_time", move_time), ("acceleration_time", acceleration_time),
-                                ("load_torque", load_torque), ("load_force", load_force)):
+                                ("cycle_time", cycle_time), ("dwell_load", dwell_load), ("load_torque", load_torque), ("load_force", load_force)):
                 if value:
                     invalid(name, "explicit profile and generated-motion inputs are mutually exclusive")
             for index, row in enumerate(profile_rows):
@@ -156,6 +158,16 @@ def drive_sizing(
             if duration > 2*ramp:
                 motion.append((duration-2*ramp, top, top, load))
             motion.append((ramp, top, 0.0, load))
+            cycle = q(cycle_time, "cycle_time", "s", optional=True, lo=1e-9, hi=1e9)
+            held = q(dwell_load, "dwell_load", effort_unit, zero=True, signed=True, optional=True, hi=1e12)
+            if cycle is None and held is not None:
+                invalid("dwell_load", "dwell_load needs cycle_time")
+            if cycle is not None:
+                if cycle < duration*(1-1e-12):
+                    invalid("cycle_time", "cycle_time cannot be shorter than move_time", "input.out_of_range")
+                dwell = cycle-duration
+                if dwell > 1e-12*cycle:
+                    motion.append((dwell, 0.0, 0.0, held or 0.0))
         # Split at velocity and load-side power sign changes so gear efficiency
         # and Coulomb friction are constant within each exact polynomial segment.
         segments = []
@@ -196,9 +208,14 @@ def drive_sizing(
              "Gear efficiency is 1/eta for motoring and eta for regeneration; motor rotor inertia acts at the shaft.",
              "Drive and inverter losses, elastic modes, jerk, peak-duration ratings and brake-resistor limits are not modeled."],
             ["Rigid-body drive sizing using Chapman/Fitzgerald power balance; all torque and power statistics use exact piecewise integrals.",
-             "Candidate passes mean within the stated profile and scalar limits; continuous RMS torque is only a thermal screening estimate."],
+             "Candidate passes mean within the stated profile and scalar limits (RMS torque, peak torque, maximum speed; running above rated speed passes with a warning); continuous RMS torque is only a thermal screening estimate."],
         )
         result.warnings.append("RMS torque screening assumes the continuous rating's cooling conditions. Intermittent operation, low-speed self-cooling and ambient temperature may require derating; no cooling or S1/intermittent-duty thermal model is included.")
+        if not profile_rows and not cycle_time and (rated_torque or candidates):
+            result.warnings.append("The generated move has no dwell: RMS torque covers the move only. For a repeating cycle give cycle_time (period including the rest), "
+                                   "otherwise the RMS torque compared with the continuous rating is too high.")
+        if not profile_rows and cycle_time:
+            result.add("cycle_time", with_rotor["duration"], "s")
         for suffix, stats in (("without_rotor", without), ("with_rotor", with_rotor)):
             for key in ("peak_torque", "rms_torque", "peak_power", "rms_power", "regenerative_energy", "net_shaft_energy"):
                 unit = "N*m" if "torque" in key else "W" if "power" in key else "J"
@@ -268,12 +285,26 @@ def drive_sizing(
             stats = _statistics(segments, candidate_inertia)
             margins = [continuous-stats["rms_torque"], peak-stats["peak_torque"], rated_speed-stats["peak_speed"], max_speed-stats["peak_speed"]]
             limits = (continuous, peak, rated_speed, max_speed)
-            passed = all(margin >= -1e-10*limit for margin, limit in zip(margins, limits))
+            tolerant = [margin >= -1e-10*limit for margin, limit in zip(margins, limits)]
+            # A servo may run above its rated speed up to its maximum speed (the continuous torque derates there), so only the
+            # RMS torque, the peak torque and the maximum speed decide pass or fail; the rated-speed margin is reported.
+            passed = tolerant[0] and tolerant[1] and tolerant[3]
+            above_rated = passed and not tolerant[2]
+            ratio = stats["peak_speed"]/rated_speed
+            if not passed:
+                status = "fail: one or more stated profile limits exceeded"
+            elif above_rated:
+                status = f"pass within stated limits, above rated speed ({ratio:.3g} x): check the datasheet torque-speed curve"
+                result.warnings.append(
+                    f"Candidate {name}: peak speed is {ratio:.3g} times its rated speed (below the maximum speed). The continuous torque "
+                    "derates above rated speed: check the datasheet torque-speed curve at that speed; this tool does not.")
+            else:
+                status = "pass within stated profile and scalar limits"
             candidate_table.append({"name": name, "rotor_inertia_kg_m2": candidate_inertia,
                                     "rms_torque_N_m": stats["rms_torque"], "peak_torque_N_m": stats["peak_torque"],
                                     "rated_torque_margin_N_m": margins[0], "maximum_torque_margin_N_m": margins[1],
                                     "rated_speed_margin_rad_s": margins[2], "maximum_speed_margin_rad_s": margins[3],
-                                    "status": "pass within stated profile and scalar limits" if passed else "fail: one or more stated profile limits exceeded"})
+                                    "status": status})
             for segment in stats["rows"]:
                 _, duration, start_speed, end_speed, _, start_torque, end_torque, _, _ = segment
                 segment_rms = math.sqrt((start_torque**2+start_torque*end_torque+end_torque**2)/3)
@@ -284,7 +315,7 @@ def drive_sizing(
                                            rated_speed-segment_speed, max_speed-segment_speed,
                                            candidate_table[-1]["status"]])
         result.data["candidates"] = candidate_table
-        result.data["candidate_speed_note"] = "Conservative constant-torque screening requires peak speed at or below both rated and maximum speeds; field-weakening power curves are not inferred."
+        result.data["candidate_speed_note"] = "A candidate fails when the RMS torque exceeds its continuous torque, the peak torque exceeds its maximum torque or the peak speed exceeds its maximum speed. Peak speed above the rated speed but within the maximum speed passes with a warning (the rated-speed margin is negative): the continuous torque derates there, so check the datasheet torque-speed curve; field-weakening power curves are not inferred."
         if candidate_table:
             headers = list(candidate_table[0])
             result.csv(handle, "drive_candidates.csv", headers, [[row[name] for name in headers] for row in candidate_table])

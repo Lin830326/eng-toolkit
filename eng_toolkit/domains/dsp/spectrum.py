@@ -27,10 +27,12 @@ from eng_toolkit.domains.dsp._common import (
     plain,
     plain_number,
     qty,
+    input_info,
     read_samples,
     record_text,
     resolve_rate,
     run,
+    signal_unit,
     whole_number,
 )
 from eng_toolkit.domains.dsp._server import server
@@ -61,13 +63,15 @@ def _table(s: sp.Spectrum, rows: int) -> tuple[list[np.ndarray], bool]:
         "spectral density (unit^2/Hz), by FFT with a rectangular, hann, hamming, blackman or flattop window, optional Welch averaging "
         "(segment_length, overlap_percent), a peak list with parabolic interpolation of frequency and amplitude, and with adc_metrics the "
         "single-tone SNR, SINAD, THD (harmonics 2..N), SFDR and ENOB with their definitions. Samples: JSON list in 'samples' or a CSV file "
-        "(value, or time,value) in 'samples_file'; sample_rate with unit unless the file has a time column. Returns bin width, ENBW, "
+        "(value, or time,value, with an optional header line; 'column' picks one column of a wider file, e.g. the output of dsp_filter_apply) in 'samples_file'; 'unit' (e.g. 'g') is carried to the results; sample_rate with unit unless the file has a time column. Returns bin width, ENBW, "
         "leakage/resolution warnings and the spectrum table as CSV (rows bounded, max-hold decimated)."
     ),
 )
 def spectrum(
     samples: Annotated[str, Field(description="Samples as JSON text, e.g. '[0.1, 0.5, -0.2]' (at most 4194304 values). Or use samples_file")] = "",
-    samples_file: Annotated[str, Field(description="Path of a CSV/TXT file: one column of values, or two columns time(s),value; numbers only, no header")] = "",
+    samples_file: Annotated[str, Field(description="Path of a CSV/TXT file: one column of values, or two columns time(s),value; numbers only, optional header line")] = "",
+    column: Annotated[str, Field(description="Value column of samples_file, by header name or number (1 = first), e.g. 'output' of dsp_filter_apply; blank = the single value column")] = "",
+    unit: Annotated[str, Field(description="Unit of the samples, e.g. 'g' (standard gravity), 'm/s^2', 'V'; carried to the amplitude, rms and power values; blank = dimensionless")] = "",
     sample_rate: Annotated[str, Field(description="Sample rate with unit, e.g. '48 kHz'; optional when the file has a time column")] = "",
     window: Annotated[str, Field(description="rectangular, hann, hamming, blackman or flattop (default hann)")] = "hann",
     segment_length: Annotated[int, Field(description="Welch segment length in samples (8..N); 0 = one FFT of the whole record")] = 0,
@@ -81,7 +85,7 @@ def spectrum(
     table_rows: Annotated[int, Field(description="Maximum rows of the spectrum table, 16..20000 (default 2048)")] = 2048,
 ) -> ToolResult:
     inputs = {
-        "samples": record_text(samples), "samples_file": samples_file, "sample_rate": sample_rate, "window": window, "segment_length": segment_length,
+        "samples": record_text(samples), "samples_file": samples_file, "column": column, "unit": unit, "sample_rate": sample_rate, "window": window, "segment_length": segment_length,
         "overlap_percent": overlap_percent, "remove_mean": remove_mean, "peaks": peaks, "peak_threshold_db": peak_threshold_db, "adc_metrics": adc_metrics,
         "harmonics": harmonics, "full_scale_amplitude": full_scale_amplitude, "table_rows": table_rows,
     }
@@ -97,7 +101,8 @@ def spectrum(
         fs_amp = plain_number(full_scale_amplitude, name="full_scale_amplitude", lo=0.0, hi=1e100)
         rows = whole_number(table_rows, name="table_rows", lo=16, hi=MAX_TABLE_ROWS)
         seg_in = whole_number(segment_length, name="segment_length", lo=0, hi=1 << 22, range_error=False)
-        data_in = read_samples(handle, samples, samples_file, min_len=8)
+        sig, sig2, sig_label, sig_header = signal_unit(unit)
+        data_in = read_samples(handle, samples, samples_file, min_len=8, column=column)
         x = data_in.x
         n = len(x)
         fs = resolve_rate(data_in, sample_rate)
@@ -147,14 +152,14 @@ def spectrum(
             "bin_width": qty(s.df, HZ, label="bin_width"),
             "enbw": qty(enbw_hz, HZ, label="enbw"),
             "coherent_gain": plain(s.coherent_gain, label="coherent_gain"),
-            "rms": plain(float(np.sqrt(np.mean(x * x))), label="rms"),
-            "mean": plain(float(np.mean(x)), label="mean"),
-            "peak_amplitude": plain(float(pk[0]["amplitude"]) if pk else float(s.amp.max()), label="peak_amplitude"),
+            "rms": qty(float(np.sqrt(np.mean(x * x))), sig, label="rms"),
+            "mean": qty(float(np.mean(x)), sig, label="mean"),
+            "peak_amplitude": qty(float(pk[0]["amplitude"]) if pk else float(s.amp.max()), sig, label="peak_amplitude"),
             "peak_frequency": qty(float(pk[0]["frequency_hz"]) if pk else float(s.freqs[int(np.argmax(s.amp))]), HZ, label="peak_frequency"),
-            "integrated_power": plain(float(s.power.sum()), label="integrated_power"),
+            "integrated_power": qty(float(s.power.sum()), sig2, label="integrated_power"),
         }
         data: dict[str, Any] = {
-            "sample_rate_hz": fs, "samples": n, "source": data_in.source, "window": wname, "segment_length": seg, "segments": s.n_seg,
+            "sample_rate_hz": fs, "samples": n, "source": data_in.source, **input_info(data_in), "signal_unit": sig_label or None, "window": wname, "segment_length": seg, "segments": s.n_seg,
             "overlap_samples": noverlap, "bin_width_hz": s.df, "nyquist_hz": fs / 2.0, "bins": len(s.amp), "enbw_bins": s.enbw_bins,
             "coherent_gain": s.coherent_gain, "amplitude_correction_factor": 1.0 / s.coherent_gain,
             "scaling": {
@@ -188,14 +193,15 @@ def spectrum(
             if "enob_bits" in metrics:
                 values["enob_bits"] = plain(metrics["enob_bits"], label="enob_bits")
             values["fundamental_frequency"] = qty(metrics["fundamental"]["frequency_hz"], HZ, label="fundamental_frequency")
-            values["fundamental_amplitude"] = plain(metrics["fundamental"]["amplitude"], label="fundamental_amplitude")
+            values["fundamental_amplitude"] = qty(metrics["fundamental"]["amplitude"], sig, label="fundamental_amplitude")
             if "snr_db" not in metrics:
                 metrics["note"] = "no noise power found above the numerical floor: SNR, SINAD and ENOB are not reported (infinite for this record)"
             data["adc_metrics"] = metrics
         cols, decimated = _table(s, rows)
-        table = handle.write_text("spectrum.csv", csv_text(["frequency_hz", "amplitude", "psd_unit2_per_hz"], cols), fmt="csv")
+        names = ["frequency_hz", f"amplitude_{sig_header}", f"psd_{sig_header}2_per_hz"] if sig_header else ["frequency_hz", "amplitude", "psd_unit2_per_hz"]
+        table = handle.write_text("spectrum.csv", csv_text(names, cols), fmt="csv")
         data["table"] = {
-            "file": "spectrum.csv", "rows": len(cols[0]), "bins": len(s.amp), "columns": ["frequency_hz", "amplitude", "psd_unit2_per_hz"],
+            "file": "spectrum.csv", "rows": len(cols[0]), "bins": len(s.amp), "columns": names,
             "decimated": decimated, "decimation": "max-hold in groups of whole bins; each row is the strongest bin of its group, listed at that bin's frequency" if decimated else None,
         }
         if decimated:

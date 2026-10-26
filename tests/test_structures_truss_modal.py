@@ -135,3 +135,16 @@ def test_modal_nodal_mass_spring_and_imperial():
 @pytest.mark.parametrize("args",[{**FRAME},{**FRAME,"density":"7800 kg/m^3","mass_per_length":"1 kg/m"},{**FRAME,"density":"7800 kg/m^3","elements_per_member":21},{**FRAME,"density":"7800 kg/m^3","nodal_masses":"missing,1 kg,0 kg*m^2"}])
 def test_modal_refusals(args):
     assert not call(modal,**args).ok
+
+
+def test_modal_puts_every_requested_frequency_in_values():
+    # UAT S4: only the headline reached values.  Cantilever, 6 modes requested: frequency_mode_1..6 are in values, ascending, the first equal to first_frequency.
+    r = ok(modal,nodes="a,0 m,0 m;b,2 m,0 m",members="e,a,b,200 GPa,1000 mm^2,1e6 mm^4",supports="a,fixed",mass_per_length="10 kg/m",modes_count=6)
+    names = [f"frequency_mode_{k}" for k in range(1,7)]
+    assert all(name in r.values for name in names) and "frequency_mode_7" not in r.values
+    freqs = [v(r,name) for name in names]
+    assert freqs == sorted(freqs) and freqs[0] == v(r,"first_frequency")
+    assert freqs[0] == pytest.approx(r.data["modes"][0]["frequency"]["quantity"],rel=1e-12)
+    assert r.values["frequency_mode_3"].unit == r.values["first_frequency"].unit
+    # beta1^2 sqrt(EI/(mu L^4))/(2 pi) with EI = 200000, mu = 10, L = 2: the one-element-per-... refinement gives the closed form to 1e-4
+    assert freqs[0] == pytest.approx(1.875104068711961**2*math.sqrt(200000/(10*2**4))/(2*math.pi),rel=1e-4)

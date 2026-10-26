@@ -360,7 +360,8 @@ def _csv(mesh_: meshing.TetMesh, u: np.ndarray, s: np.ndarray, vm: np.ndarray) -
     description=(
         "Linear static finite element analysis (small displacements, linear elastic isotropic material, 10-node tetrahedra) of one solid in a CAD file "
         "(.step .stp .iges .igs .brep, read in millimetres), meshed by Gmsh and solved by CalculiX; the toolkit writes both inputs, the caller never "
-        "supplies a script or deck. Returns the maximum displacement magnitude and where it is, the maximum von Mises stress and where, and the total "
+        "supplies a script or deck. Returns the maximum displacement magnitude (the length of the displacement vector, which exceeds the bending deflection) and where it is, "
+        "the per-axis maxima max_displacement_ux/uy/uz (largest |ux|, |uy|, |uz| over the nodes; read a deflection from the axis it acts on), the maximum von Mises stress and where, and the total "
         "reaction force against the applied load (equilibrium must hold to 1e-6 or the call fails). Artifacts: the CalculiX deck, .frd and .dat results, "
         "and results.csv with every node's displacement and stress. "
         "'supports' and 'loads' are ';'-separated clauses that pick faces by plane. Face selector: 'x = 0 mm' (all boundary faces lying in that plane) "
@@ -570,6 +571,7 @@ def static(
         imax, ivm = int(np.argmax(magnitude)), int(np.argmax(vm))
         max_displacement = _output_value(float(magnitude[imax]), per_mm, "output_length_unit")
         max_von_mises = _output_value(float(vm[ivm]), per_mpa, "output_stress_unit")
+        axis_maxima = [_output_value(float(np.abs(u[:, k]).max()), per_mm, "output_length_unit") for k in range(3)]  # largest |ux|, |uy|, |uz|
 
         # ----- equilibrium
         applied = force.sum(axis=0)
@@ -626,6 +628,9 @@ def static(
 
         values = {
             "max_displacement": _q(max_displacement, length_unit),
+            "max_displacement_ux": _q(axis_maxima[0], length_unit),
+            "max_displacement_uy": _q(axis_maxima[1], length_unit),
+            "max_displacement_uz": _q(axis_maxima[2], length_unit),
             "max_von_mises": _q(max_von_mises, stress_unit),
             "applied_force_x": _q(float(applied[0]), "newton"),
             "applied_force_y": _q(float(applied[1]), "newton"),

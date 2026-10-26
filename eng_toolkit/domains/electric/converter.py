@@ -1,4 +1,4 @@
-"""Averaged nonsynchronous converters with explicit triangular-waveform limits."""
+"""Averaged buck/boost/buck-boost converters (diode or synchronous rectifier) with explicit triangular-waveform limits."""
 
 from __future__ import annotations
 
@@ -191,7 +191,8 @@ def _control(result, topology, duty, voltage, current, inductance, capacitance):
 
 @server.tool(description="State-space averaged buck/boost/inverting buck-boost duty, CCM/DCM triangular ripple, stresses and losses; small-ripple model.")
 def converter(
-    topology: Annotated[str, Field(description="Nonsynchronous power stage: buck, boost, or buck_boost (inverting output).")] = "buck",
+    topology: Annotated[str, Field(description="Power stage: buck, boost, or buck_boost (inverting output); a diode unless synchronous=true.")] = "buck",
+    synchronous: Annotated[bool, Field(description="True: a synchronous FET replaces the diode (see low_side_resistance, dead_time); below the CCM boundary it acts as diode emulation.")] = False,
     mode: Annotated[str, Field(description="Conduction requirement: auto selects CCM/DCM; ccm or dcm rejects incompatible load and inductance.")] = "auto",
     input_voltage: Annotated[str, Field(description="Positive DC source voltage with units, e.g. '24 V'; supported 1e-6..1e6 V.")] = "",
     output_voltage: Annotated[str, Field(description="Positive output-voltage magnitude, e.g. '12 V'; buck_boost reports a negative signed output.")] = "",
@@ -202,12 +203,14 @@ def converter(
     output_capacitance: Annotated[str, Field(description="Optional output capacitance with units, e.g. '470 uF'; needed for ripple and control-pole outputs.")] = "",
     target_output_ripple: Annotated[str, Field(description="Optional total output peak-to-peak ripple target, e.g. '50 mV'; sizes capacitance after the ESR allowance.")] = "",
     capacitor_esr: Annotated[str, Field(description="Output-capacitor series resistance with units, e.g. '20 mohm'; zero is ideal.")] = "0 ohm",
-    diode_drop: Annotated[str, Field(description="Constant forward diode drop during its conduction interval, e.g. '0.6 V'.")] = "0 V",
+    diode_drop: Annotated[str, Field(description="Forward diode drop while it conducts, e.g. '0.6 V'; with synchronous=true only the body-diode drop in dead_time.")] = "0 V",
     switch_resistance: Annotated[str, Field(description="On-state MOSFET resistance Rds(on), e.g. '10 mohm'; the off-state is open.")] = "0 ohm",
+    low_side_resistance: Annotated[str, Field(description="With synchronous=true: Rds(on) of the synchronous (low-side) FET, e.g. '8 mohm'; replaces the diode drop in the off interval.")] = "0 ohm",
+    dead_time: Annotated[str, Field(description="With synchronous=true: dead time per edge, e.g. '30 ns'; body diode (diode_drop) conducts, loss Vf*(Ipk+Imin)*t*f.")] = "0 s",
     inductor_resistance: Annotated[str, Field(description="Inductor winding DC resistance, e.g. '30 mohm'; core and AC copper losses are excluded.")] = "0 ohm",
     rise_time: Annotated[str, Field(description="Switch turn-on voltage-current overlap duration, e.g. '20 ns'; triangular overlap estimate.")] = "0 s",
     fall_time: Annotated[str, Field(description="Switch turn-off voltage-current overlap duration, e.g. '30 ns'; must fit the switching period.")] = "0 s",
-    gate_charge: Annotated[str, Field(description="Effective gate charge per switching cycle with coulomb units, e.g. '30 nC'.")] = "0 C",
+    gate_charge: Annotated[str, Field(description="Gate charge per switching cycle with coulomb units, e.g. '30 nC'; sum of both FETs if synchronous=true.")] = "0 C",
     gate_voltage: Annotated[str, Field(description="Gate-drive voltage paired with gate_charge, e.g. '10 V'; both must be positive or both zero.")] = "0 V",
     reverse_recovery_charge: Annotated[str, Field(description="Diode hard-commutation reverse-recovery charge, e.g. '15 nC'; assumed zero recovery loss in DCM.")] = "0 C",
 ):
@@ -233,6 +236,14 @@ def converter(
         qg = q(gate_charge, "gate_charge", "C", zero=True, hi=1)
         vg = q(gate_voltage, "gate_voltage", "V", zero=True, hi=1e3)
         qrr = q(reverse_recovery_charge, "reverse_recovery_charge", "C", zero=True, hi=1)
+        rls = q(low_side_resistance, "low_side_resistance", "ohm", zero=True, hi=1e6)
+        td = q(dead_time, "dead_time", "s", zero=True, hi=1e3)
+        if not synchronous:
+            for name, value in (("low_side_resistance", rls), ("dead_time", td)):
+                if value:
+                    invalid(name, f"{name} applies only with synchronous=true")
+        elif 2 * td * frequency > 0.1:
+            invalid("dead_time", "the two dead times together must not exceed 10% of the switching period")
         if topology == "buck" and vo >= vin:
             invalid("output_voltage", "buck output magnitude must be below input voltage")
         if topology == "boost" and vo <= vin:
@@ -242,12 +253,14 @@ def converter(
         if (tr + tf) * frequency > 0.1:
             invalid("rise_time", "overlap durations together must not exceed 10% of the switching period")
         on_voltage = vin - vo if topology == "buck" else vin
-        off_voltage = vo + vd - (vin if topology == "boost" else 0)
+        # A synchronous FET replaces the diode drop by a resistance in the off interval; the body diode only matters in the dead time.
+        off_voltage = vo + (0.0 if synchronous else vd) - (vin if topology == "boost" else 0)
+        off_resistance = rl + rls
         design_inductance = None
         design_mode = None
         if ripple_target is not None:
             design_inductance, design_mode = _size_inductance(
-                topology, mode, io, frequency, ripple_target, on_voltage, off_voltage, rs + rl, rl)
+                topology, mode, io, frequency, ripple_target, on_voltage, off_voltage, rs + rl, off_resistance)
             if not 1e-12 <= design_inductance <= 1e3:
                 invalid("target_current_ripple", "sized inductance lies outside 1e-12..1e3 H", "input.out_of_range")
         if induct is None:
@@ -255,10 +268,10 @@ def converter(
                 invalid("inductance", "supply inductance or target_current_ripple", "input.missing")
             induct = design_inductance
         cycle, critical_current = _cycle(topology, mode, io, frequency, induct,
-                                         on_voltage, off_voltage, rs + rl, rl)
+                                         on_voltage, off_voltage, rs + rl, off_resistance)
         if (tr + tf) * frequency > min(cycle.duty, 1 - cycle.duty):
             invalid("rise_time", "overlap durations do not fit the on and off intervals")
-        ccm_duty, ccm_mean, ccm_slope = _ccm_duty(topology, io, on_voltage, off_voltage, rs + rl, rl)
+        ccm_duty, ccm_mean, ccm_slope = _ccm_duty(topology, io, on_voltage, off_voltage, rs + rl, off_resistance)
         critical_inductance = ccm_slope * ccm_duty / (2 * ccm_mean * frequency)
         segments, capacitor_wave, source_wave = _waveforms(topology, cycle, io)
         il_average, il_square = _moments(segments)
@@ -273,9 +286,10 @@ def converter(
                                              + (1 - source_fraction) * local_mean ** 2)
         switch_square, diode_square = cycle.duty * local_square, cycle.diode * local_square
         switch_loss, inductor_loss = rs * switch_square, rl * il_square
-        diode_loss = vd * cycle.diode * local_mean
-        mean_copper = (rs * cycle.duty + rl * (cycle.duty + cycle.diode)) * local_mean ** 2
-        ripple_copper = max(0.0, switch_loss + inductor_loss - mean_copper)
+        diode_loss = 0.0 if synchronous else vd * cycle.diode * local_mean
+        low_side_loss = rls * diode_square
+        mean_copper = (rs * cycle.duty + rl * (cycle.duty + cycle.diode) + rls * cycle.diode) * local_mean ** 2
+        ripple_copper = max(0.0, switch_loss + inductor_loss + low_side_loss - mean_copper)
         output_power = vo * io
         if ripple_copper > 0.05 * output_power:
             invalid("inductor_resistance", "ripple copper correction exceeds 5% of output power; use a switched-circuit model", "electric.model_limit")
@@ -299,8 +313,9 @@ def converter(
         gate_loss = qg * vg * frequency
         recovery_loss = qrr * stress * frequency if cycle.mode == "ccm" and cycle.minimum > 0 else 0.0
         esr_loss = esr * capacitor_square
-        conduction_loss = switch_loss + inductor_loss + diode_loss
-        total_loss = conduction_loss + esr_loss + overlap_loss + gate_loss + recovery_loss
+        dead_time_loss = vd * (cycle.peak + cycle.minimum) * td * frequency if synchronous else 0.0
+        conduction_loss = switch_loss + inductor_loss + diode_loss + low_side_loss
+        total_loss = conduction_loss + esr_loss + overlap_loss + gate_loss + recovery_loss + dead_time_loss
         input_power = output_power + total_loss
         result = Result(
             {"ccm": "D*V_on-(1-D)*V_off=I_L*(D*R_on+(1-D)*R_off)",
@@ -308,10 +323,10 @@ def converter(
              "load": "CCM Io=IL for buck, (1-D)*IL otherwise; DCM Io=Ipk*(D+delta)/2 for buck, delta*Ipk/2 otherwise",
              "ripple": "Vpp=range(integral(i_C dt))/C + ESR*range(i_C)",
              "loss": "Pcond=Rds*Isw_rms^2+DCR*IL_rms^2+Vd*Id_avg; Pin_est=Vo*Io+all reported losses"},
-            "Fixed-frequency nonsynchronous stage; stiff input/output DC voltages, constant load current per cycle, linear current ramps and interval-mean resistive drops.",
-            "Textbook averaged estimate, not a switched transient simulation. Ripple copper correction <=5% of output power; no core, AC winding, Coss, dead-time or thermal model.",
+            "Fixed-frequency stage (diode, or synchronous FET with diode emulation in DCM); stiff input/output DC voltages, constant load current per cycle, linear current ramps and interval-mean resistive drops.",
+            "Textbook averaged estimate, not a switched transient simulation. Ripple copper correction <=5% of output power; no core, AC winding, Coss or thermal model; dead time is a body-diode loss only (it does not shift the duty).",
         )
-        result.data.update({"topology": topology, "conduction_mode": cycle.mode, "input_voltage_v": vin,
+        result.data.update({"topology": topology, "synchronous": synchronous, "conduction_mode": cycle.mode, "input_voltage_v": vin,
                             "target_ripple_mode": design_mode,
                             "power_balance": "Averaged waveform power balances interval-mean conduction loss. Pin estimate adds RMS ripple copper, ESR and switching losses.",
                             "ripple_bound": "Capacitive and ESR peak-to-peak contributions are added conservatively; their extrema need not coincide."})
@@ -334,6 +349,7 @@ def converter(
             "inductor_copper_loss": (inductor_loss, "W"), "ripple_copper_correction": (ripple_copper, "W"),
             "capacitor_esr_loss": (esr_loss, "W"), "switch_overlap_loss": (overlap_loss, "W"),
             "gate_drive_loss": (gate_loss, "W"), "reverse_recovery_loss": (recovery_loss, "W"),
+            "low_side_conduction_loss": (low_side_loss, "W"), "dead_time_loss": (dead_time_loss, "W"),
             "total_loss": (total_loss, "W"), "output_power": (output_power, "W"),
             "input_power_estimate": (input_power, "W"), "input_current_estimate": (input_power / vin, "A"),
             "waveform_input_current": (source_average, "A"), "efficiency": (output_power / input_power, "dimensionless"),
@@ -358,6 +374,12 @@ def converter(
                 result.warnings.append("The supplied output capacitance does not meet the requested total ripple target.")
             if cycle.mode == "ccm":
                 _control(result, topology, cycle.duty, vo, io, induct, capacitance)
+        if not any((vd, rs, rl, tr, tf, qg, qrr, rls, td)):
+            result.data["losses_given"] = False
+            result.warnings.append("Ideal: no loss inputs were given (switch/inductor/low-side resistance, diode drop, rise/fall time, gate charge, recovery charge, dead time), "
+                                   "so efficiency counts only the capacitor ESR loss and is not a prediction. Supply the losses before using total_loss or efficiency.")
+        else:
+            result.data["losses_given"] = True
         if cycle.mode == "dcm":
             result.data["control_to_output_ideal_ccm"] = None
             result.data["control_omission_reason"] = "The CCM two-pole plant is invalid in DCM; no DCM dynamic model is calculated."

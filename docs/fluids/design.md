@@ -184,8 +184,8 @@ pressures warn. With vapour pressure supplied, cavitation risk is checked using
 
 `pump_points` contains `pump_id,Q,H,efficiency`, with at most 120 records and eight
 pumps. Each pump needs at least two points starting at zero flow; Q strictly
-increases and nonnegative H strictly decreases. Efficiencies are in 0.01..1 and
-are interpolated independently. This tool chooses the requested **interpolation**
+increases and nonnegative H strictly decreases. Efficiencies are in 0.01..1, except that the point at zero flow may be 0 (datasheets list 0 % at
+shut-off), and are interpolated independently. This tool chooses the requested **interpolation**
 option, not a potentially nonmonotone quadratic least-squares fit. There is no
 curve extrapolation. Duplicate IDs group points into one pump in record order.
 

@@ -142,3 +142,38 @@ def test_hysteresis_suppresses_small_interior_excursion():
 ])
 def test_rainflow_refusals(args):
     assert not call(rainflow,**{**RF,**args}).ok
+
+
+def test_a_logger_header_line_is_skipped_and_reported(tmp_path):
+    # UAT M2-2: 'time_s,strain_ue' on line 1 gave "expected a finite decimal literal" at /history_file/0.
+    plain = tmp_path/"plain.csv"
+    plain.write_text("0.0,0\n0.1,1\n0.2,-1\n0.3,0\n",encoding="utf-8")
+    headed = tmp_path/"headed.csv"
+    headed.write_text("time_s,strain_ue\n0.0,0\n0.1,1\n0.2,-1\n0.3,0\n",encoding="utf-8")
+    a=ok(rainflow,history_file=str(plain),sample_scale="1 MPa")
+    b=ok(rainflow,history_file=str(headed),sample_scale="1 MPa")
+    assert b.data["header_skipped"]=="time_s,strain_ue" and a.data["header_skipped"] is None
+    close(v(b,"range_count_sum"),v(a,"range_count_sum"))
+    one=tmp_path/"one.csv"
+    one.write_text("\ufeffstrain\n0\n1\n-1\n0\n",encoding="utf-8")  # a one-column file with a BOM and a header
+    c=ok(rainflow,history_file=str(one),sample_scale="1 MPa")
+    assert c.data["header_skipped"]=="strain"
+    close(v(c,"range_count_sum"),v(a,"range_count_sum"))
+
+
+@pytest.mark.parametrize("text,line",[
+    ("strain\n0\n1\nabc\n0\n",4),  # a word among the numbers
+    ("time_s,strain\ntext,more\n0,1\n",2),  # a second header-like line
+    ("0,1\ntime,strain\n1,2\n",2),  # a header only counts on line 1
+    ("time_s,strain\n0,1,2\n1,2,3\n",2),  # three columns
+    ("time_s,strain\n0,1\n0,2\n",3),  # time not increasing
+    ("1,abc\n2,3\n",1),  # mixed numbers and words on line 1
+    ("__import__('os')\n1\n2\n",1),
+    ("nan\n1\n2\n",1),
+])
+def test_garbage_is_still_refused_and_the_message_says_line_n(tmp_path,text,line):
+    p=tmp_path/"bad.csv"
+    p.write_text(text,encoding="utf-8")
+    r=call(rainflow,history_file=str(p),sample_scale="1 MPa")
+    assert r.ok is False and r.error.family=="input.invalid" and r.error.details["param"].startswith("/history_file")
+    assert f"line {line}" in r.error.message, r.error

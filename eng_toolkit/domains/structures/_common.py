@@ -20,7 +20,7 @@ from eng_toolkit.units import UnitsError, parse_quantity, ureg
 System = Annotated[str, Field(description="Output units: metric (m, N, Pa) or imperial (inch, lbf, psi). CSV columns explicitly name their units.")]
 Nodes2 = Annotated[str, Field(description="Required planar nodes 'id,x,y' with lengths, e.g. 'a,0 m,0 m;b,2 m,0 m'; semicolon/newline separators, <=100 nodes.")]
 FrameMembers = Annotated[str, Field(description="Required 'id,start,end,E,A,I[,release]', e.g. 'e,a,b,200 GPa,1000 mm^2,1e6 mm^4'; release none/start/end/both, <=200.")]
-FrameSupports = Annotated[str, Field(description="Joint restraints or springs, e.g. 'a,fixed;b,roller_y'; '' omits. Types fixed/pinned/roller_x/roller_y/spring; see docs for units.")]
+FrameSupports = Annotated[str, Field(description="Supports, e.g. 'a,pinned;b,roller_y': roller_y holds uy only (vertical reaction, slides in x); roller_x holds ux only; fixed; spring.")]
 NodalLoads = Annotated[str, Field(description="Joint forces and CCW moment 'node,Fx,Fy,Mz', e.g. 'b,0 N,-1 kN,0 N*m'; '' omits, <=400 records; repeated loads add.")]
 MemberLoads = Annotated[str, Field(description="Member uniform/linear/point loads in local/global axes, e.g. 'e,uniform,local,0 N/m,-1 kN/m'; '' omits; see docs for grammar.")]
 

@@ -243,10 +243,20 @@ node,roller_y[,uy]
 node,spring,kx,ky,kr[,rest_x,rest_y,rest_rotation]
 ```
 
-`roller_x` restrains x and permits y; `roller_y` restrains y and permits x. Spring
+`roller_x` restrains ux only (a reaction in x; the joint slides in y, rotates freely); `roller_y` restrains uy only (a vertical reaction; the joint slides in x: the usual beam roller). Neither restrains rotation. Spring
 stiffnesses are nonnegative, in N/m, N/m and N m/rad. All optional prescribed/rest
 values must be supplied for the selected support. One support record per node is
 accepted; mixed fixed/spring components at a single node are not represented.
+`structures_frame` returns `max_member_deflection`, the largest magnitude of the local
+transverse displacement along any member (end displacements included, not relative to the
+chord), found on the exact displacement curve (dense sampling plus golden-section
+refinement), with the member, the position and the signed value in
+`data.max_member_deflection_location` and per member `maximum_abs_deflection`. The nodal
+maximum `maximum_nodal_displacement` is only the largest joint displacement: a warning
+says so when the member maximum exceeds it (a simply supported 2 m beam with a 1 kN load
+0.5 m from a support: 4.69e-4 m at the load, 5.82e-4 m in the span). `structures_modal`
+puts every returned frequency in `values` as `frequency_mode_<k>` besides
+`first_frequency`.
 Nodal loads are `node,Fx,Fy,Mz`. Positive Mz and rotation are counterclockwise.
 
 Member loads are:

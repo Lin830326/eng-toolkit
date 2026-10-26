@@ -391,6 +391,12 @@ signed load effort stays constant within a row. Alternatively give signed
 distance and total time for a rest-to-rest move, with acceleration time <=half
 the duration. Omitted acceleration time creates a triangle; otherwise the middle
 segment is constant speed. Peak load speed is `distance/(time-acceleration_time)`.
+`cycle_time` (at least `move_time`) appends a zero-speed dwell of `cycle_time - move_time`
+holding `dwell_load` (default zero; linear gravity always acts), so the RMS torque
+covers the repeating cycle that a continuous rating refers to; without it the RMS
+covers the move only and, when `rated_torque` or candidates are given, a warning says
+the RMS is too high for a cycle with rests. With an explicit `profile`, add a
+zero-speed row instead.
 
 Load effort includes inertia, Coulomb friction, viscous friction and optional
 gravity `m*9.80665*sin(angle)`. Standard gravity is the defined conventional
@@ -419,9 +425,15 @@ Optional candidates use up to 100 records:
 `name,inertia,rated_torque,max_torque,rated_speed,max_speed`.
 Each candidate recomputes the profile using its own rotor inertia. Margin tables
 and profile feasibility CSVs compare RMS/peak torque and speed against the stated
-limits. Constant-torque screening conservatively requires speed below rated
-speed as well as maximum speed. It does not invent a manufacturer's field-weakening
-curve. Reports say pass within stated limits or fail, never approved.
+limits. A candidate fails when the profile RMS torque exceeds its rated (continuous)
+torque, the peak torque exceeds its maximum torque, or the peak speed exceeds its
+maximum speed. A peak speed above the rated speed but within the maximum speed is
+allowed: the status is `pass within stated limits, above rated speed (<ratio> x): ...`,
+`rated_speed_margin_rad_s` stays negative and a warning gives the speed ratio and asks
+for the datasheet torque-speed curve at that speed (the continuous torque derates
+there; this tool does not model it). It does not invent a manufacturer's
+field-weakening curve. Candidate speeds accept rpm, rad/s or deg/s (`"3000 rpm"`);
+margins are reported in rad/s. Reports say pass within stated limits or fail, never approved.
 Candidate comparisons allow rounding error of at most `1e-10` times each stated
 rating, with no absolute torque or speed allowance. Reported margins remain the
 signed differences in SI units; the result and both candidate CSVs share the
@@ -435,7 +447,8 @@ inverter energy-recovery efficiency or thermal network is modeled.
 
 ## `electric_converter`
 
-Topologies are nonsynchronous buck, boost and inverting buck-boost. Inputs specify
+Topologies are buck, boost and inverting buck-boost, with a freewheel diode by default.
+Inputs specify
 positive output-voltage magnitude; buck-boost reports its signed negative output.
 `mode="auto"` chooses CCM/DCM, while explicit ccm/dcm refuses incompatible points.
 Supply L or target inductor ripple; when both are supplied, report the required
@@ -483,6 +496,20 @@ are reported; the latter is minus that ripple correction. Estimated input power
 adds all RMS conduction, ESR, overlap, gate and recovery losses to output power.
 Ripple copper correction above 5% of output power refuses. This is an explicitly
 limited averaged approximation, not exact exponential switched-RL integration.
+
+`synchronous=true` replaces the diode by a synchronous FET (the low-side FET of a
+buck): in the off interval Voff loses the diode drop (`Voff=Vo`, or `Vo-Vin` for boost) and
+Roff becomes `DCR + low_side_resistance`, so duty, ripple and the DCM boundary follow from
+the same equations. The loss list gains `low_side_conduction_loss=R_ls D_off Irms_off^2`
+and `dead_time_loss=Vf (Ipk+Imin) t_dead f` (Vf is `diode_drop`, now the body-diode drop;
+for small ripple this is the usual `Vf Io 2 t_dead f`), and the diode conduction loss is zero.
+Below the CCM boundary the stage is treated as diode emulation (no reverse inductor
+current), so the DCM equations apply with the low-side resistance. `gate_charge` is the
+sum of both FETs. Dead time is a loss only: it does not shift the duty. With nothing
+but capacitor ESR to lose, the result carries the warning `Ideal: no loss inputs ...
+not a prediction` and `data.losses_given=false`. The hand check against an independent
+24 V to 5 V, 3 A, 500 kHz budget (UAT E4) reproduces the high-side 23 mW, low-side
+42.8 mW, DCR 181 mW, gate 40 mW, dead-time 42 mW and ESR 0.27 mW terms exactly.
 
 Overlap loss is `.5 Vstress (Imin tr+Ipk tf) f`; for small ripple this reduces to
 `.5 V I (tr+tf)f`. Gate loss is `Qg Vg f`; hard-commutation diode recovery is

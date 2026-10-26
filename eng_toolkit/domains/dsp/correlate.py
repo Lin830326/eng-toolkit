@@ -26,6 +26,7 @@ from eng_toolkit.domains.dsp._common import (
     QuantityOut,
     clean,
     csv_text,
+    input_info,
     is_blank,
     plain,
     qty,
@@ -158,7 +159,7 @@ def correlate(
             "variance": plain(variance, label="variance"), "standard_deviation": plain(math.sqrt(variance), label="standard_deviation"),
         }
         data: dict[str, Any] = {
-            "samples": n, "sample_rate_hz": fs,
+            "samples": n, "sample_rate_hz": fs, **input_info(a),
             "statistics": {
                 "mean": mean, "rms": rms, "peak": peak, "peak_to_peak": float(np.max(x) - np.min(x)), "variance_population": variance,
                 "variance_sample": float(np.var(x, ddof=1)) if n > 1 else None, "crest_factor": peak / rms if rms > 0.0 else "undefined (RMS is 0)",

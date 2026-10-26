@@ -259,8 +259,11 @@ charts are not included.
 ## Cycle counting: fatigue_rainflow
 
 Supply either `history` as a flat JSON number list or `history_file` as a
-numeric UTF-8 CSV, without a header. CSV has one sample column or two columns
-`time,value`; time must increase, but constant sampling intervals are not
+numeric UTF-8 CSV. CSV has one sample column or two columns
+`time,value`, with an optional first line of column names (every field a name such as
+`time_s,strain_ue`, never a number or code): it is skipped when the next line is numeric
+and reported as `data.header_skipped`. Any other non-numeric content is refused with
+`line N` in the message. Time must increase, but constant sampling intervals are not
 needed for cycle counting. `sample_scale` supplies physical units, for example
 `1 MPa` or `1 ksi`. `history_kind="force"` permits force counting with a scale
 such as `1 kN`, but refuses fatigue damage until the caller converts loads to

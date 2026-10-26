@@ -197,6 +197,19 @@ def blame(out: Outcome, item: dict[str, Any], *, tops: dict[str, str] | None = N
     return next(iter(out.params.values()), None)
 
 
+# Yosys (or ABC, which it starts) could not create a file of its own: nothing the caller wrote is wrong.
+_WRITE_FAILURE = re.compile(r"for writing failed|Can't open log file|Can't open \S+ file .*for writing", re.IGNORECASE)
+
+
+def _write_failure(said: str, code: int) -> ToolFailure:
+    return ToolFailure(
+        "engine.failure",
+        f"yosys could not write one of its own files ({said}). This is not an error in the source: a path is probably too long "
+        "(Windows programs stop at 260 characters) or the disk is full. Set ENG_TOOLKIT_WS to a shorter folder.",
+        {"returncode": code, "yosys_message": said},
+    )
+
+
 def raise_if_failed(out: Outcome, *, what: str, tops: dict[str, str] | None = None, roles: dict[str, str] | None = None) -> None:
     """Turn a non-zero exit into a :class:`ToolFailure` that names the file and line when Yosys gave them.
 
@@ -206,6 +219,8 @@ def raise_if_failed(out: Outcome, *, what: str, tops: dict[str, str] | None = No
     if out.record.returncode == 0:
         return
     errors = [m for m in messages(out)[1]]
+    if errors and _WRITE_FAILURE.search(errors[0]["message"]):
+        raise _write_failure(errors[0]["message"], out.record.returncode)
     if errors:
         first = errors[0]
         where = f"{first['file']} line {first['line']}: " if first["file"] and first["line"] else (f"{first['file']}: " if first["file"] else "")
@@ -218,6 +233,8 @@ def raise_if_failed(out: Outcome, *, what: str, tops: dict[str, str] | None = No
             details["param"] = param
         raise ToolFailure(family, f"{what} failed: {where}{first['message']}", details)
     said = out.relabel(out.clean(out.record.stderr_tail) or out.clean(out.record.stdout_tail))
+    if _WRITE_FAILURE.search(said):
+        raise _write_failure(said, out.record.returncode)
     if "bad_alloc" in said or "out of memory" in said.lower():
         raise ToolFailure(
             "engine.resource_limit",

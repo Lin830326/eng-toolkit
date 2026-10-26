@@ -194,7 +194,8 @@ def test_the_environment_it_sees_is_scrubbed(fake, a_dwg, monkeypatch):
             allowed = allowed | {"PROMPT"}  # added by cmd.exe itself, which runs the .cmd shim
         assert {k.upper() for k in seen if not k.startswith("=")} <= allowed, sorted(seen)
     (conversion,) = fake.conversions()
-    assert Path(conversion["env"].get("TMP") or conversion["env"]["TMPDIR"]).resolve() == (job / "tmp").resolve()  # temporary files stay in the job directory
+    temp = Path(conversion["env"].get("TMP") or conversion["env"]["TMPDIR"])
+    assert temp.parent.name.startswith("etk") and not temp.parent.exists() and not (job / "tmp").exists()  # a short scratch folder, removed afterwards
 
 
 def test_a_file_name_the_c_library_could_not_open_never_reaches_the_program(fake, tmp_path):

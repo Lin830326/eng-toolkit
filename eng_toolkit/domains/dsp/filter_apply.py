@@ -27,6 +27,7 @@ from eng_toolkit.domains.dsp._common import (
     array_from_json,
     clean,
     csv_text,
+    input_info,
     is_blank,
     plain,
     qty,
@@ -105,7 +106,8 @@ def _sections(text: Any) -> np.ndarray:
 )
 def filter_apply(
     samples: Annotated[str, Field(description="Samples as JSON text, e.g. '[0, 1, 0, -1]' (at most 4194304). Or use samples_file")] = "",
-    samples_file: Annotated[str, Field(description="Path of a CSV/TXT file: one column of values, or time(s),value; numbers only")] = "",
+    samples_file: Annotated[str, Field(description="Path of a CSV/TXT file: one column of values, or time(s),value; numbers only, optional header line")] = "",
+    column: Annotated[str, Field(description="Value column of samples_file, by header name or number (1 = first); blank = the single value column")] = "",
     sample_rate: Annotated[str, Field(description="Sample rate with unit, e.g. '8 kHz'; needed for a design, otherwise only for time stamps")] = "",
     sos: Annotated[str, Field(description="Second-order sections as JSON, e.g. '[[0.2,0.4,0.2,1,-0.3,0.1]]' (rows b0,b1,b2,a0,a1,a2; at most 40 rows)")] = "",
     b: Annotated[str, Field(description="Numerator coefficients as JSON list (at most 4095 for FIR, 41 with a)")] = "",
@@ -124,7 +126,7 @@ def filter_apply(
     allow_unstable: Annotated[bool, Field(description="Run an unstable or marginal IIR filter anyway (default false: refused); the output is refused if it overflows")] = False,
 ) -> ToolResult:
     inputs = {
-        "samples": record_text(samples), "samples_file": samples_file, "sample_rate": sample_rate, "sos": record_text(sos, 2000), "b": record_text(b, 2000),
+        "samples": record_text(samples), "samples_file": samples_file, "column": column, "sample_rate": sample_rate, "sos": record_text(sos, 2000), "b": record_text(b, 2000),
         "a": record_text(a, 2000), "family": family, "response": response, "order": order, "cutoff": cutoff, "passband_edge": passband_edge,
         "stopband_edge": stopband_edge, "passband_ripple_db": passband_ripple_db, "stopband_attenuation_db": stopband_attenuation_db,
         "kaiser_beta": kaiser_beta, "zero_phase": zero_phase, "compensate_delay": compensate_delay, "allow_unstable": allow_unstable,
@@ -143,7 +145,7 @@ def filter_apply(
             raise UnitsError("input.invalid", "'a' needs 'b'", {"param": "b"})
         if have[0] == "family" and is_blank(response):
             raise UnitsError("input.missing", "a design needs 'response' (lowpass, highpass, bandpass or bandstop)", {"param": "response"})
-        data_in = read_samples(handle, samples, samples_file, min_len=2)
+        data_in = read_samples(handle, samples, samples_file, min_len=2, column=column)
         x = data_in.x
         n = len(x)
         design_job = None
@@ -288,7 +290,7 @@ def filter_apply(
         header += ["input", "output"]
         table = handle.write_text("filtered.csv", csv_text(header, cols), fmt="csv")
         data: dict[str, Any] = {
-            "samples": n, "sample_rate_hz": fs, "source": data_in.source, "filter": source, "zero_phase": zero_phase, "edge_handling": edge,
+            "samples": n, "sample_rate_hz": fs, "source": data_in.source, **input_info(data_in), "filter": source, "zero_phase": zero_phase, "edge_handling": edge,
             "stability": {**stab, "method": "roots of the denominator(s)"},
             "input": in_stats, "output": out_stats, "dc_gain": dc_gain, "dc_gain_definition": "H(z = 1): product over sections of sum(b)/sum(a); null when a pole is at z = 1", "delay": delay_info,
             "structure": "transposed direct form II, pure Python recursion" if not is_fir else "convolution (FFT for long filters)",

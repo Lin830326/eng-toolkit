@@ -190,6 +190,40 @@ class Samples:
     fs: float | None  # from the time column of a two-column file, else None
     source: str
     t0: float | None = None
+    header_skipped: str | None = None  # the header line of a file that had one (it is not data)
+    column_used: str | None = None  # the name (or number) of the value column of a file with several columns
+
+
+_UNIT_TEXT = re.compile(r"[A-Za-z0-9_/*^ ().\u00b5\u00b0-]{1,32}")
+
+
+def signal_unit(raw: Any, *, param: str = "unit") -> tuple[str, str, str, str]:
+    """``(unit, unit_squared, label, header_label)`` for the unit of the samples: pint unit strings for the values and a text for the column names.
+
+    Blank gives ``dimensionless`` and an empty label.  The text ``g`` means standard gravity (pint's own ``g`` is the gram, which no sampled signal is).
+    """
+    if is_blank(raw):
+        return "dimensionless", "dimensionless", "", ""
+    if not isinstance(raw, str) or _UNIT_TEXT.fullmatch(raw.strip()) is None:
+        raise UnitsError("units.parse_error", f"'{param}' must be a unit name such as 'g', 'm/s^2' or 'V' (letters, digits and / * ^ ( ) . only, at most 32 characters)", {"param": param})
+    text = raw.strip()
+    name = "standard_gravity" if text == "g" else text
+    try:
+        from eng_toolkit.units import ureg
+
+        unit = ureg.Unit(name)
+        squared = str(unit**2)
+        canonical = str(unit)
+        ureg.Quantity(1.0, unit).to_base_units()
+    except Exception:  # noqa: BLE001 - pint raises many kinds for a unit it does not know or cannot square
+        raise UnitsError("units.parse_error", f"'{param}' = {text[:32]!r} is not a unit the toolkit knows (use names such as 'g', 'm/s^2', 'V', 'Pa')", {"param": param}) from None
+    header = re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_") or "unit"
+    return canonical, squared, text, header
+
+
+def input_info(samples: Samples) -> dict[str, Any]:
+    """What was read from a file besides the numbers, for ``data``: ``header_skipped`` (the line, or null) and ``column_used``."""
+    return {"header_skipped": samples.header_skipped, "column_used": samples.column_used}
 
 
 def record_text(text: Any, limit: int = 300) -> Any:
@@ -250,10 +284,22 @@ def finite_array(arr: np.ndarray, *, param: str, samples: bool = False) -> np.nd
 _NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 
 
-def parse_csv_text(text: str, *, param: str) -> list[np.ndarray]:
-    """Columns of numbers from CSV text: one or two columns, comma or whitespace separated, blank lines ignored.
+_HEADER_NAME = re.compile(r"[A-Za-z_\u00b5\u00b0][A-Za-z0-9_ .()\[\]/%^*+\u00b5\u00b0-]{0,63}")
+_NOT_A_NAME = re.compile(r"[+-]?(?:nan|inf|infinity)", re.IGNORECASE)
+TIME_COLUMN_NAMES = ("time", "time_s", "t", "t_s", "seconds", "sec", "time_sec", "time(s)", "time (s)")
 
-    Any other content (a header, a word, a third column, nan, inf, a hexadecimal or underscore number) is ``input.invalid`` with the line number.
+
+def _looks_like_header(parts: list[str]) -> bool:
+    """A first line of column names: every field starts like a name (a letter or underscore), none is a number, nan or inf, none holds quotes or other code."""
+    return all(_HEADER_NAME.fullmatch(t) is not None and _NOT_A_NAME.fullmatch(t) is None for t in parts)
+
+
+def parse_table(text: str, *, param: str) -> tuple[list[str] | None, int | None, list[np.ndarray], int]:
+    """``(header, header_line, columns, first_data_line)`` from CSV text: comma or whitespace separated numbers, blank lines ignored.
+
+    An optional first line of column names (every field a name, never a number or code) is read as a header when the next line is numeric;
+    any other non-numeric content (a word among numbers, a header of numbers, nan, inf, a hexadecimal or underscore number) is ``input.invalid``
+    naming the line as "line N".
     """
     if "\x00" in text:
         raise UnitsError("input.invalid", f"{param}: the file is not text (it contains a NUL byte)", {"param": param})
@@ -261,21 +307,29 @@ def parse_csv_text(text: str, *, param: str) -> list[np.ndarray]:
         raise UnitsError("input.out_of_range", f"{param}: more than {MAX_SAMPLES} (2**22) lines", {"param": param, "limit_samples": MAX_SAMPLES})
     columns: list[list[float]] | None = None
     ncols = 0
+    header: list[str] | None = None
+    header_line: int | None = None
+    first_data = 0
     for number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         if not stripped:
             continue
         parts = [p.strip() for p in stripped.split(",")] if "," in stripped else stripped.split()
+        if columns is None and header is None and _looks_like_header(parts):
+            header, header_line = parts, number
+            continue
         if columns is None:
             ncols = len(parts)
-            if ncols not in (1, 2):
-                raise UnitsError("input.invalid", f"{param} line {number}: {ncols} columns; use one column of values or two columns time,value", {"param": param, "line": number})
+            first_data = number
+            if header is not None and len(header) != ncols:
+                raise UnitsError("input.invalid", f"{param} line {number}: {ncols} column(s), but the header on line {header_line} names {len(header)}", {"param": param, "line": number})
             columns = [[] for _ in range(ncols)]
         elif len(parts) != ncols:
             raise UnitsError("input.invalid", f"{param} line {number}: {len(parts)} column(s), the first line had {ncols}", {"param": param, "line": number})
         for index, token in enumerate(parts):
             if _NUMBER.fullmatch(token) is None:
-                raise UnitsError("input.invalid", f"{param} line {number}: {token[:30]!r} is not a number (the file must hold numbers only, no header, no text, no nan/inf)", {"param": param, "line": number})
+                hint = f" (line {header_line} was read as a header; the next line must be numbers)" if header is not None and number == first_data else ""
+                raise UnitsError("input.invalid", f"{param} line {number}: {token[:30]!r} is not a number (the file must hold numbers only, after an optional header line of column names; no text, no nan/inf){hint}", {"param": param, "line": number})
             value = float(token)
             if not math.isfinite(value):
                 raise UnitsError("input.invalid", f"{param} line {number}: {token[:30]!r} is not finite", {"param": param, "line": number})
@@ -284,10 +338,52 @@ def parse_csv_text(text: str, *, param: str) -> list[np.ndarray]:
             raise UnitsError("input.out_of_range", f"{param}: more than {MAX_SAMPLES} (2**22) samples", {"param": param, "limit_samples": MAX_SAMPLES})
     if columns is None or not columns[0]:
         raise UnitsError("input.invalid", f"{param}: the file holds no numbers", {"param": param})
-    return [np.array(c, dtype=float) for c in columns]
+    return header, header_line, [np.array(c, dtype=float) for c in columns], first_data
 
 
-def read_samples(handle: JobHandle, inline: Any, file: Any, *, param: str = "samples", file_param: str = "samples_file", min_len: int = 1) -> Samples:
+def parse_csv_text(text: str, *, param: str) -> list[np.ndarray]:
+    """Columns of numbers from CSV text (see :func:`parse_table`); the header, if any, is dropped."""
+    return parse_table(text, param=param)[2]
+
+
+def _pick_columns(header: list[str] | None, ncols: int, column: Any, *, file_param: str, first_line: int) -> tuple[int | None, int, str | None]:
+    """``(time_index, value_index, column_used)`` for a table of ``ncols`` columns and the caller's ``column`` (a name, a 1-based number, or blank)."""
+    names = [h.lower() for h in header] if header else None
+    wanted = "" if column is None else str(column).strip()
+    value: int | None = None
+    if wanted:
+        low = wanted.lower()
+        if names and low in names:
+            value = names.index(low)
+        elif re.fullmatch(r"[0-9]{1,3}", wanted) and 1 <= int(wanted) <= ncols:
+            value = int(wanted) - 1
+        else:
+            have = ", ".join(header[:12]) if header else f"column numbers 1 to {ncols}; the file has no header line"
+            raise UnitsError("input.invalid", f"'column' {wanted[:40]!r} is not in {file_param}; it has: {have}", {"param": "column", "columns": (header or [])[:20]})
+    elif ncols == 1:
+        return None, 0, None
+    elif ncols == 2:
+        return 0, 1, None
+    elif names and "output" in names:
+        value = names.index("output")  # the output column of the filtered.csv that dsp_filter_apply writes
+        wanted = "output"
+    else:
+        have = f" ({', '.join(header[:12])})" if header else ""
+        raise UnitsError(
+            "input.invalid",
+            f"{file_param} line {first_line}: {ncols} columns{have}; name the one to analyse with 'column' (a header name or a column number), or use one column of values or two columns time,value",
+            {"param": file_param, "line": first_line},
+        )
+    time: int | None = None
+    if names:
+        time = next((i for i, n in enumerate(names) if n in TIME_COLUMN_NAMES and i != value), None)
+    elif ncols == 2 and value == 1:
+        time = 0
+    used = header[value] if header else str(value + 1)
+    return time, value, used
+
+
+def read_samples(handle: JobHandle, inline: Any, file: Any, *, param: str = "samples", file_param: str = "samples_file", min_len: int = 1, column: Any = "") -> Samples:
     """Samples from the inline JSON list or from a CSV file read through ``JobHandle.input_file`` (the caller's path is never opened directly)."""
     has_inline, has_file = not is_blank(inline), not is_blank(file)
     if has_inline and has_file:
@@ -303,12 +399,14 @@ def read_samples(handle: JobHandle, inline: Any, file: Any, *, param: str = "sam
         text = path.read_bytes().decode("utf-8-sig")
     except UnicodeDecodeError:
         raise UnitsError("input.invalid", f"{file_param}: the file is not UTF-8 text", {"param": file_param}) from None
-    cols = parse_csv_text(text, param=file_param)
+    header, header_line, cols, first_line = parse_table(text, param=file_param)
+    skipped = None if header is None else ",".join(header)
+    time_index, value_index, used = _pick_columns(header, len(cols), column, file_param=file_param, first_line=first_line)
     if len(cols[0]) < min_len:
         raise UnitsError("input.invalid", f"{file_param} has {len(cols[0])} value(s); at least {min_len} are needed", {"param": file_param})
-    if len(cols) == 1:
-        return Samples(finite_array(cols[0], param=file_param, samples=True), None, "file")
-    t, x = cols
+    if time_index is None:
+        return Samples(finite_array(cols[value_index], param=file_param, samples=True), None, "file", header_skipped=skipped, column_used=used)
+    t, x = cols[time_index], cols[value_index]
     finite_array(t, param=file_param)
     if len(t) < 2:
         raise UnitsError("input.invalid", f"{file_param}: a time column needs at least two rows", {"param": file_param})
@@ -321,7 +419,7 @@ def read_samples(handle: JobHandle, inline: Any, file: Any, *, param: str = "sam
     fs = 1.0 / mean_dt
     if not RATE_RANGE[0] <= fs <= RATE_RANGE[1]:
         raise UnitsError("input.out_of_range", f"{file_param}: the time column implies a sample rate of {fs:g} Hz, outside {RATE_RANGE[0]:g} .. {RATE_RANGE[1]:g} Hz", {"param": file_param})
-    return Samples(finite_array(x, param=file_param, samples=True), fs, "file (time,value; time read as seconds)", float(t[0]))
+    return Samples(finite_array(x, param=file_param, samples=True), fs, "file (time,value; time read as seconds)", float(t[0]), header_skipped=skipped, column_used=used)
 
 
 def resolve_rate(samples: Samples, raw_rate: Any, *, required: bool = True, name: str = "sample_rate") -> float | None:
@@ -422,6 +520,6 @@ def db(value: float) -> float:
 
 __all__ = [
     "Computed", "JobHandle", "MAX_IIR_ORDER", "MAX_SAMPLES", "MAX_TABLE_ROWS", "MAX_TAPS", "QuantityOut", "Samples", "STANDING",
-    "array_from_json", "choice", "clean", "csv_text", "db", "finite_array", "frequency_list", "is_blank", "parse_csv_text", "parse_frequency",
+    "array_from_json", "choice", "clean", "csv_text", "db", "finite_array", "frequency_list", "input_info", "is_blank", "parse_csv_text", "parse_frequency", "parse_table",
     "plain", "plain_number", "qty", "read_samples", "record_text", "resolve_rate", "run", "sample_rate_hz", "whole_number",
 ]

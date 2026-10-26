@@ -136,3 +136,63 @@ def test_hostile_profile_is_bounded():
     started = time.perf_counter()
     assert not call(drive_sizing, **{**BASE, "profile": "("*6000}).ok
     assert time.perf_counter()-started < 1
+
+
+def test_peak_speed_above_rated_but_below_maximum_passes_with_a_warning():
+    # Coordinator item: 3750 rpm (392.70 rad/s) on a 3000 rpm (314.16 rad/s) rated / 5000 rpm (523.60 rad/s) maximum candidate.
+    # Margins: rated 314.159 - 392.699 = -78.54 rad/s, maximum 523.599 - 392.699 = +130.90 rad/s.  A servo may run above its rated speed.
+    r = ok(drive_sizing, load_inertia="0.002 kg*m^2", profile="1 s,0 rpm,3750 rpm,0.1 N*m;1 s,3750 rpm,0 rpm,0 N*m",
+           candidates="M1,0.00005 kg*m^2,1 N*m,3 N*m,3000 rpm,5000 rpm")
+    (row,) = r.data["candidates"]
+    close(row["rated_speed_margin_rad_s"], 3000*math.pi/30 - 3750*math.pi/30)
+    close(row["maximum_speed_margin_rad_s"], 5000*math.pi/30 - 3750*math.pi/30)
+    assert row["rated_speed_margin_rad_s"] < -78 and row["maximum_speed_margin_rad_s"] > 130
+    assert row["status"].startswith("pass") and "above rated speed (1.25 x)" in row["status"] and "torque-speed curve" in row["status"]
+    assert any("1.25 times its rated speed" in w and "torque-speed curve" in w for w in r.warnings)
+    assert "maximum speed" in r.data["candidate_speed_note"]
+
+
+def test_peak_speed_above_the_maximum_speed_still_fails():
+    r = ok(drive_sizing, load_inertia="0.002 kg*m^2", profile="1 s,0 rpm,5500 rpm,0.1 N*m;1 s,5500 rpm,0 rpm,0 N*m",
+           candidates="M1,0.00005 kg*m^2,1 N*m,3 N*m,3000 rpm,5000 rpm")
+    (row,) = r.data["candidates"]
+    assert row["status"].startswith("fail") and row["maximum_speed_margin_rad_s"] < 0
+    assert not any("times its rated speed" in w for w in r.warnings)
+
+
+def test_peak_speed_within_rated_speed_has_the_plain_status_and_no_warning():
+    r = ok(drive_sizing, load_inertia="0.002 kg*m^2", profile="1 s,0 rpm,2000 rpm,0.1 N*m;1 s,2000 rpm,0 rpm,0 N*m",
+           candidates="M1,0.00005 kg*m^2,1 N*m,3 N*m,3000 rpm,5000 rpm")
+    (row,) = r.data["candidates"]
+    assert row["status"] == "pass within stated profile and scalar limits"
+    assert not any("times its rated speed" in w for w in r.warnings)
+
+
+def test_cycle_time_adds_a_zero_speed_dwell_and_lowers_the_rms():
+    # Triangle move 4 rad in 2 s, J = 2 + 0.5 kg*m^2: torque +/-10 N*m, move RMS 10.  A 4 s cycle adds 2 s of rest at zero torque:
+    # RMS = sqrt(10^2 * 2 / 4) = 7.0711 N*m (the move alone overstates it by 41 %).
+    move = ok(drive_sizing, load_inertia="2 kg*m^2", rotor_inertia="0.5 kg*m^2", distance="4 rad", move_time="2 s", rated_torque="8 N*m")
+    cycle = ok(drive_sizing, load_inertia="2 kg*m^2", rotor_inertia="0.5 kg*m^2", distance="4 rad", move_time="2 s", cycle_time="4 s", rated_torque="8 N*m")
+    close(v(move, "rms_torque_with_rotor"), 10)
+    close(v(cycle, "rms_torque_with_rotor"), 10/math.sqrt(2))
+    close(v(cycle, "peak_torque_with_rotor"), 10)
+    close(v(cycle, "profile_duration"), 4)
+    assert move.data["profile_thermal_check"].startswith("fail") and cycle.data["profile_thermal_check"].startswith("pass")
+    assert any("no dwell" in w and "cycle_time" in w for w in move.warnings)
+    assert not any("no dwell" in w for w in cycle.warnings)
+
+
+def test_dwell_holds_the_stated_load_and_gravity():
+    # Dwell of 2 s holding 6 N*m: RMS^2 = (100 * 2 + 36 * 2) / 4 = 68
+    r = ok(drive_sizing, load_inertia="2 kg*m^2", rotor_inertia="0.5 kg*m^2", distance="4 rad", move_time="2 s", cycle_time="4 s", dwell_load="6 N*m")
+    close(v(r, "rms_torque_with_rotor"), math.sqrt(68))
+    g = ok(drive_sizing, model="screw", load_mass="10 kg", lead=f"{2*math.pi} m", gravity_angle="90 deg", distance="1 m", move_time="2 s", cycle_time="4 s")
+    assert v(g, "rms_torque_with_rotor") > 0.7*10*9.80665  # gravity is held during the rest
+
+
+def test_cycle_time_refusals():
+    for extra, param in (({"cycle_time": "1 s"}, "/cycle_time"), ({"dwell_load": "1 N*m"}, "/dwell_load")):
+        r = call(drive_sizing, load_inertia="2 kg*m^2", distance="4 rad", move_time="2 s", **extra)
+        assert r.ok is False and r.error.details["param"] == param, r.error
+    r = call(drive_sizing, load_inertia="2 kg*m^2", profile="1 s,0 rad/s,0 rad/s,0 N*m", cycle_time="4 s")
+    assert r.ok is False and r.error.details["param"] == "/cycle_time"

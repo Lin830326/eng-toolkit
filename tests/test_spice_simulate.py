@@ -311,3 +311,12 @@ async def test_gateway_lists_the_three_tools_with_basic_parameter_types():
         for pname, prop in tools[name].input_schema.get("properties", {}).items():
             assert prop.get("type") in {"string", "number", "integer", "boolean"}, (name, pname, prop)
             assert prop.get("description"), (name, pname)
+
+
+
+async def test_a_relative_workspace_path_works_for_ngspice(tmp_path, monkeypatch):
+    # UAT item 1: "ngspice exited with code 1" when ENG_TOOLKIT_WS was relative
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ENG_TOOLKIT_WS", "relative-ws")
+    r = await call("spice_simulate", {"netlist": DIVIDER, "analysis": "op"})
+    assert r.ok, r.error

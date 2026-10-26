@@ -34,6 +34,7 @@ from eng_toolkit.domains.dsp._common import (
     choice,
     clean,
     csv_text,
+    input_info,
     is_blank,
     parse_frequency,
     plain,
@@ -116,14 +117,15 @@ def sampling(
     sinad_db: Annotated[float, Field(description="quantization: measured SINAD in dB, to get the ENOB (0 = not given)")] = 0.0,
     factor: Annotated[int, Field(description="decimate/interpolate: integer factor, 2..1000")] = 0,
     samples: Annotated[str, Field(description="decimate/interpolate: samples as JSON text (at most 4194304)")] = "",
-    samples_file: Annotated[str, Field(description="decimate/interpolate: CSV file, value or time,value")] = "",
+    samples_file: Annotated[str, Field(description="decimate/interpolate: CSV file, value or time,value, optional header line")] = "",
+    column: Annotated[str, Field(description="Value column of samples_file, by header name or number (1 = first); blank = the single value column")] = "",
     attenuation_db: Annotated[float, Field(description="decimate/interpolate: stopband attenuation of the FIR in dB, 21..140 (default 60)")] = 60.0,
     passband_fraction: Annotated[float, Field(description="decimate/interpolate: kept fraction of the Nyquist band, 0.1..0.95 (default 0.8)")] = 0.8,
 ) -> ToolResult:
     inputs = {
         "operation": operation, "frequency": frequency, "sample_rate": sample_rate, "max_frequency": max_frequency, "guard_band": guard_band,
         "lowest_frequency": lowest_frequency, "bits": bits, "input_level_dbfs": input_level_dbfs, "sinad_db": sinad_db, "factor": factor,
-        "samples": record_text(samples), "samples_file": samples_file, "attenuation_db": attenuation_db, "passband_fraction": passband_fraction,
+        "samples": record_text(samples), "samples_file": samples_file, "column": column, "attenuation_db": attenuation_db, "passband_fraction": passband_fraction,
     }
 
     def compute(handle: JobHandle) -> Computed:
@@ -229,7 +231,8 @@ def sampling(
             raise UnitsError("input.missing" if m == 0 else "input.invalid", f"operation '{op}' needs an integer 'factor' of at least 2", {"param": "factor"})
         atten = plain_number(attenuation_db, name="attenuation_db", lo=21.0, hi=140.0)
         pf = plain_number(passband_fraction, name="passband_fraction", lo=0.1, hi=0.95)
-        data_in = read_samples(handle, samples, samples_file, min_len=2)
+        data_in = read_samples(handle, samples, samples_file, min_len=2, column=column)
+        data.update(input_info(data_in))
         x = data_in.x
         n = len(x)
         fs = resolve_rate(data_in, sample_rate)

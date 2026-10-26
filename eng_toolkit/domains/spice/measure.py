@@ -11,7 +11,14 @@ The formulas (``y`` is the chosen column, ``x`` the first column; every crossing
                     (``tolerance`` default 0.02); an error if the last sample is still outside.
 * ``bandwidth_3db`` for a low-pass response (``.mag`` or ``.db`` column of an ac table): the first frequency at which the gain is 10 log10(2) = 3.0103 dB
                     below the gain of the first (lowest-frequency) sample; interpolated linearly in dB against log10(frequency).  Needs a ``frequency`` column.
+* ``bandpass_3db``  for a band-pass response: the peak (maximum gain) and the two frequencies at which the gain is 3.0103 dB below the peak, one on each side
+                    (interpolated linearly in dB against log10(frequency)); the value is the bandwidth ``f_upper - f_lower``, and the lower and upper corners,
+                    the peak frequency and gain and the geometric centre ``sqrt(f_lower f_upper)`` are values too.  A missing corner (the gain never falls
+                    3 dB on that side within the table) is an error that names the other corner.
 * ``value_at``      ``y`` at the x given in ``at``, interpolated linearly.
+
+Units follow the column: ``v(...)`` volt, ``i(...)`` ampere, but ``.db`` decibel and ``.phase_deg`` degree.  On an ac table a bare name such as ``v(out)``
+means ``v(out).mag`` (the magnitude per unit source) for every measurement; ask for ``v(out).db`` or ``v(out).phase_deg`` explicitly.
 
 These are properties of the sampled table, not of the circuit: a coarse time grid or a few ac points per decade limits them (the interpolation
 error is the second difference of the curve over the step, about step^2 / 8 times its curvature).
@@ -32,7 +39,7 @@ from eng_toolkit.errors import ToolFailure
 from eng_toolkit.runner import Computed, JobHandle, run_tool
 from eng_toolkit.units import UnitsError, parse_quantity
 
-MEASUREMENTS = ("steady_state", "rise_time", "fall_time", "overshoot", "settling_time", "bandwidth_3db", "value_at")
+MEASUREMENTS = ("steady_state", "rise_time", "fall_time", "overshoot", "settling_time", "bandwidth_3db", "bandpass_3db", "value_at")
 MAX_CSV_BYTES = 20_000_000
 MAX_CSV_ROWS = 500_000
 MAX_CSV_COLUMNS = 200
@@ -79,6 +86,34 @@ def _resolve(header: list[str], column: str, suffixes: tuple[str, ...] = ()) -> 
         if candidate in names:
             return names.index(candidate) + 1
     raise ToolFailure("input.invalid", f"'column' {wanted[:40]!r} is not in the file; columns: {', '.join(header[1:8])}{' ...' if len(header) > 8 else ''}", {"param": "column", "columns": header[1:20]})
+
+
+def column_unit(name: str) -> str:
+    """The unit of a table column from its name: ``.db`` decibel, ``.phase_deg`` degree, else volt for ``v(...)``, ampere for ``i(...)``."""
+    low = name.lower()
+    if low.endswith(".db"):
+        return "decibel"
+    if low.endswith(".phase_deg"):
+        return "degree"
+    return "volt" if low.startswith("v(") else "ampere" if low.startswith("i(") else "dimensionless"
+
+
+def _gain_db(header: list[str], cols: list[list[float]], k: int, kind: str) -> list[float]:
+    name = header[k].lower()
+    if name.endswith(".db"):
+        return cols[k]
+    if name.endswith(".mag"):
+        return [20.0 * math.log10(v) if v > 1e-20 else -400.0 for v in cols[k]]
+    raise ToolFailure("input.invalid", f"{kind} needs a '.mag' or '.db' column", {"param": "column", "column": header[k][:40]})
+
+
+def _corner_below(logf: list[float], gain_db: list[float], target: float, peak: int) -> float | None:
+    """log10(f) of the first crossing of ``target`` going from the peak towards lower frequency, or ``None``."""
+    for k in range(peak, 0, -1):
+        a, b = gain_db[k], gain_db[k - 1]  # a is nearer the peak
+        if a > target >= b:
+            return logf[k] + (logf[k - 1] - logf[k]) * (target - a) / (b - a)
+    return None
 
 
 def interpolate(xs: list[float], ys: list[float], x: float) -> float:
@@ -149,30 +184,27 @@ def _measure(kind: str, header: list[str], cols: list[list[float]], column: str,
     xname = header[0].lower()
     if any(b <= a for a, b in zip(xs, xs[1:])):
         raise ToolFailure("input.invalid", "the first column must be strictly increasing", {"param": "csv_file"})
-    if kind == "bandwidth_3db":
+    if kind in ("bandwidth_3db", "bandpass_3db"):
         k = _resolve(header, column, (".db", ".mag"))
         if xname != "frequency":
-            raise ToolFailure("input.invalid", "bandwidth_3db needs a table whose first column is 'frequency' (an ac result)", {"first_column": header[0][:30]})
-        name = header[k].lower()
-        if name.endswith(".db"):
-            gain_db = cols[k]
-        elif name.endswith(".mag"):
-            gain_db = [20.0 * math.log10(v) if v > 1e-20 else -400.0 for v in cols[k]]
-        else:
-            raise ToolFailure("input.invalid", "bandwidth_3db needs a '.mag' or '.db' column", {"param": "column", "column": header[k][:40]})
-        target = gain_db[0] - DB_3
+            raise ToolFailure("input.invalid", f"{kind} needs a table whose first column is 'frequency' (an ac result)", {"first_column": header[0][:30]})
+        gain_db = _gain_db(header, cols, k, kind)
         logf = [math.log10(f) if f > 0 else -300.0 for f in xs]
+        if kind == "bandpass_3db":
+            return _bandpass(header[k], xs, logf, gain_db)
+        target = gain_db[0] - DB_3
         f = crossing(logf, gain_db, target, rising=False)
         if f is None:
+            hint = "; if this is a band-pass response (the gain rises first) use bandpass_3db" if max(gain_db) > gain_db[0] + 0.5 else ""
             raise ToolFailure(
                 "measure.not_found",
-                "the gain never falls 3.0103 dB below its first sample within the table; sweep to a higher stop frequency (or this is not a low-pass response)",
-                {"first_gain_db": gain_db[0], "last_gain_db": gain_db[-1]},
+                "the gain never falls 3.0103 dB below its first sample within the table; sweep to a higher stop frequency (or this is not a low-pass response)" + hint,
+                {"first_gain_db": gain_db[0], "last_gain_db": gain_db[-1], "peak_gain_db": max(gain_db)},
             )
         return 10.0**f, "hertz", {"reference_gain_db": gain_db[0], "target_gain_db": target, "formula": "first f with gain = gain(first sample) - 3.0103 dB, linear in dB vs log10(f)"}
-    k = _resolve(header, column)
+    k = _resolve(header, column, (".mag",) if xname == "frequency" else ())
     ys = cols[k]
-    unit = "volt" if header[k].lower().startswith("v(") else "ampere" if header[k].lower().startswith("i(") else "dimensionless"
+    unit = column_unit(header[k])
     if kind == "value_at":
         assert at is not None
         return interpolate(xs, ys, at), unit, {"x": at, "formula": "linear interpolation between neighbouring samples"}
@@ -216,6 +248,33 @@ def _measure(kind: str, header: list[str], cols: list[list[float]], column: str,
     raise ToolFailure("input.invalid", f"unknown measurement {kind!r}", {"param": "measurement", "allowed": list(MEASUREMENTS)})
 
 
+def _bandpass(column_name: str, xs: list[float], logf: list[float], gain_db: list[float]) -> tuple[float, str, dict[str, Any]]:
+    peak = max(range(len(gain_db)), key=gain_db.__getitem__)
+    peak_db = gain_db[peak]
+    target = peak_db - DB_3
+    lower = _corner_below(logf, gain_db, target, peak)
+    upper = crossing(logf, gain_db, target, rising=False, start=peak)
+    info: dict[str, Any] = {
+        "column_used": column_name, "peak_frequency_hz": xs[peak], "peak_gain_db": peak_db, "target_gain_db": target,
+        "lower_corner_hz": None if lower is None else 10.0**lower, "upper_corner_hz": None if upper is None else 10.0**upper,
+        "formula": "peak = maximum gain; each corner is the crossing of peak - 3.0103 dB on its side of the peak, linear in dB vs log10(f)",
+    }
+    if lower is None or upper is None:
+        side = "lower" if lower is None else "upper"
+        raise ToolFailure(
+            "measure.not_found",
+            f"the gain never falls 3.0103 dB below its peak ({peak_db:.2f} dB at {xs[peak]:g} Hz) on the {side} side within the table; "
+            f"sweep further {'down' if lower is None else 'up'} (the {'upper' if lower is None else 'lower'} corner is in the details)",
+            info,
+        )
+    fl, fu = 10.0**lower, 10.0**upper
+    info["extra_values"] = {
+        "lower_corner_3db": (fl, "hertz"), "upper_corner_3db": (fu, "hertz"), "peak_frequency": (xs[peak], "hertz"),
+        "peak_gain_db": (peak_db, "decibel"), "center_frequency_geometric": (math.sqrt(fl * fu), "hertz"),
+    }
+    return fu - fl, "hertz", info
+
+
 def _at(raw: str, xname: str) -> float:
     if not raw or not raw.strip():
         raise UnitsError("input.missing", "'at' is required for value_at (a position on the first column, with a unit)", {"param": "at"})
@@ -234,14 +293,15 @@ def _at(raw: str, xname: str) -> float:
     description=(
         "Derive a number from a simulation table (the result.csv of spice_simulate, or any CSV whose first column is the x axis): "
         "steady_state value, rise_time or fall_time (10 % to 90 %), overshoot (percent), settling_time (within a tolerance band), "
-        "bandwidth_3db (low-pass -3.0103 dB frequency from an ac table) or value_at (interpolated). The formulas are in the result. "
+        "bandwidth_3db (low-pass -3.0103 dB frequency from an ac table), bandpass_3db (peak, lower and upper -3.0103 dB corners and bandwidth) or "
+        "value_at (interpolated). Units follow the column (volt, ampere, decibel for .db, degree for .phase_deg). The formulas are in the result. "
         "Needs no ngspice."
     ),
 )
 def spice_measure(
     csv_file: Annotated[str, Field(description="Path to the table, e.g. the result.csv artifact of spice_simulate (header row, first column = time, frequency or sweep)")],
-    measurement: Annotated[str, Field(description="One of: steady_state, rise_time, fall_time, overshoot, settling_time, bandwidth_3db, value_at")],
-    column: Annotated[str, Field(description="Column name, e.g. 'v(out)' (ac tables: 'v(out)' picks v(out).mag or v(out).db). May be empty when the table has one data column.")] = "",
+    measurement: Annotated[str, Field(description="One of: steady_state, rise_time, fall_time, overshoot, settling_time, bandwidth_3db, bandpass_3db, value_at")],
+    column: Annotated[str, Field(description="Column name, e.g. 'v(out)' (ac tables: 'v(out)' means v(out).mag; use 'v(out).db' or '.phase_deg' to say otherwise). May be empty when the table has one data column.")] = "",
     final_fraction: Annotated[float, Field(description="Share of the x span at the end that defines the steady-state value, 0 < f <= 0.5 (default 0.1)")] = 0.1,
     tolerance: Annotated[float, Field(description="settling_time only: half-width of the band as a share of the step, 0 < tol < 1 (default 0.02 = 2 %)")] = 0.02,
     at: Annotated[str, Field(description="value_at only: the x position with unit, e.g. '1 ms' for a time table, '1 kHz' for frequency, '2 V' for a DC sweep")] = "",
@@ -262,6 +322,7 @@ def spice_measure(
         if not math.isfinite(value):
             raise ToolFailure("engine.failure", "the measurement is not a finite number", {"param": "/column"})
         q = QuantityOut(quantity=value, unit=unit)
+        extra = details.pop("extra_values", {})
         warnings = ["A property of the sampled table: its accuracy is limited by the sample spacing and by the simulation's own error."]
         moving = details.get("last_sample_vs_steady_state_percent_of_step", 0.0)
         if moving > 0.1:
@@ -270,7 +331,7 @@ def spice_measure(
                 "so this result is relative to a value that is not final; run the simulation longer"
             )
         return Computed(
-            values={kind: q},
+            values={kind: q, **{name: QuantityOut(quantity=float(v), unit=u) for name, (v, u) in extra.items()}},
             primary=kind,
             data={"measurement": kind, "x_column": header[0], "column": column, "samples": len(cols[0]), **details},
             warnings=warnings,

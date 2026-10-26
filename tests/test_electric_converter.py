@@ -313,3 +313,58 @@ def test_empty_call_and_missing_capacitance_are_structured():
     result = ok(converter, **_args(output_capacitance=""))
     assert result.data["control_to_output_ideal_ccm"] is None
     assert "output_ripple_total_peak_to_peak" not in result.values
+
+
+SYNC = dict(topology="buck", synchronous=True, input_voltage="24 V", output_voltage="5 V", output_current="3 A", switching_frequency="500 kHz",
+            inductance="10 uH", output_capacitance="47 uF", capacitor_esr="5 mohm", switch_resistance="12 mohm", low_side_resistance="6 mohm",
+            inductor_resistance="20 mohm", rise_time="10 ns", fall_time="10 ns", gate_charge="16 nC", gate_voltage="5 V", dead_time="20 ns",
+            diode_drop="0.7 V")
+
+
+def test_synchronous_buck_hand_numbers():
+    # UAT E4: 24 V -> 5 V, 3 A, 500 kHz.  Ron = 12 + 20 = 32 mohm (switch + DCR), Roff = 6 + 20 = 26 mohm (low side + DCR), no diode drop in CCM.
+    # D*24 - 5 = 3*(0.032 D + 0.026 (1-D)) -> D = 5.078 / 23.982.  Ripple = (19 - 3*0.032) D / (L f) = 18.904 D / 5.
+    d = 5.078 / 23.982
+    ripple = 18.904 * d / 5
+    r = ok(converter, **SYNC)
+    close(v(r, "duty_cycle"), d)
+    close(v(r, "inductor_ripple_peak_to_peak", "A"), ripple)
+    # low-side conduction = 6 mohm * (1-D) * (Io^2 + ripple^2/12); dead time = Vf * (Ipk + Imin) * t_dead * f = 0.7 * 6 * 20e-9 * 500e3 = 0.042 W
+    close(v(r, "low_side_conduction_loss", "W"), 0.006 * (1 - d) * (9 + ripple ** 2 / 12))
+    close(v(r, "dead_time_loss", "W"), 0.042)
+    close(v(r, "diode_conduction_loss", "W"), 0)  # the diode drop is only the body diode in the dead time
+    close(v(r, "gate_drive_loss", "W"), 16e-9 * 5 * 500e3)
+    assert r.data["synchronous"] is True and r.data["losses_given"] is True
+    assert 0.0428 < v(r, "low_side_conduction_loss", "W") < 0.0429
+    assert 0.94 < v(r, "efficiency") < 0.97
+    # the stage without the synchronous FET: the diode drop conducts in the off interval, so the loss is far higher
+    diode = ok(converter, **{**SYNC, "synchronous": False, "low_side_resistance": "0 ohm", "dead_time": "0 s"})
+    assert v(diode, "diode_conduction_loss", "W") > 1.0 and v(diode, "efficiency") < v(r, "efficiency")
+    assert diode.data["synchronous"] is False
+
+
+def test_synchronous_inputs_are_refused_without_synchronous():
+    for name, value in (("low_side_resistance", "6 mohm"), ("dead_time", "20 ns")):
+        r = call(converter, **{**_args(), name: value})
+        assert r.ok is False and r.error.details["param"] == "/" + name
+
+
+def test_dead_time_must_fit_the_period():
+    r = call(converter, **{**SYNC, "dead_time": "200 ns"})  # 2 * 200 ns * 500 kHz = 20 %
+    assert r.ok is False and r.error.details["param"] == "/dead_time"
+
+
+def test_synchronous_diode_emulation_in_dcm_has_no_reverse_current():
+    r = ok(converter, **{**SYNC, "output_current": "0.1 A", "inductance": "10 uH", "gate_charge": "0 C", "gate_voltage": "0 V"})
+    assert r.data["conduction_mode"] == "dcm"
+    close(v(r, "inductor_current_minimum", "A"), 0)
+    assert v(r, "dead_time_loss", "W") > 0 and v(r, "efficiency") < 1
+
+
+def test_no_loss_inputs_is_flagged_as_ideal():
+    # UAT E4-2: efficiency 0.99996 and nothing said that it was not a prediction
+    r = ok(converter, **_args(capacitor_esr="10 mohm"))
+    assert r.data["losses_given"] is False
+    assert any(w.startswith("Ideal: no loss inputs") and "not a prediction" in w for w in r.warnings)
+    lossy = ok(converter, **_args(switch_resistance="10 mohm"))
+    assert lossy.data["losses_given"] is True and not any("Ideal: no loss inputs" in w for w in lossy.warnings)

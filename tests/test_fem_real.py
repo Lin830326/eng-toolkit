@@ -468,3 +468,16 @@ def test_a_failed_equilibrium_discards_the_result(tmp_path, monkeypatch):
     monkeypatch.setattr(solver, "read_dat", doctored)
     message = failure(static(bar(tmp_path)), "fem.equilibrium_failed")
     assert "do not balance" in message and "discarded" in message
+
+
+def test_per_axis_displacement_maxima_are_values_next_to_the_magnitude(tmp_path):
+    # UAT S3: max_displacement is a magnitude.  The bar of 10 x 10 mm cross-section pulled by 10 kN: ux = F L / (A E) at the tip face; the lateral
+    # Poisson contraction of a corner (5 mm from the axis) is nu eps 5 mm with eps = ux / L.
+    r = ok(static(bar(tmp_path), element_size="5 mm"))
+    tip_x = 10000.0 * 100.0 / (100.0 * 210000.0)
+    lateral = 0.3 * tip_x / 100.0 * 5.0
+    assert v(r, "max_displacement_ux") == pytest.approx(tip_x, rel=1e-4)
+    assert v(r, "max_displacement_uy") == pytest.approx(lateral, rel=2e-3) and v(r, "max_displacement_uz") == pytest.approx(lateral, rel=2e-3)
+    assert r.values["max_displacement_uy"].unit == "millimeter"
+    assert [v(r, f"max_displacement_u{a}") for a in "xyz"] == pytest.approx(r.data["max_displacement_components_mm"], rel=1e-12)
+    assert v(r, "max_displacement") >= max(v(r, f"max_displacement_u{a}") for a in "xyz")

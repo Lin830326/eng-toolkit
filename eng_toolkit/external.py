@@ -18,10 +18,12 @@ The program is trusted with nothing: the caller validates what it wrote.  Nothin
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -43,6 +45,7 @@ DEFAULT_MEMORY_MB = 2048
 DEFAULT_OUTPUT_BYTES = 50_000_000
 VERSION_TIMEOUT_S = 10.0
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+ALIAS_OVER = 180  # a job directory path longer than this (Windows only) is shown to the program through a short junction
 _WINDOWS_PROGRAM = (".exe", ".com")  # a file with another suffix (.cmd, .bat) is started only when ENV_VAR names it
 
 # Variables copied from the server to the child on top of the ones built for it.  Everything else (API keys, tokens, the
@@ -201,9 +204,10 @@ def path_additions(tool: ExternalTool, program: str) -> list[str]:
     return out
 
 
-def child_environment(tool: ExternalTool, program: str, workdir: Path) -> dict[str, str]:
+def child_environment(tool: ExternalTool, program: str, workdir: Path, temp: Path | None = None) -> dict[str, str]:
     """The environment of the child: system variables, ``PATH`` (additions, the program's own folder, the system directories),
-    ``TEMP``/``TMP``/``TMPDIR`` and the home directories inside ``workdir``, the descriptor's ``keep_env`` and ``env``."""
+    ``TEMP``/``TMP``/``TMPDIR`` (``temp``, else ``workdir/tmp``), the home directories inside ``workdir``, the descriptor's
+    ``keep_env`` and ``env``."""
     windows = sys.platform == "win32"
     wanted = {name.upper() for name in (_SYSTEM_ENV_WINDOWS if windows else _SYSTEM_ENV_POSIX)}
     env = {key: value for key, value in os.environ.items() if key.upper() in wanted}
@@ -212,7 +216,8 @@ def child_environment(tool: ExternalTool, program: str, workdir: Path) -> dict[s
             env[name] = os.environ[name]
     directories = [*path_additions(tool, program), str(Path(program).resolve().parent), *_system_directories()]
     env["PATH"] = os.pathsep.join(dict.fromkeys(directories))
-    temp = workdir / "tmp"
+    if temp is None:
+        temp = workdir / "tmp"
     home = workdir / "home"
     for d in (temp, home):
         d.mkdir(exist_ok=True)
@@ -233,6 +238,47 @@ def child_environment(tool: ExternalTool, program: str, workdir: Path) -> dict[s
     return env
 
 
+@contextlib.contextmanager
+def _scratch():
+    """A short, unique, private folder for the program's temporary files, removed afterwards.
+
+    It lives directly under the system temporary folder (a name like ``etk1a2b3c4d``), not inside the job directory: a program such
+    as Yosys starts ABC, which writes ``<TEMP>/yosys-abc-XXXXXX/stdcells.genlib``, and a job directory below a long workspace path
+    would push that name over the 260-character limit of Windows programs.
+    """
+    path = Path(tempfile.mkdtemp(prefix="etk"))
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _alias(workdir: Path, scratch: Path) -> Path | None:
+    """On Windows, a junction ``<scratch>/j`` to a long ``workdir`` (the program then sees a short path), else ``None``.
+
+    The 260-character limit is checked on the path a program passes to Windows, not on where a junction leads, so everything
+    below ``workdir`` stays reachable.  ``None`` when no alias is needed or none can be made; the program then gets ``workdir``.
+    """
+    if sys.platform != "win32" or len(str(workdir)) <= ALIAS_OVER:
+        return None
+    try:
+        import _winapi
+
+        link = scratch / "j"
+        _winapi.CreateJunction(str(workdir), str(link))
+        return link
+    except (ImportError, AttributeError, OSError):
+        return None
+
+
+def _drop_alias(link: Path | None) -> None:
+    if link is not None:
+        try:
+            os.rmdir(link)  # removes the junction only, never what it leads to
+        except OSError:
+            pass
+
+
 def clean_text(raw: bytes | str, limit: int, hide: tuple[tuple[str, str], ...] = ()) -> str:
     """Printable text of at most ``limit`` characters from the end of ``raw``.
 
@@ -249,8 +295,9 @@ def clean_text(raw: bytes | str, limit: int, hide: tuple[tuple[str, str], ...] =
     return text if len(text) <= limit else "..." + text[-limit:]
 
 
-def _hidden_paths(workdir: Path) -> tuple[tuple[str, str], ...]:
+def _hidden_paths(workdir: Path, *aliases: Path | None) -> tuple[tuple[str, str], ...]:
     pairs = [(str(workdir), "<job>"), (str(workdir.resolve()), "<job>")]
+    pairs.extend((str(alias), "<job>") for alias in aliases if alias is not None)
     for home in {os.path.expanduser("~"), os.environ.get("USERPROFILE", "")}:
         if home and home != "~":
             pairs.append((home, "<home>"))
@@ -306,8 +353,10 @@ def _file_records(root: Path, before: dict[str, tuple[int, int]], after: dict[st
     return tuple(records), len(changed) > MAX_RECORDED_FILES
 
 
-def _confine(args: list[Any], workdir: Path) -> list[str]:
-    """The argument list as strings.  A :class:`~os.PathLike` argument must lie inside ``workdir``; a string is passed as it is."""
+def _confine(args: list[Any], workdir: Path, alias: Path | None = None) -> list[str]:
+    """The argument list as strings.  A :class:`~os.PathLike` argument must lie inside ``workdir``; a string is passed as it is.
+
+    With ``alias`` (a short junction to ``workdir``) the part of an argument that names ``workdir`` is written with the alias."""
     base = os.path.normcase(str(workdir.resolve()))
     out: list[str] = []
     for arg in args:
@@ -322,6 +371,9 @@ def _confine(args: list[Any], workdir: Path) -> list[str]:
         text = os.fspath(arg) if isinstance(arg, os.PathLike) else str(arg)
         if "\x00" in text:
             raise ToolFailure("input.invalid", "an argument holds a NUL character", {})
+        if alias is not None:
+            for form in dict.fromkeys((str(workdir), str(workdir.resolve()))):
+                text = re.sub(re.escape(form), lambda _m: str(alias), text, flags=re.IGNORECASE)
         out.append(text)
     return out
 
@@ -355,10 +407,37 @@ def run(
         located, why = locate(tool)
         if located is None:
             raise unavailable(tool, why)
-    workdir = Path(workdir)
-    argv = [located.path, *_confine(args, workdir)]
-    env = child_environment(tool, located.path, workdir)
-    hide = _hidden_paths(workdir)
+    workdir = Path(os.path.abspath(workdir))  # the program starts inside it, so nothing handed to it may stay relative
+    with _scratch() as scratch:
+        link = _alias(workdir, scratch)
+        try:
+            return _run_in(
+                tool, args, workdir=workdir, located=located, timeout_s=timeout_s, memory_mb=memory_mb, max_output_bytes=max_output_bytes,
+                check=check, temp=scratch / "t", alias=link,
+            )
+        finally:
+            _drop_alias(link)
+
+
+def _run_in(
+    tool: ExternalTool,
+    args: list[Any],
+    *,
+    workdir: Path,
+    located: Located,
+    timeout_s: float,
+    memory_mb: int | None,
+    max_output_bytes: int,
+    check: bool,
+    temp: Path,
+    alias: Path | None,
+) -> Record:
+    """:func:`run` once the temporary folder (``temp``) exists and the short alias of a long ``workdir`` (``alias``) is made."""
+    temp.mkdir(exist_ok=True)
+    start_dir = alias if alias is not None else workdir
+    argv = [located.path, *_confine(args, workdir, alias)]
+    env = child_environment(tool, located.path, start_dir, temp)
+    hide = (*_hidden_paths(workdir, alias), (str(temp.parent), "<tmp>"))
     before = _snapshot(workdir)
     limits = {"timeout_s": timeout_s, "memory_mb": memory_mb, "max_output_bytes": max_output_bytes}
     started = time.monotonic()
@@ -370,7 +449,7 @@ def run(
                 stdin=subprocess.DEVNULL,
                 stdout=out,
                 stderr=err,
-                cwd=str(workdir),
+                cwd=str(start_dir),
                 env=env,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 start_new_session=sys.platform != "win32",
@@ -388,11 +467,11 @@ def run(
                 if time.monotonic() - started > timeout_s:
                     _kill_tree(proc)
                     raise ToolFailure("engine.timeout", f"{tool.name} took longer than {timeout_s:g} s and was stopped", {"tool": tool.name, **limits})
-                over = _over(out, err, before, workdir, max_output_bytes)
+                over = _over(out, err, before, workdir, max_output_bytes, temp)
                 if over:
                     _kill_tree(proc)
                     raise _limit_failure(tool, over, max_output_bytes, limits)
-            over = _over(out, err, before, workdir, max_output_bytes)  # written faster than the polling interval
+            over = _over(out, err, before, workdir, max_output_bytes, temp)  # written faster than the polling interval
             if over:
                 raise _limit_failure(tool, over, max_output_bytes, limits)
         finally:
@@ -425,12 +504,14 @@ def run(
     return record
 
 
-def _over(out, err, before: dict[str, tuple[int, int]], workdir: Path, cap: int) -> tuple[str, int] | None:
+def _over(out, err, before: dict[str, tuple[int, int]], workdir: Path, cap: int, temp: Path | None = None) -> tuple[str, int] | None:
     for stream, handle in (("stdout", out), ("stderr", err)):
         size = os.fstat(handle.fileno()).st_size
         if size > STREAM_CAP:
             return stream, size
     written = _grown(before, _snapshot(workdir))
+    if temp is not None:
+        written += _grown({}, _snapshot(temp))  # what it leaves in its temporary folder counts too
     return ("output", written) if written > cap else None
 
 

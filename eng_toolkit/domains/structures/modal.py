@@ -99,6 +99,8 @@ def modal(
         r.artifacts.append(artifact)
         r.data["mode_shape_table"] = {"file":artifact.path,"rows":len(rows),"normalization":"phi^T M phi=1 with SI M; columns are modal coefficients, not physical vibration amplitudes; sign set by largest coefficient"}
         r.add("first_frequency",math.sqrt(values[0])/(2*math.pi),"frequency")
+        for j,eigenvalue in enumerate(values):
+            r.add(f"frequency_mode_{j+1}",math.sqrt(eigenvalue)/(2*math.pi),"frequency")
         r.add("model_dofs",len(k))
         if len(model.members) == 1 and not np.any(model.springs) and not np.any(lumped):
             member = model.members[0]

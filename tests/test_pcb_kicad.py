@@ -294,3 +294,52 @@ async def test_text_that_is_a_board_to_us_but_empty_is_still_checked_by_kicad(tm
         path.write_text(text, encoding="utf-8")
         r = await call("pcb_drc", board_path=str(path))
         assert r.ok and violation_count(r, "invalid_outline") == 1 and v(r, "violation_count") == 1
+
+
+def _many_clearance_pairs(tmp_path, pairs, name):
+    """clearance.kicad_pcb plus ``pairs`` pairs of 0.5 mm tracks of nets N3 and N4, 0.3 mm centre to centre and 0.2 wide: a 0.1 mm gap, one clearance violation each."""
+    text = Path(fixture("clearance.kicad_pcb")).read_text(encoding="utf-8")
+    segments = []
+    for k in range(pairs):
+        x, y = 30 + (k % 30), 30 + (k // 30)
+        for net, dy in (("N3", 0.0), ("N4", 0.3)):
+            segments.append(f'\t(segment\n\t\t(start {x} {y + dy})\n\t\t(end {x + 0.5} {y + dy})\n\t\t(width 0.2)\n\t\t(layer "F.Cu")\n\t\t(net "{net}")\n'
+                            f'\t\t(uuid "00000000-0000-4000-8000-{k:06d}{0 if net == "N3" else 1:06d}")\n\t)\n')
+    board = tmp_path / name
+    board.write_text(text.rstrip().removesuffix(")") + "".join(segments) + ")\n", encoding="utf-8")
+    return board
+
+
+async def test_a_clearance_count_at_kicads_listing_limit_is_a_lower_bound(tmp_path):
+    # UAT E1-1: 600 real violations, KiCad lists 499 at every threshold; nothing said the number was capped
+    board = _many_clearance_pairs(tmp_path, 600, "many.kicad_pcb")
+    r = await call("pcb_drc", board_path=str(board), max_violations=0)
+    assert r.ok, r.error
+    assert violation_count(r, "clearance") == 499
+    # the 1200 free track ends give 600+ track_dangling warnings, which KiCad stops at 199 (the other limit)
+    assert {(x["type"], x["count"]) for x in r.data["violations"]["at_kicad_limit"]} == {("clearance", 499), ("track_dangling", 199)}
+    assert any("clearance (error) is reported 499 times" in w and "at least" in w and "lower bound" in w for w in r.warnings)
+    few = _many_clearance_pairs(tmp_path, 5, "few.kicad_pcb")
+    r = await call("pcb_drc", board_path=str(few), max_violations=0)
+    assert violation_count(r, "clearance") == 6 and r.data["violations"]["at_kicad_limit"] == []  # 1 in the fixture and 5 added
+    assert not any("lower bound" in w for w in r.warnings)
+
+
+async def test_erc_library_warnings_are_a_separate_group():
+    r = await call("pcb_erc", schematic_path=fixture("erc_ok.kicad_sch"))
+    assert r.ok, r.error
+    library = r.data["violations"]["library_warnings"]
+    assert library["count"] == 2 and [row["type"] for row in library["by_type"]] == ["lib_symbol_issues"]
+    assert v(r, "library_warning_count") == 2 and v(r, "warning_count") == 2  # still counted in KiCad's own totals
+    assert r.data["violations"]["design_warnings"] == 0
+    assert all(row["group"] == "library" for row in r.data["violations"]["list"])
+    assert any("2 of the 2 warnings are library warnings" in w for w in r.warnings)
+
+
+async def test_a_relative_workspace_path_works_for_kicad(tmp_path, monkeypatch):
+    # UAT item 1: "Failed to load board" when ENG_TOOLKIT_WS was relative
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ENG_TOOLKIT_WS", "relative-ws")
+    r = await call("pcb_drc", board_path=fixture("clean.kicad_pcb"))
+    assert r.ok, r.error
+    assert r.data["violations"]["total"] == 0

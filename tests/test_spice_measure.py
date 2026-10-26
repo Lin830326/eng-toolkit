@@ -244,3 +244,76 @@ async def test_a_signal_that_is_still_moving_at_the_end_is_flagged(tmp_path):
     assert r.data["last_sample_vs_steady_state_percent_of_step"] == pytest.approx(0.8784, abs=0.002)
     settled = await measure(first_order(tmp_path), "overshoot", final_fraction=0.05)
     assert settled.ok and not any("still moving" in w for w in settled.warnings)
+
+
+# --------------------------------------------------------------------------- units by column, the bare ac name, band-pass
+
+
+def bandpass_table(tmp_path, f0=1000.0, q=2.0, lo=100.0, hi=1e5, per_decade=200, name="bp.csv"):
+    n = int(round(math.log10(hi / lo) * per_decade))
+    fs = [lo * 10 ** (k / per_decade) for k in range(n + 1)]
+    mags = [1 / math.sqrt(1 + (q * (f / f0 - f0 / f)) ** 2) for f in fs]
+    dbs = [20 * math.log10(m) for m in mags]
+    phase = [-math.degrees(math.atan(q * (f / f0 - f0 / f))) for f in fs]
+    return write_csv(tmp_path / name, ["frequency", "v(out).re", "v(out).im", "v(out).mag", "v(out).db", "v(out).phase_deg"], [fs, mags, [0.0] * len(fs), mags, dbs, phase])
+
+
+async def test_the_unit_of_a_value_follows_the_column_suffix(tmp_path):
+    # UAT E2-1: a dB value was labelled 'volt'.  H = 1/(1 + j Q (f/f0 - f0/f)), f0 = 1 kHz, Q = 2: at 1 kHz the gain is 1 (0 dB, phase 0).
+    path = bandpass_table(tmp_path)
+    expected = {"v(out).db": ("decibel", 0.0), "v(out).phase_deg": ("degree", 0.0), "v(out).mag": ("volt", 1.0), "v(out)": ("volt", 1.0)}
+    for column, (unit, value) in expected.items():
+        r = await measure(path, "value_at", column=column, at="1 kHz")
+        assert r.ok, (column, r.error)
+        assert r.value.unit == unit and r.value.quantity == pytest.approx(value, abs=1e-9), column
+    # at 1280.7764 Hz = the upper -3 dB corner the gain is 1/sqrt(2): -3.0103 dB and -45 degrees
+    f = 1000 * (math.sqrt(1 + 1 / 16) + 0.25)
+    db = await measure(path, "value_at", column="v(out).db", at=f"{f!r} Hz")
+    assert db.value.unit == "decibel" and db.value.quantity == pytest.approx(-3.0102999566, abs=1e-3)
+    ph = await measure(path, "value_at", column="v(out).phase_deg", at=f"{f!r} Hz")
+    assert ph.value.unit == "degree" and ph.value.quantity == pytest.approx(-45.0, abs=0.05)
+    cur = write_csv(tmp_path / "i.csv", ["frequency", "i(v1).mag", "i(v1).db"], [[1.0, 10.0, 100.0], [1.0, 2.0, 3.0], [0.0, 6.0, 9.5]])
+    assert (await measure(cur, "value_at", column="i(v1)", at="10 Hz")).value.unit == "ampere"
+    assert (await measure(cur, "value_at", column="i(v1).db", at="10 Hz")).value.unit == "decibel"
+
+
+async def test_a_bare_ac_name_works_for_every_measurement_not_only_the_bandwidth(tmp_path):
+    path = bandpass_table(tmp_path)
+    r = await measure(path, "steady_state", column="v(out)")
+    assert r.ok, r.error
+    r = await measure(path, "value_at", column="v(out)", at="10 kHz")
+    assert r.ok and r.value.quantity == pytest.approx(1 / math.sqrt(1 + (2 * (10 - 0.1)) ** 2), rel=2e-4)
+    r = await measure(path, "value_at", column="v(nope)", at="10 kHz")
+    assert not r.ok and r.error.family == "input.invalid" and r.error.details["param"] == "/column"
+
+
+async def test_bandpass_3db_gives_the_peak_the_two_corners_and_the_bandwidth(tmp_path):
+    # Second-order band-pass, f0 = 1 kHz, Q = 2: |Q (f/f0 - f0/f)| = 1 at f = f0 (sqrt(1 + 1/(4 Q^2)) -/+ 1/(2 Q)) = 1000 (1.0307764 -/+ 0.25),
+    # i.e. 780.7764 Hz and 1280.7764 Hz; bandwidth f0/Q = 500 Hz; geometric centre sqrt(fl fu) = f0 = 1000 Hz.  200 points per decade: error < 1e-4 relative.
+    path = bandpass_table(tmp_path)
+    fl, fu = 1000 * (math.sqrt(1 + 1 / 16) - 0.25), 1000 * (math.sqrt(1 + 1 / 16) + 0.25)
+    for column in ("v(out)", "v(out).mag", "v(out).db"):
+        r = await measure(path, "bandpass_3db", column=column)
+        assert r.ok, (column, r.error)
+        assert r.value.unit == "hertz" and r.value.quantity == pytest.approx(500.0, rel=1e-3)
+        assert r.values["lower_corner_3db"].quantity == pytest.approx(fl, rel=1e-3) and r.values["upper_corner_3db"].quantity == pytest.approx(fu, rel=1e-3)
+        assert r.values["peak_frequency"].quantity == pytest.approx(1000.0, rel=1e-9) and r.values["peak_gain_db"].unit == "decibel"
+        assert r.values["peak_gain_db"].quantity == pytest.approx(0.0, abs=1e-9)
+        assert r.values["center_frequency_geometric"].quantity == pytest.approx(1000.0, rel=1e-3)
+    assert r.data["target_gain_db"] == pytest.approx(-3.0102999566, abs=1e-9)
+
+
+async def test_bandpass_3db_with_a_corner_outside_the_table_names_the_other_corner(tmp_path):
+    path = bandpass_table(tmp_path, lo=900.0, hi=1e5, name="cut_low.csv")  # the table starts above the lower corner (780.8 Hz)
+    r = await measure(path, "bandpass_3db")
+    assert not r.ok and r.error.family == "measure.not_found" and "lower side" in r.error.message
+    assert r.error.details["upper_corner_hz"] == pytest.approx(1280.78, rel=2e-3) and r.error.details["lower_corner_hz"] is None
+    path = bandpass_table(tmp_path, hi=1100.0, name="cut_high.csv")
+    r = await measure(path, "bandpass_3db")
+    assert not r.ok and "upper side" in r.error.message and r.error.details["lower_corner_hz"] == pytest.approx(780.78, rel=2e-3)
+
+
+async def test_bandwidth_3db_on_a_bandpass_says_to_use_bandpass_3db(tmp_path):
+    path = bandpass_table(tmp_path, lo=100.0, hi=1100.0, name="rising.csv")  # the first sample is the lowest gain and the gain never falls 3 dB below it
+    r = await measure(path, "bandwidth_3db")
+    assert not r.ok and r.error.family == "measure.not_found" and "bandpass_3db" in r.error.message

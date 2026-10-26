@@ -2,10 +2,13 @@
 
 from collections import deque
 import math
+import re
 from typing import Annotated
 
 import numpy as np
 from pydantic import Field
+
+from eng_toolkit.units import UnitsError
 
 from ._common import Result, SPECS, choice, csv_text, integer, invalid, json_numbers, literal, number, positive_exp, q, run
 from ._server import server
@@ -84,11 +87,29 @@ def count_cycles(points):
     return [c for c in cycles if c[0] > 0]
 
 
+_HEADER_FIELD = re.compile(r"[A-Za-z_\u00b5\u00b0][A-Za-z0-9_ .()\[\]/%^*+\u00b5\u00b0-]{0,63}")
+
+
+def _is_header(parts):
+    """A first line of column names: every field starts with a letter or underscore and holds no quotes or other code; nan and inf are not names."""
+    return all(_HEADER_FIELD.fullmatch(p) and p.lower().lstrip("+-") not in ("nan", "inf", "infinity") for p in parts)
+
+
+def _history_literal(text, line):
+    try:
+        return literal(text, "history_file")
+    except UnitsError as exc:
+        if exc.family == "input.invalid":
+            invalid("history_file", f"line {line}: {text[:30]!r} is not a number (the file holds numbers only, after an optional header line of column names)")
+        invalid("history_file", f"line {line}: {text[:30]!r} is outside the supported range", exc.family)
+
+
 def read_history(handle, inline, file):
+    """``(values, header)``: the samples of the inline list or of a CSV file, and the header line the file started with (else None)."""
     if bool(inline) == bool(file):
         invalid("history", "supply exactly one of history and history_file", "input.missing" if not inline else "input.invalid")
     if inline:
-        return json_numbers(inline, "history")
+        return json_numbers(inline, "history"), None
     if len(file) > 4096:
         invalid("history_file", "path cap is 4096 characters", "input.out_of_range")
     path = handle.input_file(file, param="history_file", extensions=(".csv",), max_bytes=48000000, too_large_family="input.out_of_range")
@@ -96,30 +117,35 @@ def read_history(handle, inline, file):
         text = path.read_bytes().decode("utf-8-sig")
     except UnicodeDecodeError:
         invalid("history_file", "expected UTF-8 numeric CSV")
-    values, columns, previous_time = [], None, None
-    for i, row in enumerate(text.splitlines()):
+    values, columns, previous_time, header, header_line = [], None, None, None, None
+    for i, row in enumerate(text.splitlines(), start=1):
         if not row.strip():
             continue
         parts = [p.strip() for p in row.split(",")]
+        if columns is None and header is None and _is_header(parts):
+            header, header_line = parts, i  # an optional first line of column names
+            continue
         if columns is None:
             columns = len(parts)
+            if header is not None and len(header) != columns:
+                invalid("history_file", f"line {i}: {columns} column(s), but the header on line {header_line} names {len(header)}")
         if len(parts) != columns or columns not in (1, 2):
-            invalid(f"history_file/{i}", "CSV has one value column or two columns time,value, without header")
-        parsed = [literal(p, f"history_file/{i}") for p in parts]
+            invalid("history_file", f"line {i}: {len(parts)} column(s); the file needs one value column or two columns time,value (after an optional header line of names)")
+        parsed = [_history_literal(p, i) for p in parts]
         if columns == 2:
             if previous_time is not None and parsed[0] <= previous_time:
-                invalid(f"history_file/{i}", "time column must be strictly increasing")
+                invalid("history_file", f"line {i}: the time column must be strictly increasing")
             previous_time = parsed[0]
         values.append(parsed[-1])
         if len(values) > 1000000:
             invalid("history_file", "point cap is 1,000,000", "input.out_of_range")
-    return values
+    return values, None if header is None else ",".join(header)
 
 
 @server.tool(description="ASTM E1049 three-point rainflow with half-cycle residue, optional hysteresis gate, range histogram and range-mean matrix. Basquin/Goodman-family Miner damage, endurance cutoff or Haibach extension. Uniaxial stress or count-only force histories; at most 1,000,000 samples; CSV artifacts.")
 def rainflow(
     history: Annotated[str, Field(description="Flat JSON number list, e.g. '[0,100,-100,0]'; <=1,000,000 points, 24 MB; '' uses history_file.")] = "",
-    history_file: Annotated[str, Field(description="Numeric CSV path, one value column or time,value, no header, <=48 MB; '' uses inline history.")] = "",
+    history_file: Annotated[str, Field(description="Numeric CSV path, one value column or time,value, optional header line, <=48 MB; '' uses inline history.")] = "",
     history_kind: Annotated[str, Field(description="stress for stress counting/damage, force for count-only loads; selects the sample_scale dimension.")] = "stress",
     sample_scale: Annotated[str, Field(description="Physical value of one history unit, e.g. '1 MPa' for stress or '1 N' for force; required in all modes.")] = "",
     closed: Annotated[bool, Field(description="True treats history as periodic: close and rotate to a global maximum; paired residue becomes full cycles.")] = False,
@@ -154,7 +180,7 @@ def rainflow(
         mb = integer(mean_bins, "mean_bins", 1, 128)
         repeat = number(repeats, "repeats", 1e-12, 1e12)
         below = choice(below_knee, "below_knee", ("none", "elementary", "haibach"))
-        values = read_history(handle, history, history_file)
+        values, header_skipped = read_history(handle, history, history_file)
         if len(values) < 2:
             invalid("history", "at least two samples are required")
         raw = np.asarray(values, dtype=float)
@@ -239,6 +265,7 @@ def rainflow(
         r.artifacts.append(handle.write_text("rainflow_cycles.csv", csv_text(
             ["range_"+unit, "mean_"+unit, "full_cycles", "half_cycles", "weighted_count", "life_cycles", "damage_per_block"], rows), fmt="csv"))
         r.data["cycle_preview"] = rows[:50]
+        r.data["header_skipped"] = header_skipped
         if model is not None:
             damage = math.fsum(damage_terms)
             r.add("damage_per_block", damage)

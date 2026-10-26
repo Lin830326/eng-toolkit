@@ -27,6 +27,12 @@ LAYER_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.]{0,23}\Z")
 MAX_LAYERS = 40
 PLOT_LAYER = re.compile(r"(F|B)\.(Cu|Mask|SilkS|Paste)\Z|In\d{1,2}\.Cu\Z|Edge\.Cuts\Z")
 SEVERITY_ORDER = {"error": 0, "warning": 1, "exclusion": 2}
+# kicad-cli stops listing one kind of violation at a fixed number: 499 for clearance, 199 for the others it limits (track_width,
+# copper_edge_clearance ...), seen with KiCad 10 on a board with thousands of clearance violations.  The report carries no flag for it,
+# so a count equal to one of these is reported as "at least".
+KICAD_REPORT_LIMITS = (199, 499)
+# violations that say a library is not visible to this run (library tables are deliberately not read), not something about the design
+LIBRARY_TYPES = frozenset({"lib_footprint_issues", "lib_footprint_mismatch", "footprint_link_issues", "lib_symbol_issues", "lib_symbol_mismatch"})
 
 
 def _count(n: int | float) -> QuantityOut:
@@ -242,22 +248,36 @@ def _violation(raw: Any, scale: float = 1.0) -> dict[str, Any] | None:
     return out
 
 
-def _group(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _group(violations: list[dict[str, Any]], limits: tuple[int, ...] = ()) -> list[dict[str, Any]]:
     counts = Counter((v["type"], v["severity"]) for v in violations)
-    rows = [{"type": t, "severity": s, "count": c} for (t, s), c in counts.items()]
-    rows.sort(key=lambda r: (SEVERITY_ORDER.get(r["severity"], 9), -r["count"], r["type"]))
+    rows = [
+        {"type": t, "severity": s, "count": c, "group": "library" if t in LIBRARY_TYPES else "design", "at_kicad_limit": c in limits}
+        for (t, s), c in counts.items()
+    ]
+    rows.sort(key=lambda r: (SEVERITY_ORDER.get(r["severity"], 9), r["group"] == "library", -r["count"], r["type"]))
     return rows
 
 
-def _report_summary(violations: list[dict[str, Any]], max_violations: int) -> dict[str, Any]:
+def _report_summary(violations: list[dict[str, Any]], max_violations: int, limits: tuple[int, ...] = ()) -> dict[str, Any]:
     by_severity = Counter(v["severity"] for v in violations)
-    ordered = sorted(violations, key=lambda v: (SEVERITY_ORDER.get(v["severity"], 9), v["type"]))
+    ordered = sorted(violations, key=lambda v: (SEVERITY_ORDER.get(v["severity"], 9), v["type"] in LIBRARY_TYPES, v["type"]))
+    for v in ordered:
+        v["group"] = "library" if v["type"] in LIBRARY_TYPES else "design"
+    by_type = _group(violations, limits)
+    library = [r for r in by_type if r["group"] == "library"]
     return {
         "total": len(violations),
         "errors": by_severity["error"],
         "warnings": by_severity["warning"],
         "exclusions": by_severity["exclusion"],
-        "by_type": _group(violations),
+        "library_warnings": {
+            "count": sum(r["count"] for r in library),
+            "by_type": library,
+            "note": "library visibility, not the design: the footprint/symbol library tables are deliberately not read, so KiCad cannot compare the copies in the file with their libraries. They are also counted in warning_count and violation_count.",
+        },
+        "design_warnings": by_severity["warning"] - sum(r["count"] for r in library if r["severity"] == "warning"),
+        "at_kicad_limit": [{"type": r["type"], "severity": r["severity"], "count": r["count"]} for r in by_type if r["at_kicad_limit"]],
+        "by_type": by_type,
         "listed": min(len(ordered), max_violations),
         "list": ordered[:max_violations],
     }
@@ -295,7 +315,7 @@ def drc(
     violations = [v for v in (_violation(raw) for raw in (report.get("violations") or [])) if v]
     unconnected = [v for v in (_violation(raw) for raw in (report.get("unconnected_items") or [])) if v]
     parity = [v for v in (_violation(raw) for raw in (report.get("schematic_parity") or [])) if v]
-    summary = _report_summary(violations, max_violations)
+    summary = _report_summary(violations, max_violations, KICAD_REPORT_LIMITS)
     listed_unconnected = unconnected[:max_violations]
     disabled = [{"key": program.short(c.get("key"), 60), "description": program.short(c.get("description"), 120)} for c in (report.get("ignored_checks") or []) if isinstance(c, dict)][:100]
     artifact = handle.write_bytes("drc_report.json", (out / "drc.json").read_bytes(), fmt="json")
@@ -306,6 +326,16 @@ def drc(
         warnings.append("the board has zones and refill_zones is false: DRC uses the fills stored in the file, which may be stale or empty")
     if any(v["type"] == "lib_footprint_issues" for v in violations):
         warnings.append("lib_footprint_issues warnings mean a footprint's library is not visible to this run (library tables are deliberately not read); they say nothing about the board")
+    if summary["library_warnings"]["count"]:
+        warnings.append(
+            f"{summary['library_warnings']['count']} of the {summary['warnings']} warnings are library warnings (data.violations.library_warnings); "
+            f"the others ({summary['design_warnings']}) are findings about the board"
+        )
+    for row in summary["at_kicad_limit"]:
+        warnings.append(
+            f"{row['type']} ({row['severity']}) is reported {row['count']} times, which is the number at which kicad-cli stops listing that kind of violation: "
+            "the true count is at least that, so treat it as a lower bound (data.violations.at_kicad_limit)"
+        )
     if summary["listed"] < summary["total"]:
         warnings.append(f"only {summary['listed']} of {summary['total']} violations are listed; data.violations.by_type counts all of them")
     data = {
@@ -324,6 +354,7 @@ def drc(
         "warning_count": _count(summary["warnings"]),
         "unconnected_count": _count(len(unconnected)),
         "violation_count": _count(summary["total"]),
+        "library_warning_count": _count(summary["library_warnings"]["count"]),
     }
     return Computed(values=values, primary="error_count", warnings=warnings, data=data, artifacts=[artifact])
 
@@ -395,6 +426,11 @@ def erc(handle: JobHandle, *, schematic_path: str, use_project_files: bool, max_
             f"the schematic holds {len(sch['sheets'])} hierarchical sheet block(s); only this one file is given to KiCad, "
             "so the sheets in other files are not checked (their files are not copied)"
         )
+    if summary["library_warnings"]["count"]:
+        warnings.append(
+            f"{summary['library_warnings']['count']} of the {summary['warnings']} warnings are library warnings (data.violations.library_warnings); "
+            f"the others ({summary['design_warnings']}) are findings about the schematic"
+        )
     if any(v["type"] == "lib_symbol_issues" for v in violations):
         warnings.append("lib_symbol_issues warnings mean a symbol's library is not visible to this run (library tables are deliberately not read); the symbol copy embedded in the schematic was used")
     if summary["listed"] < summary["total"]:
@@ -412,6 +448,7 @@ def erc(handle: JobHandle, *, schematic_path: str, use_project_files: bool, max_
         "error_count": _count(summary["errors"]),
         "warning_count": _count(summary["warnings"]),
         "violation_count": _count(summary["total"]),
+        "library_warning_count": _count(summary["library_warnings"]["count"]),
     }
     return Computed(values=values, primary="error_count", warnings=warnings, data=data, artifacts=[artifact])
 

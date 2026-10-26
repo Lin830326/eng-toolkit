@@ -106,7 +106,7 @@ BAD = [
     ("fluids_pump_system", {**PUMP, "diameter_ratio": 1.1}),
     ("fluids_pump_system", {**PUMP, "pipe_length": "1 m"}),
     ("fluids_pump_system", {**PUMP, "pump_points": "p,0 m^3/s,0 m,0.8;p,1 m^3/s,20 m,0.8"}),
-    ("fluids_pump_system", {**PUMP, "pump_points": "p,0 m^3/s,20 m,0;p,1 m^3/s,0 m,0.8"}),
+    ("fluids_pump_system", {**PUMP, "pump_points": "p,0 m^3/s,20 m,0.6;p,1 m^3/s,0 m,0"}),
     ("fluids_pump_system", {**PUMP, "vapour_pressure": "2 kPa"}),
     ("fluids_open_channel", {**CHANNEL, "bed_slope": 0}),
     ("fluids_open_channel", {**CHANNEL, "bed_slope": -.01}),

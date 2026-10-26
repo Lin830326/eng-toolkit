@@ -9,6 +9,38 @@ from eng_toolkit.domains.structures._model import assemble_static, equilibrium, 
 from eng_toolkit.domains.structures._server import server
 
 
+def peak_deflection(element, d, end, n=400):
+    """``(|v|, x, v)``: the largest magnitude of the local transverse displacement v(x) along a member, its position and its sign.
+
+    v is a piecewise polynomial of x (load jumps are the breaks), so it is sampled densely, at the load-jump and extremum stations too, and the
+    best sample is refined by golden-section search between its neighbours.
+    """
+    length = element.length
+    xs = sorted({float(x) for x in np.linspace(0, length, n + 1)} | {float(x) for x, _ in extrema_stations(element, end)})
+
+    def v(x):
+        return response(element, d, end, x, "right")[4]
+
+    values = [v(x) for x in xs]
+    best = max(range(len(xs)), key=lambda i: abs(values[i]))
+    low, high = xs[max(0, best - 1)], xs[min(len(xs) - 1, best + 1)]
+    gr = (np.sqrt(5.0) - 1.0) / 2.0
+    a, b = low, high
+    for _ in range(80):
+        if b - a <= 1e-14 * length:
+            break
+        c, e = b - gr * (b - a), a + gr * (b - a)
+        if abs(v(c)) > abs(v(e)):
+            b = e
+        else:
+            a = c
+    x = (a + b) / 2.0
+    refined = v(x)
+    if abs(refined) < abs(values[best]):
+        x, refined = xs[best], values[best]
+    return abs(refined), x, refined
+
+
 @server.tool(description="2D Euler-Bernoulli/Timoshenko direct-stiffness frames with statically condensed pin releases, settlements/springs, uniform/linear/point loads and thermal strain. Nodal results, end forces, exact member M/V extrema and station CSVs. Linear small displacement; no P-delta. Caps: 100 nodes, 200 members, 101 stations/member.")
 def frame(
     nodes: Nodes2 = "", members: FrameMembers = "", supports: FrameSupports = "", loads: NodalLoads = "", member_loads: MemberLoads = "",
@@ -48,6 +80,7 @@ def frame(
         r.data["equilibrium_origin"] = "First input node; includes all nodal and member loads, fixed reactions and spring forces."
         r.data["members"] = []
         max_m,max_v = (0.,model.members[0].id,0.),(0.,model.members[0].id,0.)
+        max_d = (0.,model.members[0].id,0.,0.)
         for index,element in enumerate(elements):
             d,end = recover(element,u)
             samples = {(float(x),"left" if x == element.length else "right") for x in np.linspace(0,element.length,n)}
@@ -67,17 +100,27 @@ def frame(
                     max_m = (abs(moment),element.member.id,x)
                 if abs(shear) > max_v[0]:
                     max_v = (abs(shear),element.member.id,x)
+            member_d = peak_deflection(element,d,end)
+            if member_d[0] > max_d[0]:
+                max_d = (member_d[0],element.member.id,member_d[1],member_d[2])
             artifact = handle.write_text(f"member_{index+1}_stations.csv",csv_text(["x_m","side","N_N","V_N","M_N_m","u_local_m","v_local_m","rotation_rad"],rows),fmt="csv")
             r.artifacts.append(artifact)
             r.data["members"].append({"id":element.member.id,"theory":"Euler-Bernoulli" if element.member.GA is None else "Timoshenko", "end_forces": {name:r.quantity(value,"moment" if name.startswith("M") else "force") for name,value in zip(("N_start","V_start","M_start","N_end","V_end","M_end"),end)},
                                       "maximum_abs_moment":r.quantity(member_m[0],"moment"),"maximum_moment_x":r.quantity(member_m[1],"length"),
                                       "maximum_abs_shear":r.quantity(member_v[0],"force"),"maximum_shear_x":r.quantity(member_v[1],"length"),
+                                      "maximum_abs_deflection":r.quantity(member_d[0],"length"),"maximum_deflection_x":r.quantity(member_d[1],"length"),
                                       "table": {"file":artifact.path,"rows":len(rows),"units":"SI; local member axes"}})
         r.add("maximum_abs_moment",max_m[0],"moment")
         r.add("maximum_abs_shear",max_v[0],"force")
         r.data["maximum_moment_location"] = {"member":max_m[1],"x":r.quantity(max_m[2],"length")}
         r.data["maximum_shear_location"] = {"member":max_v[1],"x":r.quantity(max_v[2],"length")}
-        r.add("maximum_nodal_displacement",float(np.max(np.linalg.norm(u.reshape(-1,3)[:,:2],axis=1))),"length")
+        nodal_max = float(np.max(np.linalg.norm(u.reshape(-1,3)[:,:2],axis=1)))
+        r.add("maximum_nodal_displacement",nodal_max,"length")
+        r.add("max_member_deflection",max_d[0],"length")
+        r.data["max_member_deflection_location"] = {"member":max_d[1],"x":r.quantity(max_d[2],"length"),"signed_local_deflection":r.quantity(max_d[3],"length"),
+                                                    "definition":"largest magnitude of the local transverse (member y) displacement of the deformed axis along any member, from the member's displacement curve (golden-section refined), not only at nodes; includes the member's end displacements"}
+        if max_d[0] > nodal_max*(1+1e-9):
+            r.warnings.append(f"The largest deflection inside member {max_d[1]} exceeds the largest nodal displacement: use max_member_deflection (location in data.max_member_deflection_location), not maximum_nodal_displacement, for a deflection limit.")
         if max(np.max(np.abs(u[2::3])),max(np.linalg.norm(u[e.dofs[3:5]]-u[e.dofs[:2]])/e.length for e in elements)) > .05:
             r.warnings.append("Rotation or relative displacement/length exceeds 0.05; small-displacement analysis needs review.")
         r.warnings.append("Station CSVs use SI units. Point-load jumps include left/right limits; M/V extrema include analytical stationary points.")

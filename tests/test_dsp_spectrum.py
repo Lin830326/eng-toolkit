@@ -263,7 +263,8 @@ def test_files_are_data_only_and_errors_name_the_line(tmp_path):
     bad = write(tmp_path, "1\n2\n3\nabc\n5\n6\n7\n8\n9\n", "bad.csv")
     r = fails(spectrum, "input.invalid", "samples_file", samples_file=bad, sample_rate=FS)
     assert r.error.details["line"] == 4 and "line 4" in r.error.message
-    for text, line in (("time,value\n0,1\n1,2\n", 1), ("1\n2\nnan\n", 3), ("1\n2\ninf\n", 3), ("1\n2\n0x10\n", 3), ("1\n2\n1_0\n", 3), ("1\n2\n3,4,5\n", 3), ("1,2\n3\n", 2), ("1\n2\n1e999\n", 3), ("1\n2\n__import__('os')\n", 3)):
+    for text, line in (("time,value\n0,1\nabc,2\n", 3), ("time,value\ntime,value\n0,1\n", 2), ("1,x\n2,3\n", 1), ("nan\n1\n2\n", 1), ("__import__('os')\n1\n2\n", 1),
+                       ("a,b\n1,2,3\n", 2), ("1\n2\nnan\n", 3), ("1\n2\ninf\n", 3), ("1\n2\n0x10\n", 3), ("1\n2\n1_0\n", 3), ("1\n2\n3,4,5\n", 3), ("1,2\n3\n", 2), ("1\n2\n1e999\n", 3), ("1\n2\n__import__('os')\n", 3)):
         r = fails(spectrum, "input.invalid", "samples_file", samples_file=write(tmp_path, text, "x.csv"), sample_rate=FS)
         assert r.error.details["line"] == line, (text, r.error)
     fails(spectrum, "input.invalid", "samples_file", samples_file=write(tmp_path, "", "empty.csv"), sample_rate=FS)

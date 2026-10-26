@@ -46,7 +46,8 @@ def pump_curves(text, speed, diameter):
         name = identifier(row[0], path+"/0")
         flow = q(row[1], path+"/1", "flow", zero=True)*speed*diameter
         head = q(row[2], path+"/2", "length", zero=True)*(speed*diameter)**2
-        eta = scalar(row[3], path+"/3", .01, 1)
+        # Datasheets list 0 % at shut-off (Q = 0); every operating point keeps the 0.01 lower bound.
+        eta = scalar(row[3], path+"/3", 0. if flow == 0 else .01, 1)
         groups.setdefault(name, []).append((flow, head, eta))
     if len(groups) > 8:
         invalid("pump_points", "at most 8 pump curves", "input.out_of_range")

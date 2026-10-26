@@ -226,3 +226,34 @@ def test_systemverilog_subset_is_selectable():
     assert r.ok, r.error
     assert r.data["language"] == "systemverilog" and r.data["cells_by_type"] == {"$_AND_": 1}
     assert "read_verilog -sv src0.v" in commands(r)
+
+
+def test_a_200_character_workspace_path_does_not_break_abc(tmp_path, monkeypatch):
+    # UAT E3-1: ABC writes <TEMP>/yosys-abc-XXXXXX/stdcells.genlib; with TEMP inside a long job folder the name passed the 260-character limit
+    # of Windows and the failure was blamed on /source.  TEMP is now a short scratch folder, and a long job folder is reached through a short alias.
+    long_ws = tmp_path / ("w" * (200 - len(str(tmp_path)) - 1))
+    assert len(str(long_ws)) == 200
+    monkeypatch.setenv("ENG_TOOLKIT_WS", str(long_ws))
+    for target in ("optimized", "abc_gates"):
+        r = synth(top="fa", source=FULL_ADDER, target=target)
+        assert r.ok, r.error
+        assert q(r, "cells") > 0 and r.review_status == "unreviewed"
+
+
+def test_a_relative_workspace_path_works_for_yosys(tmp_path, monkeypatch):
+    # UAT item 1: "Can't open log file <job>\yosys.log" when ENG_TOOLKIT_WS was relative
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ENG_TOOLKIT_WS", "relative-ws")
+    r = synth(top="t", source=AND2, target="optimized")
+    assert r.ok, r.error
+    assert Path(r.data["job_dir"]).is_absolute() and (tmp_path / "relative-ws").is_dir()
+
+
+def test_an_engine_that_cannot_write_its_own_file_is_not_blamed_on_the_source():
+    from eng_toolkit.domains.digital.flow import _WRITE_FAILURE, _write_failure
+
+    said = "Opening <job>/tmp/yosys-abc-ltfvTV/stdcells.genlib for writing failed: No such file or directory"
+    assert _WRITE_FAILURE.search(said) and _WRITE_FAILURE.search("Can't open log file `<job>/yosys.log' for writing!")
+    failure = _write_failure(said, 1)
+    assert failure.family == "engine.failure" and "param" not in failure.details
+    assert "not an error in the source" in failure.message and "ENG_TOOLKIT_WS" in failure.message

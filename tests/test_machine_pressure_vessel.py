@@ -118,3 +118,47 @@ def test_random_lame_displacement_against_numeric_equilibrium():
 @pytest.mark.parametrize("changes",[dict(outer_radius="100 mm"),dict(thickness="",outer_radius="40 mm"),dict(radius="101 mm"),dict(allowable_stress="20 MPa"),dict(geometry="sphere",ends="open")])
 def test_vessel_refusals(changes):
     assert not call(pressure_vessel,**{**BASE,**changes}).ok
+
+
+def test_joint_efficiency_scales_the_allowable_and_corrosion_is_added_to_the_wall():
+    # UAT M3: air receiver, inner radius 600 mm, 1.1 MPa, f = 170.8 MPa, joint coefficient 0.85 (it was folded into the allowable by hand), corrosion 1 mm.
+    # S E = 170.8 * 0.85 = 145.18 MPa; thin t = 1.1 * 600 / 145.18 = 4.5461 mm; Lame b/a = sqrt((S+p)/(S-p)): t = 600 (sqrt(146.28/144.08) - 1) = 4.5630 mm.
+    r = ok(pressure_vessel,geometry="cylinder",inner_radius="600 mm",internal_pressure="1.1 MPa",allowable_stress="170.8 MPa",joint_efficiency=.85,corrosion_allowance="1 mm")
+    thin = 1.1*600/(170.8*.85)
+    lame = 600*(math.sqrt((145.18+1.1)/(145.18-1.1))-1)
+    close(v(r,"required_thickness_thin"),thin)
+    close(v(r,"required_thickness_lame"),lame)
+    close(v(r,"nominal_thickness_thin"),thin+1)
+    close(v(r,"nominal_thickness_lame"),lame+1)
+    assert 4.54 < v(r,"required_thickness_thin") < 4.55 and 4.56 < v(r,"required_thickness_lame") < 4.57
+    plain = ok(pressure_vessel,geometry="cylinder",inner_radius="600 mm",internal_pressure="1.1 MPa",allowable_stress="145.18 MPa")
+    close(v(plain,"required_thickness_lame"),lame,rel=1e-12)  # E = 0.85 on 170.8 is the same as the folded allowable
+    assert "nominal_thickness_lame" not in plain.values
+    with_wall = ok(pressure_vessel,geometry="cylinder",inner_radius="600 mm",thickness="6 mm",internal_pressure="1.1 MPa",allowable_stress="170.8 MPa",joint_efficiency=.85,corrosion_allowance="1 mm")
+    close(v(with_wall,"thickness_after_corrosion"),5)
+    close(v(with_wall,"thickness_margin_after_corrosion"),5-lame)
+    close(v(with_wall,"hoop_stress"),v(ok(pressure_vessel,geometry="cylinder",inner_radius="600 mm",thickness="6 mm",internal_pressure="1.1 MPa"),"hoop_stress"))  # stresses are not scaled by E
+
+
+def test_joint_efficiency_and_corrosion_need_an_allowable_and_stay_in_range():
+    for changes in ({"joint_efficiency":.8},{"corrosion_allowance":"1 mm"}):
+        r = call(pressure_vessel,geometry="cylinder",inner_radius="600 mm",thickness="6 mm",internal_pressure="1.1 MPa",**changes)
+        assert r.ok is False and r.error.details["param"] == "/allowable_stress" and r.error.family == "input.missing"
+    for efficiency in (.49,1.01,0,-1):
+        r = call(pressure_vessel,geometry="cylinder",inner_radius="600 mm",internal_pressure="1.1 MPa",allowable_stress="170 MPa",joint_efficiency=efficiency)
+        assert r.ok is False and r.error.details["param"] == "/joint_efficiency"
+    r = call(pressure_vessel,geometry="cylinder",inner_radius="600 mm",internal_pressure="1.1 MPa",allowable_stress="170 MPa",corrosion_allowance="-1 mm")
+    assert r.ok is False and r.error.details["param"] == "/corrosion_allowance"
+
+
+def test_the_sphere_result_warns_that_it_is_not_a_dished_end():
+    # UAT M3-4: the sphere gave 2.27 mm for a 2:1 ellipsoidal end (the cylinder gives 4.55 mm) and nothing said it was the wrong shape.
+    sphere = ok(pressure_vessel,geometry="sphere",inner_radius="600 mm",internal_pressure="1.1 MPa",allowable_stress="145.18 MPa",model="thin")
+    close(v(sphere,"required_thickness_thin"),1.1*600/(2*145.18))
+    cylinder = ok(pressure_vessel,geometry="cylinder",inner_radius="600 mm",internal_pressure="1.1 MPa",allowable_stress="145.18 MPa",model="thin")
+    close(v(cylinder,"required_thickness_thin"),2*v(sphere,"required_thickness_thin"))
+    warning = next(w for w in sphere.warnings if "hemispherical" in w)
+    assert "ellipsoidal" in warning and "torispherical" in warning and "NOT" in warning
+    assert not any("hemispherical" in w for w in cylinder.warnings)
+    for r in (sphere,cylinder):
+        assert any("Not modelled" in w and "nozzle" in w and "heads" in w for w in r.warnings)

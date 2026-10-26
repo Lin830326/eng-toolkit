@@ -9,7 +9,7 @@ Layout::
         manifest.json    # every file in the job dir with its sha256
 
 Root resolution order: explicit ``root`` argument, ``ENG_TOOLKIT_WS`` env var,
-then ``./ws`` relative to the current working directory.
+then ``./ws`` relative to the current working directory.  The root is always made absolute where it is read.
 """
 
 from __future__ import annotations
@@ -50,12 +50,19 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _absolute(path: str | os.PathLike[str]) -> Path:
+    """The path made absolute against the current directory once, here, so that a program started in a job folder (whose
+    working directory is that folder) never receives a path that is relative to somewhere else."""
+    return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+
+
 def resolve_root(root: str | os.PathLike[str] | None = None) -> Path:
+    """The workspace root, always an absolute path (a relative ``ENG_TOOLKIT_WS`` or ``root`` is resolved against the current directory)."""
     if root is not None:
-        return Path(root)
+        return _absolute(root)
     env = os.environ.get(ENV_ROOT)
     if env:
-        return Path(env)
+        return _absolute(env)
     return Path.cwd() / "ws"
 
 

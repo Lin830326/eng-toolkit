@@ -175,7 +175,11 @@ thick sphere t = a [((H+pi)/(H-pi/2+3po/2))^(1/3) - 1]
 
 The ratio must exceed 1 for a finite positive wall. Otherwise the allowable is below the asymptotic demand and the tool refuses sizing. Equal pressures give zero required thickness by the hoop-only criterion; this says nothing about stability or hydrostatic compression strength. The actual-wall input must remain positive. The thick inversion is exact for the stated criterion and elastic geometry. The thin inversion is an approximation.
 
-This is **closed-form elastic stress only, not an ASME design-code calculation**. There is no external-pressure buckling, nozzle/end stress, corrosion allowance, plastic collapse, thermal loading or fatigue check. Every nonzero external pressure triggers the buckling omission warning.
+`joint_efficiency` E (0.5 to 1, default 1) multiplies the allowable in the sizing (`S E` replaces `S` in every sizing formula above and in the zero-thickness check); it does not change the stresses of a given wall. `corrosion_allowance` c adds to the sized wall: `nominal_thickness_thin/lame = required + c`, the pressure thickness being computed on the inner radius as given. With a given `thickness` and an allowable, `thickness_after_corrosion = t - c` and `thickness_margin_after_corrosion = t - c - required` are reported. Both inputs need `allowable_stress`. For an air receiver (a = 600 mm, p = 1.1 MPa, f = 170.8 MPa, E = 0.85, c = 1 mm) this gives 4.546 mm thin, 4.563 mm Lame, 5.563 mm nominal, which agrees with the EN 13445 hand value of 4.56 mm that was previously reached by folding E into the allowable.
+
+The `sphere` geometry is a full sphere or a hemispherical end. A 2:1 ellipsoidal or a torispherical dished end is **not** a sphere: it needs about the cylinder wall (ASME UG-32 gives `t = P D/(2 S E - 0.2 P)` for 2:1 ellipsoidal, EN 13445-3 has its own forms), so the sphere result, which is about half the cylinder wall, is wrong for it. The tool has no dished-end formula; every sphere result carries a warning that says so, and every result lists what is not modelled (dished heads, openings and nozzle reinforcement, supports, fatigue, test pressure and tolerance margins).
+
+This is **closed-form elastic stress only, not an ASME design-code calculation**. There is no external-pressure buckling, nozzle/end stress, dished-head formula, plastic collapse, thermal loading or fatigue check. Every nonzero external pressure triggers the buckling omission warning.
 
 ## `machine_belt`
 
