@@ -128,9 +128,9 @@ Measured: 33482 elements (the bar at 1.13 mm) take 2.3 s to mesh and about 22 s 
 * The estimate `6 sqrt(2) V / h^3` over-estimates compact parts (bar: 679 estimated, 434 made at 5 mm; 25100 against 14700 at 1.5 mm) and under-estimates thin ones, so the after-meshing count is the real limit.
 * Nodal stresses are the extrapolated and averaged values CalculiX writes; stresses at integration points exist in `.dat` only if a future version asks for them.
 
-## fem_view: a static result as a colour-mapped GLB
+## fem_view: a static result as a colour-mapped GLB and a PNG picture
 
-`fem_view` (`eng_toolkit/domains/fem/view.py`) turns the files of one `fem_static` job into `fem_view.glb` (artifact), `legend.svg` and `view.json`, so a 3D viewer shows where the stress is. It reads files only; Gmsh and CalculiX are not started. Tests: `tests/test_fem_view.py` (62: colour maps, parsers, a synthetic one-tetrahedron job that needs no program, refusals through `fastmcp.Client`, and 9 tests on real `fem_static` runs of the bar, the clamped cantilever and a cylinder, skipped without OCP, Gmsh or CalculiX) and `tests/test_fem_view_review_fixes.py` (25, one block per finding of the review below; 10 of them on real runs: two parts 20 m and 100 m from the origin, the bar, the cylinder, a keyhole part, a plate with a hole), with the independent GLB reader `tests/fem_view_reader.py` (`struct` and `json` only).
+`fem_view` (`eng_toolkit/domains/fem/view.py`) turns the files of one `fem_static` job into `fem_view.glb`, `fem_view.png` (a picture of the same colours that can be pasted into a mail, see "The PNG preview"), `legend.svg` and `view.json`, so a 3D viewer, or a person with no viewer at all, sees where the stress is. It reads files only; Gmsh and CalculiX are not started. Tests: `tests/test_fem_view.py` (62: colour maps, parsers, a synthetic one-tetrahedron job that needs no program, refusals through `fastmcp.Client`, and 9 tests on real `fem_static` runs of the bar, the clamped cantilever and a cylinder, skipped without OCP, Gmsh or CalculiX) and `tests/test_fem_view_review_fixes.py` (25, one block per finding of the review below; 10 of them on real runs: two parts 20 m and 100 m from the origin, the bar, the cylinder, a keyhole part, a plate with a hole), with the independent GLB reader `tests/fem_view_reader.py` (`struct` and `json` only). The picture is tested in `tests/test_fem_view_preview.py` (18: the synthetic job, and the clamped cantilever on the real programs) and `tests/test_preview.py` (17, no engine needed), with the independent PNG reader `tests/png_reader.py` (`struct` and `zlib` only).
 
 ### Parameters
 
@@ -147,6 +147,7 @@ Measured: 33482 elements (the bar at 1.13 mm) take 2.3 s to mesh and about 22 s 
 | `name` | `fem_view` | GLB node name and legend title, 1 to 64 characters; control, format (bidi overrides), surrogate and unassigned characters are refused; everything else is escaped in the SVG and is JSON data in the GLB |
 | `output_unit` | `auto` | unit of the values, labels and `_FIELD`: MPa or mm by default, any pressure or length unit matching the field |
 | `max_seconds` | 120 | wall-clock budget, 1 to 600, checked between steps (`fem.time_budget_exceeded`, `/max_seconds`) |
+| `preview` | `png` | `png` (or `iso`, the same picture): also write `fem_view.png`; `none`: the GLB, `legend.svg` and `view.json` only; anything else is `input.invalid` at `/preview` |
 
 Values: `triangle_count` (primary), `field_max`, `field_min` (over the surface nodes, read back from the GLB's `_FIELD` as float32 and given to 7 digits), `deformation_factor`. `data`: `statistics` (surface and all-node extremes with node numbers and whether they lie on the surface), `fem_static_comparison` (the all-node maximum of `von_mises` or `displacement` against `fem_static`'s `max_von_mises`/`max_displacement` from `result.json`, relative `1e-6`), `range` (mode, ends, widened, clamped counts), `deformation`, `legend`, `counts`, `closed_surface`, `source` (mode, sha256 of every file read, the `fem_static` job id), `output` (accessor bounds read back, conversion, material), `limits`, `losses`.
 
@@ -179,6 +180,42 @@ Before writing, float32 triangle area vectors must agree with the original float
 
 `legend.svg`: a 340 x 470 hand-written SVG: title, field label and unit, a vertical bar filled by a `linearGradient` whose 65 stops are the table (SVG interpolates in sRGB, as the table does), 11 ticks with labels (enough digits to tell them apart), and the notes (clamped counts, exaggeration, widened range, surface min/max, "nodal values"). Elements `svg title rect text defs linearGradient stop line` only, no script, no `href`, the one reference is the internal `url(#ramp)`; all text escaped (`&`, `<`, `>`, quotes). Deterministic: the same inputs give the same bytes for all three files (tested).
 
+### The PNG preview (`preview`)
+
+The user-acceptance round found that nobody could look at a GLB: a person in a chat client asked four times for "a picture" of a
+stress map, and the assistant spent four turns on matplotlib it did not have. `fem_view` therefore also writes `fem_view.png`
+(`preview="png"`, the default), drawn by `eng_toolkit/preview.py` (numpy only, the same module and rasteriser as `geometry_view`; see
+`docs/geometry-view/design.md`, "The PNG preview", for the algorithm, the font, the encoder, the timing and the memory). The GLB, the
+`legend.svg` and the numbers in `data` are the same with or without the picture (tested: same sha256).
+
+* **Content.** 1200 px wide: the title (`name`), the field, its unit and the shape (undeformed, or drawn xN) in a subtitle; the
+  isometric view (camera at (+x, -y, +z), Z up) with an X/Y/Z triad; a **colour bar** 330 px tall with the field's name, the unit in
+  brackets, six tick labels (digits increased until no two labels are equal) and the colour map exactly as the GLB's
+  (tested pixel by pixel against an independent computation of the cubehelix table: within 1/255); under it `Surface min ..., max ...`
+  and `Colour scale lo to hi` in the output unit, for a diverging map `Light grey = zero; blue negative, red positive`, and the notes
+  of the legend (exaggerated shape, clamped nodes, widened range); the size of the undeformed model in mm; and the caveats: nodal values,
+  surface only, peaks at point loads, supports and sharp corners depend on the mesh, unreviewed.
+* **Colours.** Each vertex has the colour of the GLB's `COLOR_0` (the sRGB colour of the map), interpolated linearly over the
+  sub-triangles as a viewer does, times a gentle Lambert factor `0.8 + 0.2 max(0, n . l)` so that the form shows without moving the
+  colour far (a uniform field is one map colour times a factor in [0.8, 1], tested). Thin dark lines draw the feature edges of the drawn
+  shape (the edges of a box, the rims of a cylinder); with `mesh_edges` the element edges as well; when deformed with
+  `show_undeformed_edges`, the undeformed outline in grey.
+* **Markers.** A black ring with `max <value> <unit>` on the surface node that holds the largest value, and for a signed field
+  (`ux`, `s_xx`, `principal_*`, ...) a grey ring with `min <value> <unit>` on the smallest. These are the surface extremes (the ones of
+  `field_max` and `field_min`; an interior extreme is still only a warning). A marker on a face that points away from the isometric
+  camera (a clamped bar's maximum often sits on its underside) is not drawn there: the picture adds a second isometric panel from
+  the view that shows most of the hidden markers (`iso_back` from (-x, +y, +z), `iso_under` from (+x, -y, -z) or `iso_under_back`
+  from (-x, +y, -z), the first of them on a tie) and draws the rings in it; `data.preview.markers[]` says per marker the node, the
+  value, the unit, whether it is `visible` and in which `view`. A marker no view shows is a warning, and its value is still in the
+  colour bar notes and in `data`. Tested on the real cantilever: `uz` has its minimum, -1.904 mm (beam theory 1.9048), marked at the
+  tip, and the von Mises maximum of 594.5 MPa, at the clamped end of the underside, gets the second panel.
+* **Failure is a warning.** If the picture cannot be drawn (memory, its own 60 s, the shared budget running out while drawing) the tool
+  still returns the GLB, the legend and `view.json`, adds `The PNG preview was not drawn (...). The GLB is complete` and sets
+  `data.preview = {"file": null, "reason": ...}` (tested with injected failures). No Pillow is used (nothing to install, nothing to
+  warn about); the tests run with `PIL` and `matplotlib` made unimportable.
+* **`data.preview`:** `file`, `sha256`, `format`, `width`, `height`, `views`, `camera`, `supersampling`, `colours`, `colour_scale`
+  (`low`, `high`, `unit`, `colormap`: the range the bar shows), `model_size_mm`, `markers`, `rule`.
+
 ### What the colours mean, and what they do not
 
 * They are nodal values of a linear, small-displacement, elastic analysis, on the **surface only**. An interior maximum is invisible (a warning names it).
@@ -206,7 +243,7 @@ Security: no caller text reaches a program (none is started); the manifest decid
 
 ### Not done
 
-No volume rendering, cut planes, iso-surfaces or interior views; no animation of the deformation or of load steps (one static step only); no modal, buckling or thermal results (`fem_static` produces none); no element-averaged versus nodal toggle and no integration-point values (only the nodal values CalculiX wrote); no per-material or per-region averaging control (there is one material); no texture-based colouring (vertex colours only, so colours between nodes are interpolated in linear RGB by the viewer); no custom colour tables; no viewing of a `fem_mesh` job without results. Not tested in a third-party glTF validator (the toolkit's own reader and the tests' independent reader check the structure).
+The picture is one fixed isometric view (plus a second one only for a hidden marker): no choice of camera, no cut planes, no labels at user-chosen points. No volume rendering, cut planes, iso-surfaces or interior views; no animation of the deformation or of load steps (one static step only); no modal, buckling or thermal results (`fem_static` produces none); no element-averaged versus nodal toggle and no integration-point values (only the nodal values CalculiX wrote); no per-material or per-region averaging control (there is one material); no texture-based colouring (vertex colours only, so colours between nodes are interpolated in linear RGB by the viewer); no custom colour tables; no viewing of a `fem_mesh` job without results. Not tested in a third-party glTF validator (the toolkit's own reader and the tests' independent reader check the structure).
 
 ### Review findings and their fixes (`tests/test_fem_view_review_fixes.py`)
 

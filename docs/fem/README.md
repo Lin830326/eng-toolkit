@@ -30,5 +30,10 @@ For example, `range="-100 MPa, 200 MPa"` with `field="s_xx"` expands to
 `-200 MPa, 200 MPa`. The warning, legend and range metadata describe the displayed
 range. Sequential colour ranges retain the specified endpoints.
 
+`fem_view` also writes `fem_view.png` (parameter `preview`, default `png`; `none` writes the GLB only): an isometric picture of the
+same colours with a colour bar (field, unit, range, min and max), the size of the model in mm and a ring on the largest value (and on
+the smallest of a signed field), for people who cannot open a GLB. It is drawn with numpy alone; a picture that cannot be drawn is
+a warning and the GLB is still written. Hand the PNG over first; see [design.md](design.md#the-png-preview-preview).
+
 All results remain `review_status: "unreviewed"`. See [design.md](design.md) for
 equations, verification cases, solver limits and interpretation of nodal stress.

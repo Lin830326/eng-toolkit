@@ -454,7 +454,8 @@ async def test_the_gateway_lists_the_tool_with_compact_descriptions():
     schema = tool.input_schema if hasattr(tool, "input_schema") else tool.inputSchema
     assert schema["required"] == ["model_path"]
     assert set(schema["properties"]) == {
-        "model_path", "color_by", "highlight", "process", "tool_axis", "limits", "max_seconds", "mesh_deflection", "name", "show_edges"
+        "model_path", "color_by", "highlight", "process", "tool_axis", "limits", "max_seconds", "mesh_deflection", "name", "show_edges",
+        "preview",
     }
     for name, prop in schema["properties"].items():
         assert prop["description"] and len(prop["description"]) < 140, (name, len(prop["description"]))

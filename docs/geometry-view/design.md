@@ -3,7 +3,8 @@
 `geometry_view` writes a solid 3D CAD file (`.step` `.stp` `.iges` `.igs` `.brep`, read in millimetres) as a **coloured GLB**
 for web, AR and CAD viewers (the text-to-cad viewer among them), with colours that carry engineering meaning, and a
 `view.json` table that links every face to its colour and to the DFM findings that name it. It is the fifth tool of the
-`geometry` domain (5 of 6).
+`geometry` domain (5 of 6). Since the user-acceptance round it also writes a **PNG picture** of the same colours (below, "The PNG
+preview"), because most people cannot open a GLB, and it can colour several named face groups at once ("Highlight groups").
 
 `geometry_convert` already writes a plain, single-colour GLB. `geometry_view` keeps its conventions (metres, +Y up, the
 `(x, y, z) mm -> (x, z, -y) / 1000 m` conversion, read-back of every reported number from the returned bytes, a loss report)
@@ -15,12 +16,13 @@ and adds per-face colours and face identity.
 | --- | --- | --- |
 | `model_path` | (required) | the solid model; `.stl` is refused (`input.unsupported_format`), as is anything that is not closed solids only (see "Closed solids only") |
 | `color_by` | `face_kind` | `none`, `face_kind`, `dfm` or `highlight`; anything else is `input.invalid` at `/color_by` |
-| `highlight` | `""` | `color_by="highlight"` only: face ids `F<n>` separated by commas or blanks (`F3,F7`); required there, refused with any other `color_by` |
+| `highlight` | `""` | `color_by="highlight"` only: face ids `F<n>` separated by commas or blanks (`F3,F7`, ranges `F14-F19`), or **named groups with a colour each**, `bends: F5,F12; holes: F3-F4; ribs: F14-F19` (see "Highlight groups"); required there, refused with any other `color_by` |
+| `preview` | `png` | `png`: a PNG picture next to the GLB, isometric view plus small front, top and right views, legend and size in mm; `iso`: the isometric view only; `none`: the GLB alone; anything else is `input.invalid` at `/preview` (see "The PNG preview") |
 | `process`, `tool_axis`, `limits` | `cnc_milling`, `+z`, `""` | `color_by="dfm"` only, the same values and JSON semantics as `geometry_check_dfm`; with another `color_by` they are validated and a warning says they were not used |
 | `max_seconds` | 120 | wall-clock budget, 1 to 600 s, `dfm.Deadline` as in `geometry_check_dfm`, checked between steps (read, the triangle estimate, inventory, rules, before every face of the meshing, every edge, write); the faces are meshed one at a time, so the budget is honoured within one face's meshing time, but a running OpenCASCADE call (one face) cannot be interrupted. It applies to every `color_by`, not only `dfm`, because reading, the inventory and the meshing are OpenCASCADE calls too |
 | `mesh_deflection` | `0.01 mm` | chord error, 0.001 mm to 100 mm (`geometry_convert`'s parser and range), angular limit 0.5 rad |
 | `name` | `view` | stem of the GLB and name of its node: `[A-Za-z0-9_-]{1,64}`; empty = the input file's stem (`geometry_convert`'s rule) |
-| `show_edges` | `true` | add the B-rep edges as one `GL_LINES` primitive |
+| `show_edges` | `true` | add the B-rep edges as one `GL_LINES` primitive; the PNG draws the same edges as thin dark lines |
 
 Every refusal carries `details.param` as a JSON pointer (`/model_path`, `/highlight`, `/limits/min_wall`, ...): the tool
 wraps its compute and rewrites the parameter names that the shared parsers report (`mesh_deflection` becomes
@@ -49,6 +51,7 @@ both (`color` is sRGB hex, `base_color_factor` is what the material holds). Ever
 | | `neutral` | `#B4B8BE` | no finding names the face |
 | `highlight` | `highlight` | `#E6007E` | a face listed in `highlight` |
 | | `neutral` | `#B4B8BE` | not listed |
+| `highlight`, named groups | the group's name | `#E6007E`, `#E69F00`, `#0072B2`, `#009E73`, `#F0E442`, `#D55E00`, `#56B4E9`, `#7B3FA0` in order of writing | the faces of that group; `neutral`: a face in no group |
 | (all, `show_edges`) | `edges` | `#1A1A1A` | the B-rep edges as lines |
 
 The face-kind colours are the Okabe-Ito palette (distinguishable with the common colour-vision deficiencies). `bspline` is
@@ -146,6 +149,93 @@ axis conversion.
 face ids (the complete list) and edge ids, location, `coloured`, `faces_named`, `faces_total`, `faces_not_coloured` and
 `faces_listed_by_geometry_check_dfm`.
 
+## Highlight groups (`highlight` with names)
+
+`color_by="highlight"` used to colour one set of faces with one colour; the user-acceptance round asked for "bends, holes and ribs,
+each its own colour" in one picture. The `highlight` text now also takes **named groups**:
+
+```
+highlight = "bends: F5,F12; holes: F3-F4; ribs: F14-F19"
+```
+
+* A text with no colon is what it was: face ids `F3,F7` (commas, semicolons, blanks), one group called `highlight`, colour `#E6007E`, the
+  same GLB as before (ranges `F14-F19` now work there too).
+* With a colon, every group is `name: ids`; groups are separated by `;`, `|` or a line break; a name is 1 to 32 letters, digits, `_`, `-`
+  or blanks (`neutral` and `edges` are taken, names compare without case); ids are `F5`, or ranges `F14-F19` / `F14-19`. Up to 8 groups,
+  each with the next colour of `GROUP_COLOURS` (`#E6007E #E69F00 #0072B2 #009E73 #F0E442 #D55E00 #56B4E9 #7B3FA0`; none is the neutral
+  grey or the edge colour); a face belongs to at most one group; faces in no group stay `neutral`.
+* Each group is one GLB primitive and one material (named like the group), one legend row, one group in `view.json` and one swatch in the
+  PNG. `data.highlight_groups` lists `name`, `color`, `faces` and `face_ids` per group; `highlighted_face_count` counts the union.
+* Refused at `/highlight`: a name that is missing or not a name, a name used twice or reserved, a face in two groups, a range that ends
+  before it starts (`input.invalid`); a group with no ids, no group at all (`input.missing`); more than 8 groups, a range of more than
+  20,000 faces (`input.too_large`); an id beyond the face count (`geometry.unknown_entity`, as before). Tests:
+  `tests/test_geometry_view_preview.py`.
+
+`geometry_make_part(formats="glb")` writes a GLB of **one colour**; `geometry_view` on the part's STEP is how a part gets colours (and a
+PNG). The description of the `formats` parameter says so; the tool's own description, which `tests/test_make_part_eval_specs.py` freezes
+as the small-model evaluation saw it, is unchanged.
+
+## The PNG preview (`preview`)
+
+Nobody in the user-acceptance round could open a GLB: people asked for "a picture I can paste into a mail", and assistants spent three or
+four turns trying to draw one with matplotlib they did not have. `geometry_view` therefore also writes `<name>.png` next to the GLB
+(`preview="png"`, the default; `"iso"` draws the isometric view only; `"none"` writes the GLB alone). The GLB's bytes, `view.json`'s face
+table and every number in `data` are the same with or without the picture (tested: same sha256).
+
+**What is in the picture.** A sheet 1200 px wide and about 780 px high (740 for `"iso"`):
+
+* the title (`name`), the file name and what the colour means, in words;
+* the **isometric view** large (camera at (+x, -y, +z), Z up, orthographic) with a small X, Y, Z triad (red, green, blue); with `"png"` also
+  the small **front** (from -Y: x right, z up), **top** (from +Z: x right, y up) and **right** (from +X: y right, z up) views, so that a
+  hole's position and the proportions can be read without a viewer;
+* a **legend**: for every colour group that has faces a swatch in the exact GLB colour, the group's name (`plane (flat face)`, `DFM error
+  flagged`, `bends`, ...) and its face count; a dark line entry for the edges; the size of the model in mm (`Size X 100 x Y 50 x Z 20 mm`,
+  from the tessellation), the triangle count and chord error, for `dfm` the number of findings by severity, and the notes: a face
+  colour means "flagged by a rule of thumb" or "of this kind", not a verdict; a grey face is not a checked face; unreviewed.
+
+**Colours.** A face is drawn in the sRGB colour of its legend group, the colour of the GLB's material (`legend[].color`), times one Lambert
+factor `0.55 + 0.45 max(0, n . l)` (the smooth vertex normals of the GLB, a fixed light in camera space (-0.25, 0.45, 0.85)), so that the
+three faces of a box get three shades and the form can be read. Swatches are the exact colours. Tested: the swatch pixels equal the
+legend's hex, and the pixels of each group in the picture are that colour times one factor in [0.5, 1]. The B-rep edges are 1 px lines
+in `#1A1A1A` with `show_edges` (the GLB's own edge polylines), depth-tested with a small bias that follows the local slope of the depth
+buffer, so edges behind the part do not show (tested: the three hidden edges of a box draw nothing inside the silhouette); with
+`show_edges=false` there are none.
+
+**Algorithm (`eng_toolkit/preview.py`, numpy only).** The tessellation made for the GLB (`brep.tessellate_faces`) is projected orthographically
+and drawn by a z-buffer rasteriser written for numpy: back-facing triangles are dropped (the meshes are closed, counter-clockwise
+outside, exactly what a viewer's back-face culling does with the GLB's single-sided materials); each triangle becomes one horizontal span
+per pixel row, computed for all triangles at once, so the cost follows the covered area and not the bounding box of a long sliver;
+fragments are resolved per pixel by sorting on (pixel, depth) in chunks of about a million, so memory is bounded whatever the mesh;
+the buffers keep only the triangle id and two barycentric weights per pixel, and shading is done once per visible pixel afterwards. The
+picture is rendered at 3 x (2 x above 120,000 triangles) the final resolution and averaged down in a gamma-2 space (anti-aliasing; thin
+dark lines keep their weight). Text is a 5 x 9 bitmap font defined in the module (ASCII; any other character prints as `?`, a few such as
+the micro sign are transliterated), and the PNG is encoded with `zlib` and `struct` (8-bit RGB, filter "Up", no time or text chunk).
+Nothing reads a clock, a random number or an installed font: the same inputs give the same bytes (tested), on any machine. The pixels
+are checked by an independent reader, `tests/png_reader.py` (`struct` and `zlib`, all five filters, CRCs), and by the hand numbers of
+`tests/test_preview.py`: the faces of a box in the isometric view cover `sx sy : sx sz : sy sz` of the picture (`n . t` with
+`t = (1, -1, 1) / sqrt 3`); a sphere covers `pi r^2` pixels of its fitted radius to 1 %; the nearer of two overlapping faces wins in either
+triangle order.
+
+**No Pillow.** The brief allowed Pillow (HPND) for the PNG and the text if the hand-written route did not stay legible. It does (the
+pictures were read), so it is not used: the `png` extra, `licenses.KNOWN`, `pyproject.toml` and the doctor are unchanged, nothing has to
+be installed beyond the `cad` extra, and there is no "Pillow missing" case to warn about. `tests/test_preview.py` runs the renderer in a
+process in which `PIL`, `matplotlib` and `scipy` cannot be imported and checks that none of them gets imported, and
+`tests/test_geometry_view_preview.py` does the same through the tool. (If Pillow happens to be installed, one test uses it to read the
+PNG as a second opinion.)
+
+**Cost.** Measured here: the probe part 0.1 s; a UV sphere of 600,000 triangles 0.8 s and of 1,200,000 triangles 1.4 s (about 350 MB
+beyond the mesh itself); the whole `geometry_view` of a 120 mm sphere at 0.0014 mm (about 590,000 triangles) takes 15 s, nearly all of
+it OpenCASCADE's meshing. The picture has a budget of its own, 60 s (`PREVIEW_SECONDS`), and also honours the tool's `max_seconds`.
+
+**A picture that cannot be drawn is a warning, not a failure.** If the render fails for memory or time (its own 60 s, or the shared
+budget running out while drawing) the tool still returns the GLB and `view.json`, adds the warning `The PNG preview was not drawn (...). The
+GLB is complete` and sets `data.preview = {"file": null, "reason": ...}` (tested with injected failures).
+
+**`data.preview`:** `file`, `sha256`, `format`, `width`, `height`, `views`, `camera`, `supersampling`, `colours` (how they were made),
+`edges_drawn`, `model_size_mm`, `groups` (per colour group with faces: `group`, `color`, `faces`, `share_of_model_in_isometric_view`) and
+`rule`. A colour group that no view of the picture can see (a hidden bottom face, say) is named in a warning, so that the hand-over can
+say "the picture does not show it, the GLB does". The artifact has format `png`; `view.json` names it under `preview`.
+
 ## Face-id correspondence
 
 Faces are numbered by the 1-based `TopExp_Explorer` order, the numbering of `brep.inventory` and so of
@@ -170,7 +260,7 @@ per group, triangles and mesh area per face, edge points and edges, and the unio
 
 ## Contract
 
-Primary value `triangle_count`; values `face_count`, `highlighted_face_count`, `finding_count` (all dimensionless).
+Primary value `triangle_count`; values `face_count`, `highlighted_face_count`, `finding_count` (all dimensionless). Artifacts: the GLB, the PNG (unless `preview="none"`), `view.json`.
 `data` holds the legend, the groups (faces, triangles, the first 200 face ids each), the highlighted faces, the coloured
 and not-coloured findings (200 each at most; `view.json` holds all), `findings_partly_coloured`, the edge counts, input facts, output facts (file,
 sha256, deflection, exact and mesh area, float32 error bound, accessor bounds) and `losses`:
@@ -199,7 +289,9 @@ sha256, deflection, exact and mesh area, float32 error bound, accessor bounds) a
 | `.stl` | `input.unsupported_format` | `/model_path` |
 | coordinates beyond 1 km or not finite | `input.out_of_range` | `/model_path` |
 | face id above the face count | `geometry.unknown_entity` (lists the unknown ids and the face count) | `/highlight` |
-| malformed id, ids with another `color_by`, no ids with `highlight` | `input.invalid` / `input.missing` | `/highlight` |
+| malformed id, ids with another `color_by`, no ids with `highlight`; group text errors (no name, name used twice or reserved, a face in two groups, a backwards range); a group with no ids | `input.invalid` / `input.missing` | `/highlight` |
+| more than 8 highlight groups, a range of more than 20,000 faces | `input.too_large` | `/highlight` |
+| `preview` not `png`, `iso` or `none` (the text is not echoed beyond 64 characters) | `input.invalid` | `/preview` |
 | `process`, `tool_axis`, `color_by`, `mesh_deflection`, `name` over 64 characters; `highlight`, `limits` over 4096; `model_path` over 1024 | `input.invalid` (the long text is not echoed) | the parameter |
 | budget expired | `geometry.time_budget_exceeded` | `/max_seconds` |
 
@@ -302,6 +394,7 @@ Regression tests in `tests/test_geometry_gaps.py`.
 
 * No assemblies, product names, CAD colours, layers or materials from the STEP: the input is read as one flat shape.
 * No textures, UV coordinates, vertex colours, animation, morph targets, scene hierarchy or instancing.
+* The PNG is a fixed sheet (one isometric view from (+x, -y, +z), three axis views): no choice of camera, no outline round the flagged faces, no perspective. It shows only what the tessellation shows (a face with no triangles is absent and warned about), and the picture and the GLB are drawn by different renderers, so shades differ between them; the colours of the legend are the same.
 * No FEM or other field results (stress, temperature) as colours; only the four codings above.
 * No mesh input (`.stl`): a mesh has no faces to identify.
 * No `KHR_materials_unlit` for the edge lines: they use a dark standard material, which viewers light like any other.
