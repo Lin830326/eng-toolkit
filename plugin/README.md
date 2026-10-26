@@ -22,6 +22,10 @@ artifacts preserve nonfinite inputs as quoted text. See the
 | skill `eng-optimize` + `/eng-optimize` | minimise, linear programs, root finding, curve fitting with intervals, uncertainty propagation, design of experiments |
 | skill `eng-plot-results` + `/eng-plot-results` | charts (PNG or SVG) from other tools' CSV artifacts or inline series: Bode, S-N, histograms, station diagrams |
 | skill `eng-3d-view` + `/eng-3d-view` | a PNG picture (to paste into a mail) and a coloured GLB of a part, DFM findings, named face groups or an FEM stress/displacement result |
+| skill `eng-thermal-check` + `/eng-thermal-check` | heatsink and junction temperature (catalogue Rth is valid only at its quoted temperature rise), insulation, fins, radiation, exchanger duty, warm-up curve |
+| skill `eng-control-tuning` + `/eng-control-tuning` | PI/PID from datasheet plant numbers (V/krpm trap), exact-plant check, phase and delay margin, current-limit check, Tustin difference equation |
+| skill `eng-signal-analysis` + `/eng-signal-analysis` | spectrum and peak naming (rpm to Hz, gear mesh), alias check, anti-alias filter and decimation by specification, header-less sample files |
+| skill `eng-flow-network` + `/eng-flow-network` | pump and system curve, branch flow split, DN to bore, Kv and datasheet dp to K, open channel, nozzle, drag, water hammer |
 | `/eng-toolkit-setup` | connection and dependency check, registration command |
 | prompt hook (`hooks/hooks.json`) | one short reminder with every prompt: numbers that decide a result come from an `mcp__eng-toolkit__` call; unit scaling and sums of tool outputs are allowed only labelled "my arithmetic"; values from memory are labelled "from memory, not a tool result"; missing deciding inputs are asked for, not invented. Delete `hooks/` to turn it off |
 
@@ -52,6 +56,10 @@ artifacts preserve nonfinite inputs as quoted text. See the
    /eng-optimize fit T = Tinf + A*exp(-t/tau) to these cooling data with a 95 % interval on tau
    /eng-plot-results Bode plot of the filter just designed
    /eng-3d-view C:\parts\bracket.step colour by DFM findings
+   /eng-thermal-check IRF540N 8 W on a 3 K/W heatsink in a 45 C box, Tj rule 90 C: fan needed? warm-up of the 200 g sink
+   /eng-control-tuning Maxon RE 40 velocity loop, 50 ms rise, <10 % overshoot, 1 kHz controller: gains and difference equation
+   /eng-signal-analysis accel.csv at 10 kHz, motor 1480 rpm: spectrum peaks, are 1x and 2x there, decimate by 4
+   /eng-flow-network cooling loop DN40 60 m, plate exchanger, two branches, pump curve points: operating point and split
    ```
 
 ## Does it help? (Claude Haiku, `scripts/eval_plugin.py`)
