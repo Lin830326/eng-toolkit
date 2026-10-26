@@ -1,6 +1,6 @@
 ---
 name: eng-plot-results
-description: Use to turn results of other eng-toolkit tools (their CSV artifacts such as filter response, Bode data, S-N curve, rainflow table, beam stations, channel profile, step response, spectrum) or numbers the user gives into a chart picture (PNG for slides and reports, or SVG) with plot_xy, plot_panels or plot_bar. Covers choosing the chart, artifact paths and column names, labels with units, log axes, ranges, reference lines, a marked operating point, histograms, checking the drawn data against the source tool, and handing over the picture in words and as a PNG path. Load eng-toolkit first.
+description: Use to turn results of other eng-toolkit tools (their CSV artifacts) or numbers the user gives into a chart picture (PNG for slides and reports, or SVG) with plot_xy, plot_panels or plot_bar: Bode, S-N, spectrum, station diagrams, histograms, bar comparisons. Load eng-toolkit first.
 ---
 
 # Plot results workflow (eng-toolkit)
@@ -21,7 +21,7 @@ Which quantity against which (with units), where the numbers come from (a tool r
 | Shear/moment diagram | `plot_xy`, `fill="zero"`, one member file at a time |
 | S-N curve | `plot_xy`, `x_scale="log"`, `y_scale="log"` |
 | Spectrum lines / piecewise-constant signal | `kind="stem"` (narrow with `x_range`) / `kind="step"` |
-| Test points over a curve | inline series, `kind="line,scatter"` (one kind per series) |
+| Test points over a curve; pump or system curve with its operating point | inline series, `kind="line,line,scatter"` (one kind per series; the operating point is its own series named with its value) |
 | Distribution of one column | `plot_bar`, `mode="histogram"` |
 | Compare categories | `plot_bar` (grouped/stacked, up to 6 series, `err`) |
 
@@ -30,9 +30,11 @@ Which quantity against which (with units), where the numbers come from (a tool r
 ## 3. Build the inputs
 
 - Give **exactly one** of `data_file` or `series`. `data_file` = the path in the producing tool's `artifacts[]` (`format: "csv"`): `.csv`/`.txt`, header row, comma separated (a semicolon export reads as one column; `.xlsx` refused). Columns are picked by header name; a wrong name is refused with the real names.
-- Tables: `dsp_filter_design` `filter_response.csv` (`frequency_hz,magnitude_db,phase_deg`; 512 rows, 0 Hz to Nyquist, floor -300 dB); `control_frequency` `bode.csv` (`frequency_rad_s,...`, log grid); `control_response` `response.csv` (`time_s,input,output`); `fatigue_sn` `sn_curve.csv` (`cycles,amplitude_MPa`; 61 rows, 1e3..1e9); `fatigue_rainflow` `rainflow_cycles.csv` (`range_MPa,mean_MPa,full_cycles,half_cycles,weighted_count`); `structures_frame` `member_<n>_stations.csv` (`x_m,side,N_N,V_N,M_N_m,u_local_m,...`, one per member); `fluids_open_channel` `channel_profile.csv` (`x_m,bed_m,depth_m,water_surface_m,...`); `dsp_spectrum` `spectrum.csv` (`frequency_hz,amplitude,...`). `thermal_transient` returns single numbers, no table: call it for several times and pass the results as inline `series`.
+- Tables: `dsp_filter_design` `filter_response.csv` (`frequency_hz,magnitude_db,phase_deg`; 512 rows, 0 Hz to Nyquist); `control_frequency` `bode.csv` (`frequency_rad_s,...`, log grid); `control_response` `response.csv` (`time_s,input,output`); `fatigue_sn` `sn_curve.csv` (`cycles,amplitude_MPa`; 61 rows, 1e3..1e9); `fatigue_rainflow` `rainflow_cycles.csv` (`range_MPa,mean_MPa,full_cycles,half_cycles,weighted_count`); `structures_frame` `member_<n>_stations.csv` (`x_m,side,N_N,V_N,M_N_m,u_local_m,...`, one per member); `fluids_open_channel` `channel_profile.csv`; `dsp_spectrum` `spectrum.csv` (`frequency_hz,amplitude,...`). `thermal_transient` has no table: call it for several times and pass inline `series`.
 - `x_column` blank = first column. **`y_columns` blank = every other numeric column** (six unit-mixed series on a station table): always name them. Naming a text column (`side`) is refused.
-- Inline: `series='[{"name":"gain","x":[1,10],"y":[0,-3]}]'`, plain numbers (no units, nan, `1_000`), equal lengths, `x` optional; bars take text categories in `x` and `"err"`.
+- Inline: `series='[{"name":"gain","x":[1,10],"y":[0,-3]}]'`, plain numbers (no units, nan, `1_000`), equal lengths, `x` optional; bars take text categories in `x` and `"err"`. Also use inline series to compare numbers from several tool results (gate counts, losses, scenarios): never write chart code.
+- **Units**: station CSVs are SI (N, N*m, m) and the tools cannot rescale a column. For kN*m and mm, pass inline series multiplied by 1e-3 / 1e3 (my arithmetic, from the CSV numbers) and say so in the axis label ("Moment (kN*m)"); do not leave the toolkit to rescale.
+- A rise time (10-90 %) or a band is marked with `vlines` at t10 and t90 or a `band`, not one line at the target value.
 - Labels with unit: `x_label="Frequency (Hz)"`, `y_label="Stress amplitude (MPa)"` (at most 120 characters). `hlines="250,yield"`, `vlines="1000,cutoff"`, `band="-3,0,passband"` use plain numbers in axis units (`"-3 dB"` refused). `x_range`/`y_range` = `"min,max"`, min < max, plain numbers in the axis unit (`"0,3600"` for seconds, never `"0,10 s"`; the unit goes in the label). `marker="1200,45.5,duty point"` (`plot_xy`) rings one point, for example the operating point on a pump or torque-speed curve. `width`/`height` 200..2400 px (the PNG is always 1600 px wide).
 
 ## 4. Run, then verify
