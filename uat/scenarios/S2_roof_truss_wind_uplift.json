@@ -1,0 +1,25 @@
+{
+  "id": "S2_roof_truss_wind_uplift",
+  "domains": [
+    "structures",
+    "plot"
+  ],
+  "persona": "Mr. Chen, 52, self-taught builder who welds mountain-hut and shed roofs from angle iron in Nantou. Writes Traditional Chinese, practical and a bit impatient, gives sizes in 'x' notation (L80x80x8) and sometimes mixes mm and m. Not an engineer: knows the 'Euler formula' from a night-school course and has a rule that compression bars must have a safety factor of 2 against it. Assumes snow is the governing load because the hut is at 2000 m altitude.",
+  "goal": "Get the force in every member of his 8 m roof truss for the loads, find the critical member for buckling and its utilisation, and be told clearly whether his angle sizes are acceptable or which member to upgrade.",
+  "opening": "我在山上蓋一間工寮，屋頂鋼桁架跨度 8 公尺，用角鋼焊的，每 3 公尺一榀。上弦 L80x80x8，下弦 L60x60x6，腹桿都用 L50x50x5。屋脊高 1.6 m。有雪也有颱風。幫我算每根桿件的力，哪一根最危險、挫屈安不安全？",
+  "facts": {
+    "geometry": "pin-jointed truss, bottom chord nodes at x = 0, 2, 4, 6, 8 m (y = 0); top chord nodes at x = 2, 4, 6 m with heights 0.8, 1.6, 0.8 m, eave joints are the end bottom nodes (so the top chord goes from the left support up to the ridge at mid-span and down again, slope 1.6 m rise over 4 m run); verticals at x = 2, 4, 6 m; diagonals from the bottom node at x = 2 m up to the ridge and from x = 6 m up to the ridge; 13 members in all; pinned at the left end, roller (vertical support only) at the right end",
+    "purlins": "a purlin at every top-chord joint (and at the eaves) so all loads are applied at the joints; the truss is 3 m from the next one",
+    "loads": "dead load (sheeting and purlins) 0.25 kN/m2 and snow 0.8 kN/m2, both per m2 of floor plan (horizontal projection); typhoon wind suction on the roof 0.9 kN/m2 acting perpendicular to the roof surface, pulling away from it, the same on both slopes. He wants the snow case and the wind case checked separately, each combined with the dead load as it is (no load factors, he does not know what a load factor is)",
+    "criterion": "compression bars: Euler critical load for a pin-ended bar (his rule: the bar force must not exceed half the Euler load, utilisation = force / (Euler load / 2)); steel is ordinary Q235/S235, E = 210 GPa; he thinks only the top chord can fail because it carries the biggest force",
+    "section_data": "he only knows the names of the angles (equal angles, EN/Chinese standard sizes); if the assistant asks for areas or radii of gyration he says to use the standard table values and does not check them",
+    "wrong_assumption": "snow is the worst case; and the bars are 'all the same' so the longest bar must be the worst",
+    "follow_up": "if one bar fails he wants to know which angle to change it to and if that fixes it; he would also like a simple picture (bar chart) of the member forces if it is easy"
+  },
+  "files": {},
+  "max_turns": 6,
+  "truth": "uat/truth/S2_roof_truss_wind_uplift.py",
+  "expect_picture": false,
+  "tool_check": "structures_truss, 8 nodes / 13 bars, E 210 GPa, A and I = A*iv^2 from the angle tables, supports 'B0,xy;B4,y', nodal loads from the independent script (snow case: 6.3 kN on each top node; wind case: components of 0.9 kN/m2 normal to the roof). Tool and truth agree to all printed digits: snow case top chord -25.445 kN (Euler load 132.0 kN), bottom chord +23.625 kN, diagonals +10.085 kN; wind case diagonals B1-T2 and B3-T2 -7.626 kN with euler_critical_load 14.269 kN and euler_safety_factor 1.871 (below the person's factor 2: util 1.07), bottom chord end panels -13.545 kN (Euler 49.0 kN, factor 3.62). Without I the tool gives no buckling output, so the assistant must supply I about the weak axis of the angle: the tool gives no angle sections (structures_section has rectangle/i/h/t/channel/polygon only, an L would need a polygon with sharp corners), so the assistant must know the catalogue values; using the parallel-axis I of the table (11.0 cm4 for L50x50x5 instead of 4.5 cm4) gives a safety factor of about 4.6 and a wrong 'all fine'. The wind decomposition into horizontal and vertical joint loads has to be done by the assistant by hand (no distributed or inclined joint load input). Rough edge: none in the tool itself.",
+  "not_realistic": "Geometry and loads are a realistic small hut truss but invented; no real structure or code load case (EN 1991 snow / wind) is applied, the numbers are plausible working loads. The angle table values are from memory of EN 10056-1 and should be re-checked against the manufacturer's table if they matter."
+}

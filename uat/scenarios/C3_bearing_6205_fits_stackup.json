@@ -1,0 +1,21 @@
+{
+  "id": "C3_bearing_6205_fits_stackup",
+  "domains": ["metrology", "plot", "mech"],
+  "persona": "Jason, mechanical design engineer (5 years) at a gearbox maker in Taichung. Competent but not a tolerancing specialist: knows H7/h6 from school, has copied bearing fits from older drawings. Writes mixed Chinese and English in short lines, gives numbers without always repeating units.",
+  "goal": "Decide the ISO shaft and housing fits for a 6205 bearing at the gearbox output shaft, know the clearance/interference ranges those fits give with the real bearing ring tolerances, and get the axial end-float stack-up (worst case and statistical) with a clear yes/no against his 0.1 to 0.5 mm requirement; ideally a picture comparing the fits.",
+  "opening": "我們減速機輸出軸用 6205 軸承（25x52x15），軸承座是 6061 鋁。舊圖面軸寫 h6、座孔寫 K7，這樣對嗎？要用什麼 ISO 配合比較好？還有軸向公差累積我也想算一下，看端隙夠不夠。",
+  "facts": {
+    "bearing": "SKF/NSK style deep groove 6205: d 25 mm, D 52 mm, B 15 mm, normal tolerance class (ISO 492), dynamic rating C = 14.8 kN. Width tolerance on his drawing: 15 +0/-0.12 mm.",
+    "load": "Radial load on the bearing about 1.2 kN steady, mostly from the gear, direction fixed relative to the housing. The shaft rotates, the housing is stationary. Shaft is steel (S45C), housing 6061-T6 aluminium.",
+    "temperature": "The gearbox runs at about 70 degC oil temperature; assembled at 20 degC. He did not think about the aluminium housing expanding more than the steel bearing ring until it is mentioned.",
+    "axial_chain": "Shoulder on the shaft pushes against a spacer sleeve, then the bearing, then a DIN 471 circlip 25 mm (thickness 1.2 mm, -0.06) in a groove. Drawing dimension from the shaft shoulder face to the groove wall the circlip rests against: 21.5 +-0.1 mm. Spacer sleeve: 5.0 +0/-0.1 mm. He wants the gap (end float) between the parts to be 0.1 to 0.5 mm after assembly.",
+    "statistics": "He has no process capability data; assume each dimension is normally distributed with the tolerance = +-3 sigma if the assistant asks. Production volume 500 pieces per year.",
+    "chart": "He would like one picture to show the supplier how loose or tight each fit is (shaft fits and housing fits) but he does not mind how it looks.",
+    "wrong_belief": "He thinks the fit table value 'H7/k5' is directly what his bearing gets. He has not thought about the bearing's own bore tolerance (0/-10 um) being different from H7."
+  },
+  "files": {},
+  "max_turns": 6,
+  "truth": "uat/truth/C3_bearing_6205_fits_stackup.py",
+  "expect_picture": true,
+  "tool_check": "metrology_fit_limits: 25 mm H7/k5 -> clearance -0.011..+0.019 (transition; deviations hole +21/0, shaft +11/+2), H7/h6 0..+0.034, H7/k6 -0.015..+0.019, 52 mm K7/h6 -0.021..+0.028, K7/h5 -0.021..+0.022: all agree with ISO 286 published values in the truth. The tool only takes the ISO H hole, not the bearing ring tolerance (0/-10 bore, 0/-13 OD): to get the true seat the assistant must build it with metrology_stackup_1d links or compute -0.021..-0.002 (k5) by hand. metrology_fit_search nominal 25 mm window -0.025..-0.001 returns no preferred candidate (H7/n6, H7/p6 as nearest misses): another trap for a user who asks 'an interference fit'. metrology_stackup_1d with chain [shaft +0.1/-0.1 +, spacer +0/-0.1 -, bearing +0/-0.12 -, circlip +0/-0.06 -], limits 0.1..0.5, monte_carlo true: worst case 0.200..0.680 (nominal 0.300, mean 0.440), RSS 0.3096..0.5704, mc std 0.0434, out of spec above 0.5: 8.45 %; matches the hand/numpy truth. spec_check within_spec false in both methods. ROUGH EDGES: none blocking; result_nominal (0.30) differs from result_mean (0.44) and the tool does not explain why in text, an assistant that quotes only 'nominal' gives a wrong centre. No tool draws a tolerance-zone picture; plot_bar (grouped bars of min and max clearance, negative = interference) is the only way, bars do not float so ranges are shown as two bars per fit."
+}

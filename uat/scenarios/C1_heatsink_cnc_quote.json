@@ -1,0 +1,21 @@
+{
+  "id": "C1_heatsink_cnc_quote",
+  "domains": ["geometry", "dfm", "3d-view"],
+  "persona": "Amy, purchasing assistant at a small electronics company in Taiwan. Not an engineer: knows 'STEP', 'CNC' and 'mass' but not DFM terms such as tool axis or internal corner radius. Writes short mixed Chinese/English messages, no units half the time, and wants a plain yes/no plus a picture she can forward to the machine shop.",
+  "goal": "Leave with: the mass of the heatsink in 6061 aluminium (to estimate material cost), its overall size (to choose a bar stock), a clear answer whether a shop can CNC mill it with a 3 mm end mill and 1 mm minimum walls (and what exactly is a problem), and a coloured 3D file/picture showing the problem faces that she can send to the shop.",
+  "opening": "Hi 我要請 CNC 廠用 6061 鋁合金做這個散熱片 ({part})，STEP 檔在這。幫我算一下重量(密度 2700)、外形尺寸大小，還有他們最小只有 3mm 的銑刀，壁厚要有 1mm，這個做得出來嗎？有問題的地方可以幫我用顏色標出來給我看嗎？",
+  "facts": {
+    "units": "The file is in millimetres. She did not say 'kg/m3': she wrote 2700 for the density of 6061.",
+    "file_name_belief": "She believes the part is 125 x 35 x 50 mm because that is in the file name (it is not: the model's third dimension is 35 mm). If the assistant gives her 124.75 x 34.99 x 35 she is surprised and asks why not 50.",
+    "tool": "The shop's smallest end mill is 3 mm DIAMETER (not radius). She will say so if asked whether 3 mm is diameter or radius.",
+    "wall": "The shop wants every wall at least 1 mm thick.",
+    "approach": "She does not know from which side the shop will machine it. The fins point up in the model's +Y direction (the base plate is at the bottom, fins on top); if asked, the shop will mill the fin slots from the fin side.",
+    "quantity": "200 pieces, quoted per piece by weight of the bar stock; she only needs the part mass and the bar size.",
+    "what_she_wants_to_send": "A picture or 3D file with the problem faces in a clear colour, she can open GLB files in the Windows 3D viewer."
+  },
+  "files": {"part": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/3dmodels/Heatsink.3dshapes/Heatsink_125x35x50mm_3xFixationM3.step"},
+  "max_turns": 5,
+  "truth": "uat/truth/C1_heatsink_cnc_quote.py",
+  "expect_picture": true,
+  "tool_check": "In-process calls on this file: geometry_measure density 2700 kg/m^3 -> volume 55195.2 mm3, mass 0.14903 kg, size 124.749 x 34.993 x 35.0 mm, 3 holes d3.2 through depth 35 (matches the OCP truth). geometry_check_dfm cnc_milling with limits {tool_radius 1.5 mm, min_wall 1 mm}: tool_axis +y gives only 3 errors (cnc.hole_depth_ratio 10.94 > default 10); the 22 R0.25 root fillets are NOT reported (floor-to-wall corner radius is in 'not_performed'), and smallest_wall_mm is null (face_pairs_tested 0: tapered fin flanks are not parallel planes, so the 1 mm wall check silently measures nothing). tool_axis +z gives 47 errors: 3 holes + 44 'sharp internal corner radius 0' of which 22 are the true R0.25 root fillets (measured 0.25 would be the honest figure) and 22 are fin-flank/tip-arc junctions at material angle 182 deg (a 2 degree draft, essentially tangent, not a real corner), i.e. 58 of 73 faces turn red and the picture is useless. If the assistant passes tool_radius '3 mm' (diameter mistaken for radius) the verdict changes. geometry_view color_by dfm works (GLB written, legend in data). ROUGH EDGES: (1) the +z DFM picture is dominated by false 182 degree corners; (2) wall check blind on tapered walls, so a correct '1 mm walls OK' needs the assistant to measure thickness itself with geometry_measure 'thickness P(...) +x'; (3) uat/render_glb.py draws only COLOR_0 vertex colours, the toolkit GLB uses material baseColorFactor, so rendered/ PNGs of dfm GLBs come out all grey and the holes (inside the end face) are not visible: the judge cannot see the colours from rendered/ alone."
+}

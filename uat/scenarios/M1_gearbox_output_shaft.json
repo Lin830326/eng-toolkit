@@ -1,0 +1,32 @@
+{
+  "id": "M1_gearbox_output_shaft",
+  "domains": [
+    "machine",
+    "mech",
+    "structures",
+    "plot",
+    "geometry"
+  ],
+  "persona": "Mechanical designer, 6 years at a small gearbox and conveyor-drive maker in Taichung. Writes Traditional Chinese mixed with English terms, short messages, no units sometimes (mm assumed). Knows his gearbox drawings well but is not strong on fatigue theory; tends to guess a shaft diameter from the motor shaft and hopes the assistant confirms it.",
+  "goal": "Leave with: the minimum shaft diameter at the gear seat (keyway) and at the shoulder fillet for infinite fatigue life with a sensible safety factor, the loads and bearing reactions behind it, the L10 life of his SKF 6210 against his 25000 h target, the key size and length, and a picture of the bending moment along the shaft (and, if it comes easily, a 3D model of the stepped shaft). He wants to know whether his guess of 50 mm is OK.",
+  "opening": "我在設計一台斜齒輪單級減速機的輸出軸。馬達 30kW 1470rpm,滿載。大齒輪節圓大概 294mm,小齒輪約 83mm,兩個軸承中心距大概 300mm,大齒輪靠馬達那邊一點。我本來想齒輪座直接用 50mm 的軸,鍵槽跟台階都有。你幫我算一下實際要多大才不會疲勞斷?軸承我要用 SKF 6210,壽命夠不夠?鍵要多長?",
+  "facts": {
+    "gear data": "pinion 20 teeth, wheel 71 teeth (ratio 3.55), normal module 4, helix angle 15 degrees, normal pressure angle 20 degrees; one helical stage efficiency about 98.5 %",
+    "gear position": "gear centre plane is 120 mm from the left bearing A (the motor side); hub width 80 mm; the shoulder is at the right hub face, i.e. 40 mm to the right of the gear centre plane; bearing B is the right bearing and then the shaft goes on to the output coupling stub",
+    "axial force direction": "the helix hand is such that the axial force on the output shaft pushes toward bearing A; A is the fixed (locating) bearing and B floats. He only knows this when asked about the axial force direction or the locating bearing",
+    "duty": "belt conveyor drive with medium shocks; the company uses a service factor 1.25 on all loads (torque and bearing loads). Reveal only if asked about shock, duty or service factor",
+    "material and surface": "shaft is C45+QT per EN 10083-2: Rm min 630 MPa, Re min 370 MPa for 40..100 mm; surface turned (machined), no shot peening",
+    "design criteria": "wants 99 % reliability and a fatigue safety factor of 2 (no mean-stress experts; the gear loads are fixed in space so the shaft sees fully reversed bending with steady torque); load is constant in steady running",
+    "notches": "keyway is end-mill cut; the fillet radius at the shoulder is about d/10 (e.g. R6 on a 60 mm seat); he does not know the stress-concentration factors",
+    "keys": "key stock is AISI 1045 cold drawn (Sy 530 MPa), he wants a design factor 2 on the key; he does not know which DIN 6885 key size fits; for the gear seat the key must fit inside the 80 mm hub",
+    "bearing": "SKF 6210 (50 mm bore): he looked up C = 37.1 kN and C0 = 23.2 kN; required life 25000 h; both bearing seats are 50 mm",
+    "coupling end": "the output end after bearing B is a 45 mm stub, 82 mm long with a keyed coupling; he also wants its key length",
+    "picture request": "after the numbers, he asks for a picture of the bending moment along the shaft (resultant of both planes) and then a 3D model he can show the machine shop",
+    "shaft geometry for the 3D model": "total length 420 mm measured from the left end, diameters in mm: x 0..40 d50 (bearing A seat, bearing centre at x = 20); 40..100 d72 collar; 100..180 d60 gear seat (hub 80 mm wide, centred at x = 140) with a gear key slot 18 mm wide and 70 mm long starting at x = 105; 180..200 d72 shoulder; 200..310 d55; 310..330 d50 (bearing B seat, centre at x = 320); 330..420 d45 coupling stub with a key slot 14 mm wide and 70 mm long starting at x = 340. Material density 7850 kg/m^3. He does not mind if the assistant simplifies the fillets"
+  },
+  "files": {},
+  "max_turns": 7,
+  "truth": "uat/truth/M1_gearbox_output_shaft.py",
+  "expect_picture": true,
+  "tool_check": "machine_shaft(d 60 mm, alternating_bending 485.6 N*m, mean_torque 851.8 N*m, Sut 630, Sy 370, kf 1.861, kfs 2.608, machined, 99 %) -> endurance_limit 166.4 MPa, goodman_safety_factor 2.499: identical to the Shigley DE-Goodman truth (n_f 2.50), so the tool can confirm any trial diameter but cannot size one: the assistant must iterate d and supply Kf/Kfs itself (no Kt chart, kt/kf default 1). mech_bearing_life(C 37.1 kN, P 4740 N, 414.1 rpm, ball, required 25000 h) -> L10h 19299 h (truth 19294) with a warning that C is below the 40.4 kN needed. machine_key(18x11, d 60, T 851.8, Sy 530) -> minimum_length_shear 5.16 mm, bearing 9.74 mm: exactly half the truth numbers (10.3 / 19.5) because the tool has no design factor, the strengths must be halved by hand for n = 2. structures_frame in the tangential plane gives max M 417.17 N*m (truth 417.1), radial plane with the axial couple -228.3 N*m gives max 294.2 (sign of the couple flips the answer between the 'axial toward A' and 'toward B' cases, which is why the scenario hides the direction in the facts). geometry_make_part revolve polygon + two box cuts builds the stepped shaft (volume 1.059e6 mm3, mass 8.32 kg). Rough edges: (1) machine_shaft with only alternating_/mean_ loads reports bending_stress, von_mises etc. = 0 and static_safety_factor null ('zero demand') so a user can read 'zero stress'; (2) no tool adds the two bending planes into a resultant or draws it, machine_gear is spur only (no helical Wa, Wr), so forces, reactions and the resultant diagram need hand arithmetic by the assistant; (3) bearing equivalent load P = X Fr + Y Fa is not computed by mech_bearing_life."
+}

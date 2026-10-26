@@ -1,0 +1,25 @@
+{
+ "id": "F4_vibration_spectrum_filter",
+ "domains": [
+  "dsp",
+  "plot"
+ ],
+ "persona": "Condition-monitoring engineer at a German pump manufacturer; writes English, knows FFT basics, mixes up rpm and Hz under time pressure, wants a short answer and a picture for a report.",
+ "goal": "Get the spectrum of his accelerometer record with the dominant peaks identified, a clear statement of whether the 1x and 2x running-speed components of the 1480 rpm motor are in it (and not confused with the 50 Hz mains line), and a low-pass / anti-alias filter design for decimating the record by 4 with its frequency response.",
+ "opening": "Hi, I recorded vibration on a motor with an accelerometer, 10 kHz sampling, file here: {record} (two columns, time in s and acceleration in g, no header). I know there are tones at about 50 Hz, 120 Hz and 1 kHz in it. I want to design an anti-alias / low-pass filter, see the spectrum with the main peaks, and know whether the 1x and 2x of the motor (it runs 1480 rpm) show up. A plot would help.",
+ "facts": {
+  "motor": "4-pole induction motor on 50 Hz mains, nameplate 1480 rpm, direct on line. It drives a 40-tooth gear pinion on its shaft. You have not connected the 1 kHz tone to the gear mesh yourself.",
+  "wrong_assumption": "You first think 1x is 1480 Hz (you read the rpm number as Hz) and that 2x is the 50 Hz line; you accept the correction when shown 24.7 Hz and 49.3 Hz.",
+  "filter_purpose": "You want to store the record decimated by 4 (10 kHz down to 2.5 kHz) and keep everything up to 1.1 kHz (the gear mesh and its sidebands). Anything that would fold into the 0 to 1.1 kHz band must be at least 60 dB down; passband ripple up to 0.5 dB is fine. You would like a recommendation for IIR or FIR but have no preference.",
+  "hardware": "Piezo accelerometer (IEPE) into a 16-bit ADC board that has only a simple first-order RC filter at about 5 kHz in front of the converter. You do not know the accelerometer's mounted resonance.",
+  "file_note": "The file is the raw export of the DAQ software, 12 s long, 120000 rows. You do not know about any 3.7 kHz content.",
+  "plot_wanted": "Amplitude spectrum in g versus frequency (log or linear axis, up to 5 kHz or zoomed) with the peaks readable, and the filter's magnitude response."
+ },
+ "files": {
+  "record": "C:/Users/USER/Documents/GitHub/eng-toolkit/.claude/worktrees/feat-uat/uat/data/F4_motor_accel_10kHz.csv"
+ },
+ "max_turns": 6,
+ "truth": "uat/truth/F4_vibration_spectrum_filter.py",
+ "expect_picture": true,
+ "tool_check": "dsp_spectrum on the file (samples_file, hann, peaks 10, remove_mean) returns bin width 0.0833 Hz and peaks 986.67 Hz 0.1499 g, 120.00 Hz 0.0900, 24.667 Hz 0.0599, 3700.0 Hz 0.0500, 50.00 Hz 0.0450, 1011.33/962.0 Hz 0.0299, 49.333 Hz 0.0249: identical to the scipy truth, so 1x and 2x are resolved from the 50 Hz line. dsp_filter_design chebyshev1 lowpass 10 kHz, passband 1.1 kHz, stopband 1.4 kHz, 0.5 dB, 60 dB gives order 12 (stopband edge gain -64.6 dB); scipy minimal orders: Butterworth 30, Chebyshev 12, elliptic 7, Kaiser FIR 122 taps. Rough edges: (1) the same file with a one-line header ('time_s,accel_g') is refused: \"samples_file line 1: 'time_s' is not a number (the file must hold numbers only, no header...)\"; the assistant in the UAT run has no Write/Bash tool to strip it, so a real logger export WITH a header cannot be analysed at all (I therefore made the file header-less); (2) spectrum amplitude comes back with unit 'dimensionless' for g data; (3) the 0 Hz row of the spectrum CSV blocks a log-frequency plot (plot linear or drop the row), as the skill already warns."
+}

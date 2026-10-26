@@ -1,0 +1,25 @@
+{
+ "id": "F3_servo_velocity_pid",
+ "domains": [
+  "control",
+  "electric",
+  "plot"
+ ],
+ "persona": "Junior mechatronics engineer building a belt-driven test rig with a Maxon RE 40 motor; writes English, quotes datasheet numbers loosely with mixed units, knows what a PID is but not pole placement; needs gains he can type into a 1 kHz microcontroller loop.",
+ "goal": "Get velocity-loop gains (PI or PID) that give about 50 ms rise time and under 10 % overshoot for the motor-plus-load plant, a step response and Bode plot to show his supervisor, and the discretised controller at 1 kHz as a difference equation, with a check that the digital version still meets the spec.",
+ "opening": "Hi. I have a Maxon RE 40 (148877) 24V brushed DC motor driving a belt load and I need a velocity PID. Datasheet says: R = 0.299 ohm, L = 0.082 mH, torque constant 30.2 mNm/A, speed constant 317 rpm/V (so Ke = 3.155 V/krpm), rotor inertia 142 gcm2. I want about 50 ms rise time and less than 10% overshoot. Can you tune it and show me a step response plus a Bode plot, and then discretise it for my 1 kHz loop?",
+ "facts": {
+  "load": "Load inertia reflected to the motor shaft measured at 1.2e-4 kg m^2 (in addition to the rotor inertia). Direct coupling, no backlash.",
+  "friction": "No viscous friction number. The datasheet lists no-load current 137 mA and no-load speed 7580 rpm at 24 V.",
+  "drive": "Voltage-mode PWM H-bridge drive, 24 V supply, drive current limit 10 A. Usual speed command: a step from 0 to 500 rpm.",
+  "controller": "Microcontroller loop at 1 kHz, velocity from an encoder, one sample of computation delay. Output is a voltage command (V), speed feedback in rad/s is fine, gains in V per rad/s.",
+  "rise_time_meaning": "'50 ms rise time' means 10 to 90 percent of the final value of the speed step. If asked what you want for the damping, you have no preference as long as overshoot is below 10 percent.",
+  "wrong_assumption": "You think you need a D term ('PID') and a high gain to be fast; and you wrote Ke as 3.155 V/krpm, which you may later paste into the model as 3.155 (a unit trap: in SI it is 0.03013 V s/rad).",
+  "plot_wanted": "Step response of the closed loop (speed in rpm vs time in ms) and a Bode plot of the open loop with phase margin."
+ },
+ "files": {},
+ "max_turns": 6,
+ "truth": "uat/truth/F3_servo_velocity_pid.py",
+ "expect_picture": true,
+ "tool_check": "Plant omega/V = 0.0302/(1.10044e-8 s^2 + 4.0126e-5 s + 9.113e-4) (DC gain 33.1 rad/s/V, tau_m 44.0 ms). control_feedback with C = (0.0585 s + 1.328)/s returns a stable loop, no overshoot, Kv 43.98; control_response on the closed-loop polynomials [0.0017667, 0.0401056]/[1.10044e-8, 4.0126e-5, 0.002678, 0.0401056] gives rise 49.3 ms, overshoot 0 %, settling 88.8 ms (matches truth 49.3 ms). control_pid_tune needs a first-order-plus-dead-time model (delay must be > 0), so the assistant has to approximate K 33.1, T 44 ms, L 1 ms: imc, lambda 22.7 ms gives Kc 0.0561, Ti 44 ms, rise 49.8 ms (close to the truth gains). control_discretize Tustin of (0.0585 s + 1.328)/s at 1 ms gives y[k] = 0.059164 u[k] - 0.057836 u[k-1] + y[k-1]. Rough edges: control_feedback 'guaranteed_phase_margin 59.3' is the bound from the S peak, not the actual margin (the real one is ~89 deg, from control_frequency); no tool simulates the sampled loop with delay or the current limit, so that check can only be argued."
+}

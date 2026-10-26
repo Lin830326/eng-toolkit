@@ -1,0 +1,27 @@
+{
+  "id": "S4_exhaust_stack_modes",
+  "domains": [
+    "structures",
+    "structures3d",
+    "plot"
+  ],
+  "persona": "Ms. Lin, 38, maintenance engineer at a food plant. Writes Traditional Chinese with English abbreviations (Hz, SS304, sch40), asks short practical questions. Knows the column formula 'pi^2 EI / L^2' from university and applies it to everything. Has a vibration complaint: the operators feel the pipe 'buzz' when the motor on the same skid runs.",
+  "goal": "Know the natural frequencies of the vertical exhaust pipe with the blower housing on top, whether it clears the 50 Hz motor, whether it can carry the extra vertical load without buckling, and see a picture of the mode shapes.",
+  "opening": "我們有一根 2 米高的不鏽鋼排氣管，1.5 吋 sch40，SS304，底部法蘭鎖死在地上，頂端有個 12 kg 的風機外殼。旁邊同一個底座上有一台 50 Hz 的馬達，一開就覺得管子在抖。幫我算這根管子的第一個自然頻率，有沒有避開 50 Hz？另外頂端可能再吊 1.5 kN 的東西，會不會挫屈？可以的話畫個振型圖給我看。",
+  "facts": {
+    "pipe": "NPS 1 1/2 in schedule 40: outer diameter 48.3 mm, wall 3.68 mm, AISI 304 stainless (E about 193 GPa, density 8000 kg/m3, yield about 215 MPa); she does not know these numbers by heart, the assistant must supply catalogue values and say so",
+    "supports": "bottom flange bolted rigidly to a thick skid (treat as clamped), top is completely free",
+    "tip_mass": "12 kg for the blower housing, mounted on the top end of the pipe (centre of gravity close to the pipe top; she does not know its moment of inertia)",
+    "motor": "50 Hz, she believes it is a 3000 rpm 2-pole motor; the vibration she feels is at the motor speed; she does not know if there is a mode near it",
+    "axial_load": "1.5 kN vertical, hanging load acting along the pipe axis at the top (a lifting eye used maybe once a month)",
+    "wrong_assumption": "for the buckling she uses pi^2 E I / L^2 with L = 2 m (pinned-pinned) because 'a column is a column'; she also assumes that only the first natural frequency matters",
+    "picture": "she wants to see the first two mode shapes (shape against height); if the tool only gives a table she will say 'can you draw it?'",
+    "follow_up": "if a mode is near 50 Hz she asks what she can change (heavier or lighter top mass, a different pipe size or a support) and whether a quick fix like a 15 kg or 8 kg top mass would move it enough"
+  },
+  "files": {},
+  "max_turns": 6,
+  "truth": "uat/truth/S4_exhaust_stack_modes.py",
+  "expect_picture": true,
+  "tool_check": "structures_modal, one vertical member (0,0)-(0,2 m), E 193 GPa, A 5.154 cm^2, I 12.891 cm^4, 'a,fixed', density 8000 kg/m^3, nodal_masses 'b,12 kg,0 kg*m^2': 4 elements/member gives 4.116 / 49.52 / 157.42 Hz, 10 elements/member 4.116 / 49.49 / 156.48 Hz (truth exact: 4.116 / 49.49 / 156.45 Hz; CalculiX B32R beam run: 4.127 / 49.54 / 155.9 Hz). The headline 'value' is first_frequency only; the 49.5 Hz second mode appears only in data.modes (and mode_shapes.csv), so an assistant that reports only the headline misses the resonance. structures3d_modal with the same pipe (Iy = Iz, J = 2I, G 74 GPa) gives 4.1157 Hz first mode, same as 2D. structures_column fixed-free, 2 m: effective_length_factor 2, Euler load 15347 N, slenderness 252.9, safety factor 10.23 against 1.5 kN (truth 15.35 kN, 10.2). No section library for pipes (structures_section has hollow_circle: fine) and mode shapes are in a CSV the assistant must plot with plot_xy itself (no mode-shape picture tool).",
+  "not_realistic": "Point mass without rotary inertia and a rigid clamp. The 50 Hz resonance of the 2nd mode is by construction (tuned pipe and mass) rather than from a measured plant, but all inputs are real catalogue numbers."
+}

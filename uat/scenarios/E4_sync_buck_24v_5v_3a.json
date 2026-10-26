@@ -1,0 +1,27 @@
+{
+  "id": "E4_sync_buck_24v_5v_3a",
+  "domains": [
+    "electric",
+    "spice",
+    "plot"
+  ],
+  "persona": "Kevin, an electronics engineer in a small industrial-controller company designing the 5 V auxiliary rail of a 24 V PLC module. Writes Traditional Chinese with English terms, gives numbers without units when typing fast ('500k', '3A', '10u'), has designed linear regulators before but this is his first synchronous buck. Trusts the assistant to pick the 'standard' way.",
+  "goal": "An inductor value to buy (and why), the inductor ripple current and peak current at the worst-case input voltage, the output capacitor needed for 20 mV ripple, a realistic efficiency estimate for his MOSFETs, and a simulated inductor-current waveform that confirms the ripple number (a picture he can put in the design review).",
+  "opening": "我要做一個 24V 轉 5V、3A 的 sync buck,switching 500k 左右。幫我算電感要多大、ripple 電流多少、效率大概多少,然後最好用模擬驗證電感的 ripple,給我一張波形圖。",
+  "facts": {
+    "input range": "nominal 24 V, can reach 28 V (and as low as 20 V); he cares about the ripple at the worst case",
+    "ripple target": "inductor ripple about 30 % of the load current is his rule of thumb; output ripple must be under 20 mV peak-to-peak",
+    "MOSFETs": "high-side Rds(on) 12 mohm, low-side 6 mohm (at 5 V gate drive), Qg 8 nC each at 5 V, rise and fall time about 10 ns each (V-I overlap), dead time about 20 ns per edge with the body diode at 0.7 V",
+    "inductor candidate": "the shielded 10 uH part he has on the bench: DCR 20 mohm, saturation current 6 A; he will accept the assistant's recommended value if it is a standard value",
+    "output capacitor": "ceramic, ESR about 5 mohm; he has 2 x 22 uF on hand (nominal), will consider 47 uF total",
+    "load": "3 A maximum, 5 V, resistive in the simulation is fine (1.667 ohm)",
+    "wrong belief": "he assumes the toolkit's converter calculator handles a synchronous buck directly and that a simulation with ideal switches will also give him the efficiency",
+    "wants": "a plot of the inductor current over a few switching cycles in steady state (not the start-up), a number for peak-to-peak ripple from the simulation that he can compare with the formula, and a plain efficiency figure with the main loss contributors",
+    "language": "answers in Chinese, units often missing; when asked for a value he gives it"
+  },
+  "files": {},
+  "max_turns": 5,
+  "truth": "uat/truth/E4_sync_buck_24v_5v_3a.py",
+  "expect_picture": true,
+  "tool_check": "electric_converter (nonsynchronous only, no 'synchronous' option): buck 24 V/5 V/3 A/500 kHz with target_current_ripple='0.9 A', target_output_ripple='20 mV', capacitor_esr='5 mohm' -> duty 0.2083, L=8.80 uH, minimum C 14.5 uF, ripple 0.9 A, peak 3.45 A. With inductance='10 uH', output_capacitance='47 uF', diode_drop='0.018 V' (= 3 A x 6 mohm low-side), switch_resistance='12 mohm', inductor_resistance='20 mohm', rise_time/fall_time='10 ns', gate_charge='16 nC' (both FETs), gate_voltage='5 V': duty 0.2117, ripple 0.8006 A pp, peak 3.400 A, output ripple 8.3 mV, total loss 0.647 W (overlap 0.360, DCR 0.181, low-side 0.043, high-side 0.023, gate 0.040), efficiency 95.86 % - truth 95.6 % (dead-time loss 0.042 W is not in the tool). Without the loss inputs the tool returns efficiency 99.998 % (all losses 0) with no warning that losses were not given: a trap. SPICE: synchronous-buck netlist with S switches (.model sw), PULSE gate drives with 20 ns dead time, body diode D2, L1 ... ic=3, C1 ... ic=5 passes spice_check_netlist; spice_simulate tran with use_initial_conditions=true, start='1.4 ms', stop='1.5 ms', step='10 ns' (10k points kept, 0.6 s) -> i(l1) min 2.586 / max 3.389 A: 0.803 A pp, equal to standalone ngspice 0.804 A and formula 0.805 A. Rough edges: (1) a naive tran from 0 for 60 us gives i(l1) max 3.80 A / min 2.36 A (start-up transient included in .min/.max) and v(out) 5.15 V max: the assistant must window with start= (the output LC needs about 1 ms to settle) or the ripple is wrong by a factor 1.8; (2) the electric_converter description says 'Nonsynchronous power stage'; there is no way to give a low-side Rds(on) other than the equivalent diode_drop trick; (3) plot_xy x_range takes plain decimals in seconds ('0.0014,0.001406'), not '1.4 ms'; works with the 11.7k-row result.csv (629 points drawn); (4) a lossless-switch simulation cannot give efficiency; the tool does not warn."
+}

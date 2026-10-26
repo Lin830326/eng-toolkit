@@ -1,0 +1,27 @@
+{
+ "id": "F1_cooling_loop_pump",
+ "domains": [
+  "fluids",
+  "thermal",
+  "plot"
+ ],
+ "persona": "Utilities / maintenance engineer at a metal-fabrication plant in Taiwan. Writes in Traditional Chinese mixed with English terms (kW, DN40, Grundfos), short messages, drops units, not a hydraulics specialist. Wants a decision and a picture for a meeting.",
+ "goal": "Know whether the existing small Grundfos pump can circulate enough water through the new closed cooling loop of a fibre-laser cutter (15 kW heat at 5 K rise), at what flow and head it will actually run, how the flow divides between the two branches (and whether each branch gets enough), and to leave with a pump-curve / system-curve chart with the operating point marked.",
+ "opening": "你好，我們新的雷射切割機要接一個閉路冷卻水系統，熱負載大概 15kW，希望進出水溫差 5 度。我手上有一台 Grundfos 的小多級泵，想確認夠不夠用。管路是 DN40 鐵管大概 60 米，有 6 個彎頭，中間串一個板式熱交換器，然後分成兩路去負載。可以幫我算泵實際會跑在哪個流量，然後畫張泵曲線跟系統曲線的圖嗎？",
+ "facts": {
+  "pump_curve": "You read the catalogue curve of the pump (single speed, 50 Hz) and wrote down these points, flow m3/h -> head m, efficiency: 0 -> 12.4 m (eff 0); 1 -> 12.1 m (0.22); 2 -> 11.5 m (0.36); 3 -> 10.5 m (0.44); 4 -> 9.0 m (0.46); 5 -> 7.0 m (0.43); 6 -> 4.4 m (0.34). Curve ends at 6 m3/h.",
+  "fluid": "Plain water, loop runs around 35 degC average. Closed loop with an expansion vessel, so no static lift (pump suction and discharge at the same level).",
+  "pipe": "You think DN40 means 40 mm inside diameter. If asked about schedule / wall you say it is the usual sch 40 galvanised/black steel (the contractor's drawing says 1-1/2 inch sch40). Commercial steel, not new-smooth.",
+  "elbows": "6 standard 90 degree elbows on the 60 m main (supply plus return together); you do not know K values.",
+  "plate_heat_exchanger": "The datasheet of the plate heat exchanger says pressure drop 70 kPa at 3.0 m3/h on the water side (you assume it scales roughly with flow squared).",
+  "branches": "Branch A (laser head and optics, 9 kW): 15 m of DN32 (sch40), 3 elbows, 2 tees, and a balancing valve preset whose datasheet Kv is 4.0 m3/h (per root bar). Branch B (power supply and chiller coil, 6 kW): 28 m of DN25 (sch40), 5 elbows, 2 tees, no valve. The two branches join again before the return; the 60 m DN40 main is common to both.",
+  "wrong_assumption": "You first think any pump whose curve reaches beyond 2.6 m3/h is fine (15 kW / (4.18 kJ/kgK x 5 K) is about 0.72 kg/s). You had not thought about how the flow splits between the two branches or that the pump runs far from its best point.",
+  "tees": "Treat tee K as about 1.0 if asked.",
+  "wanted_output": "A chart of pump curve and system curve crossing at the operating point, with flow in m3/h and head in m."
+ },
+ "files": {},
+ "max_turns": 6,
+ "truth": "uat/truth/F1_cooling_loop_pump.py",
+ "expect_picture": true,
+ "tool_check": "fluids_pipe_network (nodes s/d/j1/j2, pump 'points' record, trunk K = 6x0.75 + PHE K 354.5 referred to DN40 velocity, branch A K 156.6 from Kv 4.0 at DN32, branch B K 6.5) gives Q = 3.154 m3/h, head 10.27 m, branch A 1.390 m3/h, branch B 1.764 m3/h: matches truth (3.163 / 10.29 / 1.390 / 1.773). fluids_pump_system with an equivalent system_coefficient 1.33e7 s2/m5 gives 3.162 m3/h, 10.26 m, shaft 198 W, eta 0.443. Rough edges: (1) pump_points efficiency 0 at shut-off (as every datasheet shows) is refused with input.out_of_range (supported 0.01..1) at /pump_points/0/3; (2) pump_system has a single pipe or K only, so two parallel branches need pipe_network or a hand-built equivalent K; (3) neither tool returns a curve table, so the pump/system curve plot needs the assistant to build the system curve point by point (several calls) and pass inline series to plot_xy (plot_xy with 2 inline series and a vline works); (4) no Kv-to-K or PHE-dp-to-K helper: the assistant must convert Kv 4.0 m3/h and 70 kPa at 3 m3/h into loss coefficients by hand (arithmetic the skill says not to do). The pump curve is digitised in the style of a small Grundfos multistage pump, NOT a specific catalogue model."
+}

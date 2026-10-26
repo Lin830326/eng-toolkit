@@ -1,0 +1,46 @@
+{
+ "id": "S4_exhaust_stack_modes",
+ "verdict": "PASS",
+ "one_line": "All numbers right in turn 1 (f1 4.12 Hz, f2 49.69 Hz flagged as the 50 Hz resonance, f3 157 Hz, fixed-free Pcr 15.35 kN), the K=1 and 'only f1 matters' traps explained, and the mass-change / 2 in pipe / brace options correctly evaluated; the mode-shape chart was right but never visible to the person, and two hand-drawn ASCII substitutes were wrong.",
+ "goal_met": true,
+ "turns": 6,
+ "answers": [
+  {"item": "f1", "truth": "4.12 Hz", "assistant_said": "4.12 Hz (E 193 GPa, rho 7930) / 4.19 Hz (E 200 GPa)", "result": "right"},
+  {"item": "f2 and resonance verdict", "truth": "49.49 Hz, within 1-2 % of 50 Hz: resonance risk", "assistant_said": "49.69 Hz, '和 50 Hz 只差 0.6%，會被馬達的 50 Hz 激發而共振' (rho 7930 instead of 8000 explains +0.4 %)", "result": "right"},
+  {"item": "f3", "truth": "156.45 Hz, not near 50 or 100 Hz", "assistant_said": "157 Hz, far from 100 Hz", "result": "right"},
+  {"item": "buckling load (fixed-free, K=2)", "truth": "15.35 kN, factor 10.2 for 1.5 kN", "assistant_said": "15.35 kN (structures3d_buckling lambda 10.24, structures_column K=2); factor 'about 9' against 1.5 kN plus about 0.2 kN of blower and pipe weight", "result": "right"},
+  {"item": "why her pi^2 EI/L^2 differs", "truth": "K=1 pinned formula gives 61.39 kN, 4x too high", "assistant_said": "pinned K=1 gives 61.4 kN, cantilever K=2 15.35 kN, 'K² 的差別'", "result": "right"},
+  {"item": "does an 8 kg or 15 kg top mass move f2", "truth": "8 kg 50.29 Hz, 15 kg 49.15 Hz: does not help", "assistant_said": "8 kg 50.49 Hz, 15 kg 49.35 Hz: '不能'", "result": "right"},
+  {"item": "2 in sch40 pipe", "truth": "f1 5.89, f2 63.25 Hz (+26 %)", "assistant_said": "f1 5.90, f2 63.5 Hz (+27 %)", "result": "right"},
+  {"item": "lateral brace as a lever", "truth": "a brace part way up is the other lever (no number)", "assistant_said": "rigid brace at 1 m: f1 9.07 Hz, f2 146 Hz, with the caveat that a real brace is softer and must act in both directions", "result": "unverifiable"},
+  {"item": "pipe section values", "truth": "A 5.154 cm2, I 12.891 cm4", "assistant_said": "A 515.7 mm2, I 1.2897e5 mm4", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "only the first natural frequency matters", "caught": true},
+  {"trap": "buckling with pi^2 EI / L^2 (K = 1) for a cantilevered stack", "caught": true},
+  {"trap": "changing the top mass to detune the second mode", "caught": true},
+  {"trap": "reporting only the headline first_frequency of structures_modal", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "Turns 3 and 4 presented hand-typed ASCII mode-shape plots as 'data from structures_modal' although the characters were placed wrongly (turn 3 has mode 1 smaller at the tip than at 1.8 m; turn 4 starts with a broken row, '上面那行我排錯了', and still misplaces points). The person was confused twice.", "severity": "medium"},
+  {"issue": "Catalogue values (OD 48.26 mm, wall 3.68 mm, E 193 GPa, rho 7930 kg/m3) and A, I were supplied from memory and hand arithmetic without saying they are recalled catalogue values to be checked; structures_section was not used for the 1.5 in pipe (it was for the 2 in pipe). Values are correct.", "severity": "low"},
+  {"issue": "Turn 1 convergence remark '20 單元結果與 10 單元一致（f₂ 從 49.7 變成 50.6，主要來自 E 的改變）' changes mesh and E at once, so it is not a convergence check.", "severity": "low"},
+  {"issue": "Was honest that the PNG was not produced and why; the HTML page and script it pointed to exist.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T043250Z-d35c357d-plot_xy_plot.png", "score": 2, "notes": "Mode shapes 1-3 against height, axes labelled with units, legend with frequencies, data match mode_shapes.csv (mode 1 tip 0.268, mode 2 max 0.514 at 1.2 m, tip -0.075). As an image it is report-ready (3), but the vline label 'base' sits on the x = 0 line rather than at the base, the shapes are only 11 points per mode (piecewise linear), and the person never saw it: she got an SVG path ('圖的部分你只給我一個檔案路徑，我打不開')."}
+ ],
+ "problems": [
+  {"id": "S4_exhaust_stack_modes-1", "kind": "tool_gap", "severity": "medium", "what": "plot_xy returns an SVG only; the person could not view it and asked for a PNG to paste into Line/Word in four of five follow-up turns. The assistant fell back to an HTML page, an Artifact publish and a matplotlib script, all blocked.", "evidence": "Person turn 5: '可以直接給我一張圖片，像 png 那種，我貼在 Line 或 Word 就能看的嗎?'; turn 6: '我還是想要一張 png'. eng-plot-results SKILL.md: 'Not covered: … PNG/PDF'.", "fix": "Same as S2_roof_truss_wind_uplift-3: add a PNG output to the plot tools and hand it over in eng-plot-results SKILL.md section 6."},
+  {"id": "S4_exhaust_stack_modes-2", "kind": "model_error", "severity": "medium", "what": "Twice drew the mode shapes as hand-placed ASCII art and attributed them to the tool; both were wrong. The correct table (turn 5) came only after the person complained twice.", "evidence": "Turn 3 chart row '2.0 |  O    |                   *' vs '1.8 |       |         O     *' (mode 1 tip drawn left of 1.8 m); turn 4: '上面那行我排錯了，正確的完整圖如下' then mode 2 points the person called '到處亂跳'.", "fix": "eng-plot-results SKILL.md section 6: 'If the client cannot show the chart, give the numbers as a table (read from the CSV); never draw a chart by hand in text.'"},
+  {"id": "S4_exhaust_stack_modes-3", "kind": "docs", "severity": "low", "what": "The supports parameter of structures_modal/frame does not show the spring record format and the refusal does not name the fields, so the assistant could not model a finite-stiffness brace, grepped the source, and fell back to a rigid roller.", "evidence": "structures_modal supports 'c,spring,ux,1000 kN/m,0 m' -> units.parse_error /supports/1/2 'expected a finite numeric literal followed by units'; 'c,spring,1000 kN/m' -> input.invalid /supports/1 'expected (5, 8) nonempty comma-separated fields'. Description in eng_toolkit/domains/structures/_common.py: 'Types fixed/pinned/roller_x/roller_y/spring; see docs for units.'", "fix": "_common.py FrameSupports description: add an example 'c,spring,1e6 N/m,0 N/m,0 N*m/rad' (kx, ky, krot) and make the input.invalid message list the expected fields 'node,spring,kx,ky,krot[,…]'."},
+  {"id": "S4_exhaust_stack_modes-4", "kind": "harness_artifact", "severity": "medium", "what": "The person cannot see any picture, so the picture goal was unreachable; the persona leaked its role-play frame and the assistant had Write/Bash/Artifact attempts available that ended in permission prompts.", "evidence": "Person turn 6 starts 'Ms. Lin's reply:'; transcript.json turn 2 tools Write, Artifact; turn 5-6 Bash 'python -I …plot_mode_shapes.py' blocked; turn 6 also tried to Write into the repo's scratch_bench folder.", "fix": "scripts/uat_run.py: strip speaker prefixes from the persona output, restrict tools as the brief states, and give the persona the rendered PNGs it would have seen."}
+ ],
+ "what_worked": [
+  "Turn 1 already answered the whole question correctly: f1, f2, f3, effective mass fractions (83 % / 10 %) from the tool, f2 at 50 Hz flagged as the cause of the 'buzz', buckling with K = 2 cross-checked between structures3d_buckling and the Euler closed form.",
+  "Read data.modes and mode_shapes.csv instead of the headline first_frequency, which is the trap the builder named.",
+  "Tip-mass sweep, 2 in sch40 and mid-height brace all run with the tool; correctly concluded the mass change does not help.",
+  "Useful caveats: rotary inertia of the housing ignored, 2-pole vs 4-pole motor, 100 Hz harmonic, a transverse 1.5 kN would be a different problem, brace must act in both directions.",
+  "The plot_xy call itself was well specified (labels with units, legend with frequencies, y range) and its data match the CSV."
+ ]
+}

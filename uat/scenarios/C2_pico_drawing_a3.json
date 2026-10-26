@@ -1,0 +1,26 @@
+{
+  "id": "C2_pico_drawing_a3",
+  "domains": [
+    "drawing",
+    "geometry"
+  ],
+  "persona": "Kevin, industrial designer at a small IoT hardware start-up in Taiwan, designing a 3D-printed enclosure for a Raspberry Pi Pico. Not a draughtsman: knows 'A3', 'PDF', 'mounting hole' but not drawing jargon. Writes short Chinese messages with a few English words, sometimes forgets units.",
+  "goal": "Leave with a dimensioned multi-view drawing of the Pico board on an A3 sheet as a PDF or PNG that he can send to the enclosure maker (overall size, where the mounting holes are, hole sizes), and a list of the holes (how many, what diameter, where).",
+  "opening": "我有一個 Raspberry Pi Pico 的 STEP 檔 ({part})，要拿給外殼廠，可以幫我出一張 A3 的工程圖嗎？要有多個視角還有標尺寸，然後再給我一份孔的清單。PDF 或 PNG 都可以",
+  "facts": {
+    "board_belief": "He remembers the Pico as 21 x 51 mm from the datasheet. The drawing/model says 52.3 mm overall: if the assistant explains that the micro-USB connector overhangs by 1.3 mm he accepts it; if it does not explain, he asks 'why 52.3 not 51'.",
+    "what_is_a_hole": "He means the four big mounting holes when he says 'holes' (for the screws/standoffs of the case). When he is shown that the model also has 43 small 1 mm holes (the 40 header-pin holes and 3 debug holes) he says the case maker needs those only as a note (header side clearance) and asks which are which.",
+    "mounting_hole_spacing": "He wants to be able to read the mounting hole centre distance (he remembers 11.4 x 47 mm) off the drawing, not just 'Ø2.1'.",
+    "sheet": "A3 landscape is what the case maker's printer takes.",
+    "tolerances": "No tolerances yet; general tolerance of the printer is +-0.2 mm. He does not need a title block text in Chinese, 'Raspberry Pi Pico' and part number are enough.",
+    "views": "front/top/side is fine, an isometric view would be nice if the sheet is not crowded.",
+    "readability_complaint": "If the dimension texts overlap or are too small to read when he opens the PNG/PDF, he complains and asks for a bigger scale or only the important dimensions."
+  },
+  "files": {
+    "part": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/3dmodels/Module.3dshapes/RaspberryPi_Pico.step"
+  },
+  "max_turns": 5,
+  "truth": "uat/truth/C2_pico_drawing_a3.py",
+  "expect_picture": true,
+  "tool_check": "geometry_measure: size 21.0 x 52.3 x 3.7, 1 closed solid, holes_total 47 (H1..H43 d1.0 through depth 1.0, H44..H47 d2.1 at (+-5.7, +-23.5)); matches OCP truth. drawing_make_views model_path sheet=A3 views=front,top,right formats=dxf,pdf,png title='Raspberry Pi Pico' -> ok, auto scale 2:1, 3 views, 11 dimensions, callouts '4x D2.1 THRU' and '43x D1 THRU' (hole ids listed, only the 4 + 43 full-circle holes; the 43 castellated half-holes on the board edge are correctly not holes). ROUGH EDGES: (1) layout_warnings says the top-view x ordinates 0 and 1.61 are 3.2 mm apart and their texts overlap, and the PNG indeed shows overlapping rotated ordinate labels (0, 1.61, 4.8 ... 19.39) under the top view; (2) only X ordinates are drawn; the tool warns 'the holes lie at 23 different y coordinates, more than the 16 that can be dimensioned legibly; no y ordinates are drawn' so no Y ordinates, so the 47 mm mounting hole spacing cannot be read from the drawing (11.4 only via the difference 4.8 -> 16.2); (3) the 43-hole callout is one leader to a single hole, with no hole positions listed on the sheet; the hole list with positions must come from geometry_measure/drawing data, not from the sheet; (4) the part fills only the left third of the A3 (the side view is placed far right) and no iso view is placed unless views includes 'iso'; (5) the PDF/PNG have no text layer (outline text) so drawing_read cannot read them back. The assistant has to read data.callouts / data.dimensions to give the hole list. Adding iso (views=top,front,right,iso, scale 2:1) works; scale 5:1 on A3 is refused drawing.layout_failed (fits at 1:1 / on A2 at 5:1)."
+}
