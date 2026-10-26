@@ -26,6 +26,12 @@ artifacts preserve nonfinite inputs as quoted text. See the
 | skill `eng-control-tuning` + `/eng-control-tuning` | PI/PID from datasheet plant numbers (V/krpm trap), exact-plant check, phase and delay margin, current-limit check, Tustin difference equation |
 | skill `eng-signal-analysis` + `/eng-signal-analysis` | spectrum and peak naming (rpm to Hz, gear mesh), alias check, anti-alias filter and decimation by specification, header-less sample files |
 | skill `eng-flow-network` + `/eng-flow-network` | pump and system curve, branch flow split, DN to bore, Kv and datasheet dp to K, open channel, nozzle, drag, water hammer |
+| skill `eng-drawing` + `/eng-drawing` | dimensioned A4-A0 drawing (PDF, PNG, DXF) of a STEP part with hole callouts and hole list; read and convert DXF and PDF drawings |
+| skill `eng-pcb-review` + `/eng-pcb-review` | KiCad board and schematic review before fabrication: board facts, DRC and ERC (real findings versus library noise, capped counts), checklist against the fab's rules, gerber and drill export |
+| skill `eng-circuit-sim` + `/eng-circuit-sim` | ngspice from a verbal circuit description: bias, Bode, transient windows, band-pass corners, converter sizing and its limits |
+| skill `eng-digital-synthesis` + `/eng-digital-synthesis` | Verilog lint, unit-gate counts, equivalence proofs versus bounded checks, wide counters |
+| skill `eng-machine-design` + `/eng-machine-design` | shafts with keys and bearings (helical gear loads), gears, bolts, springs, welds, belts, pressure vessels: what to ask and what the tools cannot do |
+| skill `eng-tolerancing` + `/eng-tolerancing` | ISO 286 fits, bearing seat fits, tolerance stack-ups, true position, form error |
 | `/eng-toolkit-setup` | connection and dependency check, registration command |
 | prompt hook (`hooks/hooks.json`) | one short reminder with every prompt: numbers that decide a result come from an `mcp__eng-toolkit__` call; unit scaling and sums of tool outputs are allowed only labelled "my arithmetic"; values from memory are labelled "from memory, not a tool result"; missing deciding inputs are asked for, not invented. Delete `hooks/` to turn it off |
 
@@ -60,6 +66,12 @@ artifacts preserve nonfinite inputs as quoted text. See the
    /eng-control-tuning Maxon RE 40 velocity loop, 50 ms rise, <10 % overshoot, 1 kHz controller: gains and difference equation
    /eng-signal-analysis accel.csv at 10 kHz, motor 1480 rpm: spectrum peaks, are 1x and 2x there, decimate by 4
    /eng-flow-network cooling loop DN40 60 m, plate exchanger, two branches, pump curve points: operating point and split
+   /eng-drawing C:\parts\pico.step A3 drawing with top, front, right and iso views, PNG and PDF, plus a hole list
+   /eng-pcb-review C:\boards\hub.kicad_pcb and hub.kicad_sch: can I send this to a fab that allows 0.15 mm tracks?
+   /eng-circuit-sim 2N2222 common-emitter amplifier, 12 V, 47k/10k bias, 2.2k collector, 470 ohm emitter with 100 uF: bias, gain, Bode
+   /eng-digital-synthesis is my cnt8_opt counter equivalent to cnt8? gate counts for both
+   /eng-machine-design output shaft of a helical gearbox, 30 kW at 1470 rpm: shaft diameter, key length, bearing life
+   /eng-tolerancing 6205 bearing on a 25 mm shaft in an aluminium housing: shaft and housing fits and the end float stack-up
    ```
 
 ## Does it help? (Claude Haiku, `scripts/eval_plugin.py`)
