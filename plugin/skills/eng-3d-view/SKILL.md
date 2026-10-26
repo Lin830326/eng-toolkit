@@ -1,11 +1,11 @@
 ---
 name: eng-3d-view
-description: Use to build a 3D part from a text spec, or to turn a part or a finite element result into a coloured GLB the user can look at (faces by kind, DFM findings, highlighted faces, or a stress or displacement colour map), with the eng-toolkit geometry_make_part, geometry_view, geometry_convert and fem_mesh, fem_static, fem_view tools. Covers colour choice, reading the legend, mesh deflection and the triangle cap, the FEM chain and its caveats, showing the file, and saying what the picture does not prove. Load eng-toolkit first.
+description: Use to build a 3D part from a text spec, or to turn a part or a finite element result into a picture the user can look at, a PNG to paste into a mail plus a coloured GLB for 3D viewers (faces by kind, DFM findings, named face groups, or a stress or displacement colour map), with the eng-toolkit geometry_make_part, geometry_view, geometry_convert and fem_mesh, fem_static, fem_view tools. Covers colour choice, reading the legend, mesh deflection and the triangle cap, the FEM chain and its caveats, handing the picture over in words, and saying what it does not prove. Load eng-toolkit first.
 ---
 
 # 3D view workflow (eng-toolkit)
 
-Load the `eng-toolkit` skill first for the unit rules and report format. A picture presents numbers, it is not a result: the colours are the toolkit's coding and everything is unreviewed.
+Load the `eng-toolkit` skill first for the unit rules and report format. A picture presents numbers, it is not a result: the colours are the toolkit's coding and everything is unreviewed. Most people cannot open a GLB, so `geometry_view` and `fem_view` write a **PNG picture** next to the GLB by default (`preview="png"`). The PNG is what you hand over; never try to draw a picture yourself with matplotlib or a script.
 
 ## 1. Pin down the problem
 
@@ -15,16 +15,19 @@ What must the user SEE: the shape, the surface kind of each face, where manufact
 
 | Goal | Tool |
 |---|---|
-| Part from a description (volume, area, mass, optional GLB) | `geometry_make_part` (`formats="glb"`, `density`); its GLB is single-colour |
-| Existing STEP/IGES/BREP as a coloured GLB | `geometry_view`: `color_by` `face_kind`, `dfm`, `highlight` or `none` |
+| Part from a description (volume, area, mass, optional GLB) | `geometry_make_part` (`formats="glb"`, `density`); its GLB is single-colour and it makes no picture: run `geometry_view` on its STEP for colours and the PNG |
+| Existing STEP/IGES/BREP as a picture (PNG, default) and a coloured GLB | `geometry_view`: `color_by` `face_kind`, `dfm`, `highlight` or `none` |
 | Plain GLB/STL/STEP conversion with a loss report | `geometry_convert` (an `.stl` can only go to `stl`/`glb`) |
-| Stress or displacement map | `fem_mesh` (optional) -> `fem_static` -> `fem_view` |
+| Stress or displacement map (PNG with colour bar, and GLB) | `fem_mesh` (optional) -> `fem_static` -> `fem_view` |
 
-Colouring: `face_kind` to confirm what the geometry is (a hole is a cylinder); `dfm` after a `geometry_check_dfm` style review (same `process`, `tool_axis`, `limits`); `highlight` with `highlight="F3,F7"` for faces a message or the user named (ids `F<n>` as in `geometry_measure`, valid only for that file's bytes).
+Colouring: `face_kind` to confirm what the geometry is (a hole is a cylinder); `dfm` after a `geometry_check_dfm` style review (same `process`, `tool_axis`, `limits`); `highlight` for faces a message or the user named (ids `F<n>` as in `geometry_measure`, valid only for that file's bytes): `highlight="F3,F7"` is one colour, and **named groups get one colour each in one picture**, e.g. `highlight="bends: F5,F12; holes: F3-F4; ribs: F14-F19"` (up to 8 groups, ranges `F14-F19`, a face in one group only; the colours are in `data.highlight_groups` and in the legend). Never recolour a GLB with a script.
+
+`preview`: `png` (default: isometric view plus small front, top and right views, legend, size in mm), `iso` (one view), `none` (GLB only, when the user wants only the viewer file).
 
 ## 3. Geometry inputs
 
 - `geometry_make_part(spec=<JSON string>, name, formats, density, mesh_deflection)`: `{"params":{...},"features":[...]}`, every length a unit string, first feature a body (`box`, `cylinder`, ...), later `hole`, `fillet` (`"edges":"|z & convex"`), `pattern`. Check the volume against a closed form (box minus hole `pi d^2 t/4`). Results: mm^3, mm^2, kg; file paths in `artifacts[].path`.
+- Build parts upright: gravity along -z, vertical = z (sketch a bracket's leg on a plane that contains z), because the picture and every viewer show Z up. A part built with its leg along y lies on its side.
 - `geometry_view(model_path, color_by, ...)`: a closed solid only. `dfm` also takes `process` (`cnc_milling`/`sheet_metal`), `tool_axis`, `limits` (JSON with units); otherwise ignored (warning).
 - `mesh_deflection` (chord error, `0.001 mm` to `100 mm`, default `0.01 mm`) sets triangles, file size and time: for viewing, a coarser value is enough.
 
@@ -47,13 +50,19 @@ Order: geometry file (`geometry_make_part` STEP, one solid) -> `fem_mesh(model_p
 
 - `field`: `von_mises` and `displacement` are magnitudes (sequential map, dark blue to pale yellow); `ux uy uz s_xx ... principal_min` are signed (diverging blue-grey-red, **light grey = 0**, blue negative, red positive). A diverging map forced on `von_mises` wastes half the scale.
 - `data.range`: `low`, `high`, unit, `symmetric_about_zero`, `widened`, `clamped_below/above`. Signed ranges are always made symmetric, also an explicit `range` (`-0.1 mm, 3 mm` becomes -3..3 mm). `range="0 MPa, 250 MPa"` clips: warnings give how many nodes saturate (they take the end colour). A range in the wrong dimension is `units.dimension_mismatch`.
-- `values.field_min/field_max` are over surface nodes; a warning says when an interior value is larger. `data.fem_static_comparison` ties the maximum to `fem_static`. `legend.svg` is the colour bar.
+- `values.field_min/field_max` are over surface nodes; a warning says when an interior value is larger. `data.fem_static_comparison` ties the maximum to `fem_static`. `legend.svg` is the colour bar; `fem_view.png` shows the same bar with unit, range, min and max, a ring on the largest value (and on the smallest of a signed field), and a second view when the largest value sits on a face that points away.
 - `deformation_scale="auto"` draws the largest displacement at 5 % of the diagonal (0 = undeformed, up to 10000): state `deformation_factor` when above 1, the shape is a caricature.
 
-## 7. Show it
+## 7. Hand it over (the PNG first)
 
-Paths come from `artifacts[].path` (`view.glb`, `fem_view.glb`, `legend.svg`). Open the GLB with the `cad_show` tool (absolute path) when it exists, else any glTF viewer (browser viewer, Windows 3D Viewer, Blender; not tested by the toolkit). GLB: metres, +Y up (model `(x, y, z) mm` -> `(x, z, -y)/1000`).
+The people you work for usually cannot open a GLB, and you cannot show them anything but a file path. So:
+
+1. **Give the PNG path first**, from `artifacts[].path` (`<name>.png` for `geometry_view`, `fem_view.png` for `fem_view`; `data.preview.file` names it). Say it can be pasted into a mail or a chat as it is. If you can read images yourself (the `Read` tool), look at it before you describe it. Do not write a script, call internal modules or ask for permissions to make a picture: the tool already made it. If `data.preview.file` is null (a warning says why), say so and give the GLB.
+2. **Describe the picture in words**, from `data` and the legend, so that the person understands it before opening it: the shape and its size (`data.preview.model_size_mm`, the picture's `Size X ... mm` line); which colour stands for what and how many faces each has (`data.preview.groups`, the legend); where the coloured faces are (name the face ids and what they are: the bore, the fillets, the fin faces); and for FEM the field, the unit, the range of the colour bar, the minimum and maximum with their node and place, and that **light grey is zero** for a signed field. The large view looks from the front right above (+x, -y, +z, Z up); the small ones are front (from -y), top and right (from +x). A marker or a face the large view hides is in the second panel or named in a warning.
+3. **Mention the GLB** once, for people who have a 3D viewer: the same colours, orbit and zoom, the face ids and the legend in its extras. Open it with the `cad_show` tool (absolute path) when that tool exists, else any glTF viewer (a browser viewer, Windows 3D Viewer, Blender; not tested by the toolkit). GLB: metres, +Y up (model `(x, y, z) mm` -> `(x, z, -y)/1000`). `view.json` and `legend.svg` are for tools, not for the person.
+4. **Say what a colour means**: a face coloured by `dfm` was *flagged by a rule of thumb* of this toolkit, it is **not a verdict** that the part cannot be made or is wrong, and a grey face is not a checked face; `face_kind` colours say how the CAD kernel classifies a surface, not that anything is wrong; a stress colour is a nodal value of a linear model, not a failure prediction.
+5. If the person wants only some faces in colour for a mail (the confirmed problems, not every rule hit), make a second picture with `color_by="highlight"` and only those faces (one group each if there are several kinds), and say which colour is which.
 
 ## 8. Report
 
-Result: file paths, the numbers with units, the legend in words (colour -> meaning, light grey = 0). Inputs: spec or file, mesh sizes, material, supports, loads. Checks: closed-form volume, beam-theory deflection, convergence table, equilibrium residual, warnings. Limits: colours are a coding, a neutral DFM face is not a checked face, DFM rules are rules of thumb; FEM is linear static with nodal surface values (interior not shown, colours between nodes interpolated, peaks at point loads, supports and sharp corners are not failure predictions); no yield, safety factor or fatigue judgement; nothing is approved.
+Result: the PNG path first, then the GLB path, the numbers with units, the legend in words (colour -> meaning, light grey = 0). Inputs: spec or file, mesh sizes, material, supports, loads. Checks: closed-form volume, beam-theory deflection, convergence table, equilibrium residual, warnings. Limits: colours are a coding, a neutral DFM face is not a checked face, DFM rules are rules of thumb; FEM is linear static with nodal surface values (interior not shown, colours between nodes interpolated, peaks at point loads, supports and sharp corners are not failure predictions); no yield, safety factor or fatigue judgement; nothing is approved.

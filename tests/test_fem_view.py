@@ -381,7 +381,7 @@ async def test_the_gateway_lists_the_tool_with_compact_descriptions():
     schema = tool.input_schema if hasattr(tool, "input_schema") else tool.inputSchema
     assert set(schema["properties"]) == {
         "result_dir", "mesh_file", "results_file", "field", "colormap", "range", "deformation_scale",
-        "show_undeformed_edges", "mesh_edges", "name", "output_unit", "max_seconds",
+        "show_undeformed_edges", "mesh_edges", "name", "output_unit", "max_seconds", "preview",
     }
     descriptions = []
     for pname, prop in schema["properties"].items():

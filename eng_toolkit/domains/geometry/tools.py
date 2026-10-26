@@ -740,7 +740,7 @@ def make_part(
     ],
     name: Annotated[str, Field(description="Product name in the STEP file and stem of the output files: 1 to 64 letters, digits, '_' or '-'")] = "part",
     formats: Annotated[
-        str, Field(description="Comma list of files to write besides the always-written STEP: 'glb', 'stl', 'brep'. Empty = STEP only")
+        str, Field(description="Comma list of files besides the STEP: 'glb' (one colour: geometry_view colours it and writes a PNG), 'stl', 'brep'. Empty = STEP only")
     ] = "step",
     mesh_deflection: Annotated[
         str, Field(description="Chord error of the GLB/STL tessellation, 0.001 mm to 100 mm, e.g. '0.01 mm'")
@@ -923,13 +923,14 @@ def convert(
 
 
 VIEW_DESCRIPTION = (
-    "Write a solid 3D CAD file (.step .stp .iges .igs .brep, millimetres) as a coloured GLB for web, AR and CAD viewers: one "
-    "material per colour, each primitive's extras list its face ids (F<n>, as in geometry_measure) with their triangle ranges, "
-    "the node's extras hold the legend; B-rep edges as lines if show_edges. color_by: 'none' (grey), 'face_kind' (plane, "
-    "cylinder, cone, sphere, torus, bspline, other), 'dfm' (worst geometry_check_dfm finding per face: error red, warn orange, "
-    "info blue; process, tool_axis, limits as there) or 'highlight' (faces in highlight, e.g. 'F3,F7'). GLB is metres, +Y up. "
-    "Also writes view.json (face -> colour -> finding ids). Returns triangle_count, face_count, highlighted_face_count, "
-    "finding_count. Shells, loose faces and .stl are refused. "
+    "Write a solid 3D CAD file (.step .stp .iges .igs .brep, mm) as a coloured GLB for 3D viewers and, by default, a PNG picture "
+    "of the same colours (isometric plus front, top, right views, legend, size in mm) for a mail: hand over the PNG first. GLB: one "
+    "material per colour, each primitive's extras list its face ids (F<n>, as in geometry_measure) with triangle ranges; B-rep "
+    "edges as lines if show_edges. color_by: 'none' (grey), 'face_kind' (plane, cylinder, cone, sphere, torus, bspline, other), "
+    "'dfm' (worst geometry_check_dfm finding per face: error red, warn orange, info blue; process, tool_axis, limits as there) or "
+    "'highlight' (faces in highlight, 'F3,F7', or named groups with a colour each: 'bends: F5,F12; holes: F3-F4'). GLB is metres, "
+    "+Y up. Also writes view.json. Returns triangle_count, face_count, highlighted_face_count, finding_count. Shells, loose faces "
+    "and .stl are refused. "
     f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')})."
 )
 
@@ -939,7 +940,8 @@ def view(
     model_path: Annotated[str, Field(description="Path to the solid model: .step .stp .iges .igs or .brep")],
     color_by: Annotated[str, Field(description="'none', 'face_kind', 'dfm' or 'highlight'; anything else is refused")] = "face_kind",
     highlight: Annotated[
-        str, Field(description="color_by 'highlight' only: face ids as in geometry_measure, e.g. 'F3,F7'; an unknown id is refused")
+        str,
+        Field(description="color_by 'highlight' only: face ids 'F3,F7' (range F14-F19), or colour groups 'bends: F5,F12; holes: F3-F4' (up to 8)"),
     ] = "",
     process: Annotated[str, Field(description="color_by 'dfm' only: 'cnc_milling' or 'sheet_metal', as in geometry_check_dfm")] = "cnc_milling",
     tool_axis: Annotated[str, Field(description="color_by 'dfm', cnc_milling: spindle axis, one of +x -x +y -y +z -z")] = "+z",
@@ -953,7 +955,11 @@ def view(
     name: Annotated[
         str, Field(description="Stem of the GLB file and node name: 1 to 64 letters, digits, '_' or '-'. Empty = the input file's stem")
     ] = "view",
-    show_edges: Annotated[bool, Field(description="Add the B-rep edges as a line primitive (GL_LINES) so CAD edges stay visible")] = True,
+    show_edges: Annotated[bool, Field(description="Add the B-rep edges as a line primitive (GL_LINES) to the GLB, and draw them in the PNG")] = True,
+    preview: Annotated[
+        str,
+        Field(description="'png' (default): also write a PNG picture, isometric + front, top, right views and legend; 'iso': isometric only; 'none'"),
+    ] = "png",
 ) -> ToolResult:
     deadline = dfm.Deadline(max(1, min(max_seconds, 600)))
     inputs = {
@@ -967,6 +973,7 @@ def view(
         "mesh_deflection": mesh_deflection,
         "name": name,
         "show_edges": show_edges,
+        "preview": preview,
     }
 
     def compute(job: JobHandle) -> Computed:
@@ -984,6 +991,7 @@ def view(
                 name=name,
                 show_edges=show_edges,
                 deadline=deadline,
+                preview=preview,
             )
         except ToolFailure as exc:  # every refusal names its parameter as a JSON pointer
             details = {**exc.details, "param": viewer.pointer(exc.details, exc.family)}

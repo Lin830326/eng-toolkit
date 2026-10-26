@@ -699,14 +699,15 @@ def static(
 # --------------------------------------------------------------------------- fem_view
 
 VIEW_DESCRIPTION = (
-    "Colour-mapped GLB of a fem_static result for a 3D viewer: the mesh surface (each 6-node facet as 4 triangles) coloured by the "
-    "nodal field CalculiX wrote, optionally deformed. Give result_dir (the fem_static job directory; its manifest sha256s are "
-    "checked) or mesh_file + results_file. field: von_mises, displacement, ux uy uz, s_xx s_yy s_zz s_xy s_yz s_zx, principal_max, "
-    "principal_min. colormap auto (sequential for magnitudes, diverging blue-grey-red for signed fields, light grey = 0). Diverging ranges are "
-    "expanded symmetrically about zero. GLB is metres, +Y up, with local positions and a node translation preserving the model origin; "
-    "COLOR_0 linear RGB, _FIELD holds the values. Also writes legend.svg and view.json. Returns triangle_count, field_max, "
-    f"field_min, deformation_factor. Capped at {viewer.MAX_TRIANGLES:,} triangles. Only the surface is shown; nodal stresses are "
-    "extrapolated and averaged, and unbounded at point loads and sharp corners. No Gmsh/CalculiX run."
+    "A fem_static result as a PNG picture (default: isometric view, colour bar with field, unit, min and max, size in mm, a ring on "
+    "the largest value; for a mail, hand it over first) and a GLB for 3D viewers: the mesh surface (6-node facets as 4 triangles) "
+    "coloured by the nodal field CalculiX wrote, optionally deformed. Give result_dir (the fem_static job directory; manifest "
+    "sha256s are checked) or mesh_file + results_file. field: von_mises, displacement, ux uy uz, s_xx s_yy s_zz s_xy s_yz s_zx, "
+    "principal_max, principal_min. colormap auto (sequential for magnitudes, diverging blue-grey-red for signed fields, light grey "
+    "= 0, ranges symmetric about zero). GLB is metres, +Y up; COLOR_0 linear RGB, _FIELD holds the values. Also writes legend.svg "
+    "and view.json. Returns triangle_count, field_max, field_min, deformation_factor. "
+    f"Capped at {viewer.MAX_TRIANGLES:,} triangles. Surface only; nodal stresses are extrapolated, averaged, and unbounded at point "
+    "loads and sharp corners. No Gmsh/CalculiX run."
 )
 
 
@@ -724,6 +725,10 @@ def view(
     name: Annotated[str, Field(description="Node name in the GLB and title of the legend, 1 to 64 printable characters")] = "fem_view",
     output_unit: Annotated[str, Field(description="Unit of the values and labels: a stress unit (default MPa) or a length unit (default mm)")] = "auto",
     max_seconds: Annotated[int, Field(description="Wall-clock budget in seconds, 1 to 600; default 120")] = 120,
+    preview: Annotated[
+        str,
+        Field(description="'png' (default; 'iso' is the same): also write fem_view.png, a picture with colour bar, unit and range; 'none': GLB only"),
+    ] = "png",
 ) -> ToolResult:
     deadline = viewer.Deadline(max(1, min(max_seconds, 600)) if isinstance(max_seconds, int) else 1)
     inputs = {
@@ -739,6 +744,7 @@ def view(
         "name": name,
         "output_unit": output_unit,
         "max_seconds": max_seconds,
+        "preview": preview,
     }
 
     def compute(job: JobHandle) -> Computed:
@@ -758,6 +764,7 @@ def view(
                 output_unit=output_unit,
                 max_seconds=max_seconds,
                 deadline=deadline,
+                preview=preview,
             )
         except ToolFailure as exc:  # every refusal names its parameter as a JSON pointer
             raise ToolFailure(exc.family, exc.message, {**exc.details, "param": viewer.pointer(exc.details, exc.family)}) from None

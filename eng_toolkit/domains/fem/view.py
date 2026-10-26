@@ -30,6 +30,7 @@ from xml.sax.saxutils import escape
 import numpy as np
 
 from eng_toolkit import __version__
+from eng_toolkit import preview as pic
 from eng_toolkit.contract import QuantityOut
 from eng_toolkit.domains.fem import mesh as meshing
 from eng_toolkit.errors import ToolFailure
@@ -63,7 +64,9 @@ MIN_SPAN_RELATIVE = 1e-3  # an automatic range narrower than this fraction of it
 FEATURE_ANGLE_DEG = 40.0  # facets meeting at a sharper angle do not share vertex normals (the edges of a box stay sharp)
 TABLE_POINTS = 65
 LEGEND_SAMPLES = 11
-GLB_NAME, LEGEND_NAME, JSON_NAME = "fem_view.glb", "legend.svg", "view.json"
+GLB_NAME, LEGEND_NAME, JSON_NAME, PNG_NAME = "fem_view.glb", "legend.svg", "view.json", "fem_view.png"
+PREVIEW_MODES = ("png", "iso", "none")  # fem_view draws one isometric view: 'png' and 'iso' are the same picture
+PREVIEW_SECONDS = 60.0  # wall-clock budget of the picture alone; past it the PNG is dropped (with a warning) and the GLB is kept
 STATIC_FILES = ("mesh.msh", "model.inp", "result.frd", "result.dat", "results.csv")
 FLOAT32, UINT32 = 5126, 5125
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
@@ -358,6 +361,13 @@ def parse_deformation(raw: str) -> float | str:
             limit=MAX_DEFORMATION_SCALE,
         )
     return factor
+
+
+def parse_preview(raw: str) -> str:
+    word = _text(raw, "/preview", MAX_WORD_CHARS).strip().lower()
+    if word not in PREVIEW_MODES:
+        raise _failure("input.invalid", "/preview", f"{_shown(raw)} is not one of {list(PREVIEW_MODES)}", allowed=list(PREVIEW_MODES))
+    return word
 
 
 def parse_name(raw: str) -> str:
@@ -1063,6 +1073,7 @@ def view(
     output_unit: str,
     max_seconds: int,
     deadline: Deadline,
+    preview: str = "png",
 ) -> Computed:
     # ---- every parameter is checked before any file is opened; long strings first, never echoed
     for raw, param in ((result_dir, "/result_dir"), (mesh_file, "/mesh_file"), (results_file, "/results_file")):
@@ -1079,6 +1090,7 @@ def view(
     explicit = parse_range(value_range, spec)
     scale = parse_deformation(deformation_scale)
     title = parse_name(name)
+    preview_mode = parse_preview(preview)
 
     # ---- the files
     deadline("read")
@@ -1363,6 +1375,36 @@ def view(
                 f"the {which}imum of {spec.name} over all nodes ({float(values_all[index]) * per_base:.6g} {symbol}, node {index + 1}) is inside the part "
                 "and is not visible on the surface; the GLB shows only surface values"
             )
+    picture = None
+    if preview_mode != "none":
+        extremes = [("max", surface_max_node, float(values_all[surface_max_node]) * per_base)]
+        if spec.signed and surface_min_node != surface_max_node:
+            extremes.append(("min", surface_min_node, float(values_all[surface_min_node]) * per_base))
+        picture = _preview(
+            job,
+            spec=spec,
+            cmap=cmap,
+            table=table,
+            lo=lo * per_base,
+            hi=hi * per_base,
+            symbol=symbol,
+            title=title,
+            surface=surface,
+            drawn_nodes=drawn_nodes,
+            local_nodes=local_nodes,
+            normals_model=normals_model,
+            srgb=srgb,
+            mesh_edges=mesh_edges,
+            show_outline=outline_drawn,
+            factor=factor,
+            notes=notes,
+            field_min=field_min,
+            field_max=field_max,
+            extremes=extremes,
+            nodes_mm=tetra.nodes,
+            deadline=deadline,
+        )
+        warnings.extend(picture.warnings)
     comparison = {}
     for key, fname in (("max_von_mises", "von_mises"), ("max_displacement", "displacement")):
         if spec.name == fname and key in source.static_values:
@@ -1397,6 +1439,7 @@ def view(
         "glb": GLB_NAME,
         "glb_sha256": glb_artifact.sha256,
         "legend_svg": LEGEND_NAME,
+        "preview_png": None if picture is None or picture.artifact is None else PNG_NAME,
         "field": spec.name,
         "field_label": spec.label,
         "unit": unit,
@@ -1418,6 +1461,8 @@ def view(
     if below or above:
         warnings.append(f"{below + above} surface node(s) lie outside the range {lo * per_base:.6g} .. {hi * per_base:.6g} {symbol} and take the end colours")
     data = {
+        "preview": None if picture is None else picture.data,
+        "supported_preview": list(PREVIEW_MODES),
         "field": spec.name,
         "field_label": spec.label,
         "unit": unit,
@@ -1461,8 +1506,150 @@ def view(
         "field_min": _q(field_min, unit),
         "deformation_factor": QuantityOut(quantity=float(factor), unit="dimensionless"),
     }
-    deadline("write")
-    return Computed(values=values, primary="triangle_count", warnings=warnings, data=data, artifacts=[glb_artifact, svg_artifact, json_artifact])
+    artifacts = [glb_artifact, svg_artifact, json_artifact]
+    if picture is not None and picture.artifact is not None:
+        artifacts.insert(1, picture.artifact)
+    return Computed(values=values, primary="triangle_count", warnings=warnings, data=data, artifacts=artifacts)
+
+
+@dataclass(frozen=True)
+class Picture:
+    artifact: Any  # the PNG artifact, or None when it could not be drawn
+    data: dict[str, Any]
+    warnings: list[str]
+
+
+def _segments(edges: np.ndarray, nodes_mm: np.ndarray) -> np.ndarray:
+    """Each curved facet edge corner - mid - corner as two straight segments: (2 e, 2, 3)."""
+    pts = nodes_mm[edges]
+    return np.concatenate([pts[:, [0, 1]], pts[:, [1, 2]]], axis=0)
+
+
+def _tick_labels(lo: float, hi: float, count: int = 6) -> list[tuple[float, str]]:
+    """``count`` evenly spaced labels, with enough digits that no two are equal."""
+    for digits in range(4, 10):
+        labels = [(k / (count - 1), _fmt(lo + (hi - lo) * k / (count - 1), digits)) for k in range(count)]
+        if len({text for _, text in labels}) == count:
+            return labels
+    return labels
+
+
+def _preview(
+    job: JobHandle,
+    *,
+    spec: Field,
+    cmap: str,
+    table: np.ndarray,
+    lo: float,
+    hi: float,
+    symbol: str,
+    title: str,
+    surface: Surface,
+    drawn_nodes: np.ndarray,
+    local_nodes: np.ndarray,
+    normals_model: np.ndarray,
+    srgb: np.ndarray,
+    mesh_edges: bool,
+    show_outline: bool,
+    factor: float,
+    notes: list[str],
+    field_min: float,
+    field_max: float,
+    extremes: list[tuple[str, int, float]],
+    nodes_mm: np.ndarray,
+    deadline: Deadline,
+) -> Picture:
+    """The PNG next to the GLB: the same triangles and colours, a colour bar with the unit and the range, the model size in mm, and a
+    ring on the surface node that holds the largest (and, for a signed field, the smallest) value.  A failure to draw it is a warning,
+    never a failure of the tool: the GLB is complete without it."""
+    lines: list[pic.LineSet] = []
+    if mesh_edges:
+        lines.append(pic.LineSet(_segments(surface.edges, drawn_nodes), (0.125, 0.125, 0.125), 0.7))
+    if show_outline:
+        outline = surface.edges[surface.feature]
+        if len(outline):
+            lines.append(pic.LineSet(_segments(outline, local_nodes), (0.478, 0.478, 0.478), 1.0))
+    feature = surface.edges[surface.feature]
+    if len(feature):
+        lines.append(pic.LineSet(_segments(feature, drawn_nodes), (0.1, 0.1, 0.1), 1.0))
+    markers = tuple(
+        pic.Marker(drawn_nodes[node], f"{word} {_fmt(value, 4)} {symbol}", (0, 0, 0) if word == "max" else (60, 60, 60))
+        for word, node, value in extremes
+    )
+    mesh = pic.Mesh(
+        vertices=drawn_nodes[surface.vertex_node],
+        triangles=surface.triangles,
+        normals=normals_model,
+        vertex_rgb=srgb,
+        lines=tuple(lines),
+        markers=markers,
+        shade_strength=0.2,
+    )
+    size = [float(v) for v in nodes_mm.max(axis=0) - nodes_mm.min(axis=0)]
+    bar_notes = [f"Surface min {_fmt(field_min, 5)}, max {_fmt(field_max, 5)} {symbol}", f"Colour scale {_fmt(lo, 5)} to {_fmt(hi, 5)} {symbol}"]
+    if cmap == "diverging":
+        bar_notes.append("Light grey = zero; blue negative, red positive")
+    bar_notes += list(notes)
+    bar = pic.ColourBar(spec.label, symbol, table, tuple(_tick_labels(lo, hi)), tuple(bar_notes))
+    info = [f"Size X {_fmt(size[0], 4)} x Y {_fmt(size[1], 4)} x Z {_fmt(size[2], 4)} mm (undeformed)"]
+    shape = f"drawn x{factor:.6g}" if factor != 0.0 else "undeformed"
+    pic_notes = [
+        "Axes: X red, Y green, Z blue; Z is up.",
+        "Values are nodal (CalculiX: extrapolated and averaged), surface only; peaks at point loads, supports and sharp corners depend on the mesh. Unreviewed.",
+        "Same colours as the GLB; shading only shows the form.",
+    ]
+    sheet = pic.SheetSpec(
+        title=title,
+        subtitle=(f"{spec.label} [{symbol}]   -   shape {shape}   -   {len(surface.triangles):,} surface triangles",),
+        colourbar=bar,
+        info=tuple(info),
+        notes=tuple(pic_notes),
+        views=("iso",),
+        back_view_for_markers=True,
+    )
+    started = time.monotonic()
+
+    def check(phase: str) -> None:
+        deadline(phase)
+        if time.monotonic() - started > PREVIEW_SECONDS:
+            raise TimeoutError(f"the picture took more than {PREVIEW_SECONDS:g} s")
+
+    try:
+        result = pic.render_sheet(mesh, sheet, check=check)
+    except ToolFailure as exc:
+        if exc.family != "fem.time_budget_exceeded":
+            raise
+        return Picture(None, {"file": None, "reason": "time budget"}, [f"The PNG preview was not drawn: {exc.message}. The GLB is complete"])
+    except (TimeoutError, MemoryError, ArithmeticError) as exc:
+        reason = f"{type(exc).__name__}: {exc}"[:200]
+        return Picture(None, {"file": None, "reason": reason}, [f"The PNG preview was not drawn ({reason}). The GLB is complete"])
+    artifact = job.write_bytes(PNG_NAME, result.png, fmt="png")
+    warnings: list[str] = []
+    marker_rows = []
+    for (word, node, value), visible, shown_in in zip(extremes, result.markers_visible, result.markers_view):
+        marker_rows.append({"which": word, "node": node + 1, "value": _g(value, 7), "unit": symbol, "visible": visible, "view": shown_in})
+        if not visible:
+            warnings.append(f"The {word} marker (node {node + 1}) is hidden in every view of the PNG (it lies inside a notch or on a face that points away); its value is in the colour bar notes and in data")
+    return Picture(
+        artifact,
+        {
+            "file": PNG_NAME,
+            "sha256": artifact.sha256,
+            "format": "PNG, 8-bit RGB",
+            "width": result.width,
+            "height": result.height,
+            "views": ["iso", *sorted({v for v in result.markers_view if v not in (None, "iso")})],
+            "camera": "orthographic; isometric from (+x, -y, +z) with Z up; when a marker is hidden in it, a second isometric view that shows it "
+            "('iso_back' from (-x, +y, +z), 'iso_under' from (+x, -y, -z), 'iso_under_back' from (-x, +y, -z))",
+            "supersampling": result.supersampling,
+            "colours": "COLOR_0 of the GLB (the sRGB colour map) times a gentle Lambert factor (0.8 to 1.0); the colour bar is the exact map",
+            "colour_scale": {"low": _g(lo), "high": _g(hi), "unit": symbol, "colormap": cmap},
+            "model_size_mm": {"x": _g(size[0], 6), "y": _g(size[1], 6), "z": _g(size[2], 6)},
+            "markers": marker_rows,
+            "rule": "drawn from the same surface triangles and vertex colours as the GLB; nodal values, surface only",
+        },
+        warnings,
+    )
 
 
 def _line_primitive(kind: str, colour: str, edges: np.ndarray, nodes_mm: np.ndarray, meaning: str) -> LinePrimitive:

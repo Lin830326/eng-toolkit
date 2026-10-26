@@ -18,6 +18,7 @@ import json
 import math
 import re
 import struct
+import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,7 @@ from typing import Any
 import numpy as np
 
 from eng_toolkit import __version__, brep
+from eng_toolkit import preview as pic
 from eng_toolkit.contract import QuantityOut
 from eng_toolkit.domains.geometry import convert as conversion
 from eng_toolkit.domains.geometry import dfm
@@ -33,6 +35,8 @@ from eng_toolkit.errors import ToolFailure
 from eng_toolkit.runner import Computed, JobHandle
 
 COLOR_MODES: tuple[str, ...] = ("none", "face_kind", "dfm", "highlight")
+PREVIEW_MODES: tuple[str, ...] = ("png", "iso", "none")  # png: isometric + front, top, right; iso: the isometric view only
+PREVIEW_SECONDS = 60.0  # wall-clock budget of the picture alone; past it the PNG is dropped (with a warning) and the GLB is kept
 # OpenCASCADE's mesher holds about 6.6 kB per triangle while it works (a 603,802-triangle sphere took 4.1 GB), so 600,000
 # triangles is about 4 GB.  The cap is checked before meshing (estimate) and after every face (count).
 MAX_TRIANGLES = 600_000
@@ -50,7 +54,12 @@ ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
 TRIANGLES, LINES = 4, 1
 GLB_MAGIC = 0x46546C67
 GLB_JSON, GLB_BIN = 0x4E4F534A, 0x004E4942
-FACE_TOKEN = re.compile(r"[Ff]([0-9]{1,9})")
+FACE_TOKEN = re.compile(r"[Ff]([0-9]{1,9})(?:-[Ff]?([0-9]{1,9}))?")  # F7 or a range F14-F19 / F14-19
+GROUP_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_ -]{0,31}")
+RESERVED_GROUPS = ("neutral", "edges")
+MAX_HIGHLIGHT_GROUPS = 8
+# one colour per named group, in order; the first is the colour of a plain (unnamed) highlight; none is the neutral grey
+GROUP_COLOURS = ("#E6007E", "#E69F00", "#0072B2", "#009E73", "#F0E442", "#D55E00", "#56B4E9", "#7B3FA0")
 CONVERSION_TEXT = "model (x, y, z) mm -> glTF (x, z, -y) / 1000 m"
 
 NEUTRAL = ("neutral", "#B4B8BE")
@@ -118,21 +127,99 @@ def parse_color_by(raw: str) -> str:
     return mode
 
 
-def parse_highlight(raw: str) -> list[int]:
-    """Face ids from ``'F3, F7'`` (commas and/or blanks between ids), unique and ascending."""
-    if len(raw) > MAX_TEXT_CHARS:
-        raise _failure("input.invalid", "/highlight", f"{len(raw)} characters; at most {MAX_TEXT_CHARS}", limit=MAX_TEXT_CHARS)
-    tokens = [t for t in re.split(r"[\s,;]+", raw.strip()) if t]
-    if not tokens:
-        raise _failure("input.missing", "/highlight", "color_by 'highlight' needs face ids such as 'F3,F7' (from geometry_measure)")
+def _read_ids(tokens: list[str]) -> set[int]:
+    """Face ids from tokens ``F3`` or ``F14-F19`` / ``F14-19`` (a range is expanded; at most MAX_FACES faces in all)."""
     ids: set[int] = set()
     for token in tokens:
         match = FACE_TOKEN.fullmatch(token)
         if not match or int(match.group(1)) < 1:
             shown = token if len(token) <= 32 else token[:32] + "..."
-            raise _failure("input.invalid", "/highlight", f"{shown!r} is not a face id; use F<n> with n >= 1, e.g. 'F3,F7'")
-        ids.add(int(match.group(1)))
-    return sorted(ids)
+            raise _failure("input.invalid", "/highlight", f"{shown!r} is not a face id; use F<n> with n >= 1, e.g. 'F3,F7', or a range 'F14-F19'")
+        first = int(match.group(1))
+        last = int(match.group(2)) if match.group(2) else first
+        if last < first:
+            raise _failure("input.invalid", "/highlight", f"{token!r} is a range that ends before it starts")
+        if last - first + 1 > MAX_FACES:
+            raise _failure("input.too_large", "/highlight", f"{token!r} names {last - first + 1} faces; the limit is {MAX_FACES}", limit=MAX_FACES)
+        ids.update(range(first, last + 1))
+        if len(ids) > MAX_FACES:
+            raise _failure("input.too_large", "/highlight", f"more than {MAX_FACES} face ids; the limit is {MAX_FACES}", limit=MAX_FACES)
+    return ids
+
+
+def parse_highlight(raw: str) -> list[int]:
+    """Face ids from ``'F3, F7'`` (commas, semicolons and/or blanks between ids; ``F14-F19`` is a range), unique and ascending."""
+    if len(raw) > MAX_TEXT_CHARS:
+        raise _failure("input.invalid", "/highlight", f"{len(raw)} characters; at most {MAX_TEXT_CHARS}", limit=MAX_TEXT_CHARS)
+    tokens = [t for t in re.split(r"[\s,;]+", raw.strip()) if t]
+    if not tokens:
+        raise _failure(
+            "input.missing",
+            "/highlight",
+            "color_by 'highlight' needs face ids such as 'F3,F7' (from geometry_measure), or named groups such as 'bends: F5,F12; holes: F3,F4'",
+        )
+    return sorted(_read_ids(tokens))
+
+
+def parse_highlight_groups(raw: str) -> list[tuple[str, list[int]]]:
+    """The groups of a ``highlight`` text, in the order written, each with its ascending face ids.
+
+    Without a colon the text is one group named ``highlight`` (``'F3,F7'``).  With a colon every group is ``name: ids``, groups
+    are separated by ``;``, ``|`` or a line break, a name is 1 to 32 letters, digits, ``_``, ``-`` or blanks, and each group
+    gets its own colour (:data:`GROUP_COLOURS`, at most :data:`MAX_HIGHLIGHT_GROUPS` groups).  A face may be in one group only.
+    ``'bends: F5,F12; holes: F3-F4; ribs: F14-F19'`` is three groups."""
+    if len(raw) > MAX_TEXT_CHARS:
+        raise _failure("input.invalid", "/highlight", f"{len(raw)} characters; at most {MAX_TEXT_CHARS}", limit=MAX_TEXT_CHARS)
+    if ":" not in raw:
+        return [("highlight", parse_highlight(raw))]
+    groups: list[tuple[str, list[int]]] = []
+    owner: dict[int, str] = {}
+    names: set[str] = set()
+    for part in (p for p in re.split(r"[;|\n]+", raw) if p.strip()):
+        name, colon, body = part.partition(":")
+        name = name.strip()
+        shown = name if len(name) <= 32 else name[:32] + "..."
+        if not colon or not GROUP_NAME.fullmatch(name):
+            raise _failure(
+                "input.invalid",
+                "/highlight",
+                f"{shown!r} is not a group name: in a grouped highlight every group is 'name: F1,F2' (name of 1 to 32 letters, digits, '_', '-' "
+                "or blanks), groups separated by ';'",
+            )
+        if name.lower() in RESERVED_GROUPS or name.lower() in names:
+            why = "is reserved (the legend uses it)" if name.lower() in RESERVED_GROUPS else "is used twice"
+            raise _failure("input.invalid", "/highlight", f"the group name {shown!r} {why}")
+        names.add(name.lower())
+        tokens = [t for t in re.split(r"[\s,]+", body.strip()) if t]
+        if not tokens:
+            raise _failure("input.missing", "/highlight", f"the group {shown!r} lists no face ids")
+        ids = sorted(_read_ids(tokens))
+        for face_id in ids:
+            if face_id in owner:
+                raise _failure("input.invalid", "/highlight", f"F{face_id} is in both {owner[face_id]!r} and {shown!r}; a face has one colour")
+            owner[face_id] = name
+        groups.append((name, ids))
+    if not groups:
+        raise _failure("input.missing", "/highlight", "no group in the text; write 'bends: F5,F12; holes: F3,F4'")
+    if len(groups) > MAX_HIGHLIGHT_GROUPS:
+        raise _failure("input.too_large", "/highlight", f"{len(groups)} groups; at most {MAX_HIGHLIGHT_GROUPS} (one colour each)", limit=MAX_HIGHLIGHT_GROUPS)
+    return groups
+
+
+def parse_preview(raw: str) -> str:
+    mode = raw.strip().lower() if isinstance(raw, str) else ""
+    if not isinstance(raw, str) or len(raw) > MAX_WORD_CHARS or mode not in PREVIEW_MODES:
+        shown = raw if isinstance(raw, str) and len(raw) <= MAX_WORD_CHARS else "(too long or not text)"
+        raise _failure("input.invalid", "/preview", f"{shown!r} is not one of {list(PREVIEW_MODES)}", allowed=list(PREVIEW_MODES))
+    return mode
+
+
+def palette_for(mode: str, groups: list[tuple[str, list[int]]]) -> tuple[tuple[str, str, str], ...]:
+    """The legend of a colouring: ``PALETTES[mode]``, except that named highlight groups get one colour each (then the neutral grey)."""
+    if mode != "highlight" or (len(groups) == 1 and groups[0][0] == "highlight"):
+        return PALETTES[mode]
+    named = tuple((name, GROUP_COLOURS[i], f"faces listed in the highlight group {name!r}") for i, (name, _) in enumerate(groups))
+    return named + ((NEUTRAL[0], NEUTRAL[1], "a face in no highlight group"),)
 
 
 def too_many_triangles(count: int, deflection_mm: float, *, estimated: bool) -> ToolFailure:
@@ -464,7 +551,9 @@ def faces_total(f: dfm.Finding) -> int:
     return named
 
 
-def _groups(mode: str, inv: brep.Inventory, highlight: list[int], findings: list[dfm.Finding]) -> tuple[list[str], dict[int, list[str]]]:
+def _groups(
+    mode: str, inv: brep.Inventory, highlight: list[tuple[str, list[int]]], findings: list[dfm.Finding]
+) -> tuple[list[str], dict[int, list[str]]]:
     """The colour group of every face (index = id - 1) and the finding ids (D<n>) that name each face."""
     count = len(inv.faces)
     named: dict[int, list[str]] = {}
@@ -474,8 +563,8 @@ def _groups(mode: str, inv: brep.Inventory, highlight: list[int], findings: list
         known = {g for g, _, _ in PALETTES["face_kind"]}
         return [f.kind if f.kind in known else "other" for f in inv.faces], named
     if mode == "highlight":
-        wanted = set(highlight)
-        return ["highlight" if i + 1 in wanted else NEUTRAL[0] for i in range(count)], named
+        wanted = {face_id: name for name, ids in highlight for face_id in ids}
+        return [wanted.get(i + 1, NEUTRAL[0]) for i in range(count)], named
     rank = {severity: i for i, severity in enumerate(dfm.SEVERITIES)}  # error first
     worst: dict[int, int] = {}
     for n, f in enumerate(findings, start=1):
@@ -504,6 +593,7 @@ def view(
     name: str,
     show_edges: bool,
     deadline,
+    preview: str = "png",
 ) -> Computed:
     if not MAX_SECONDS[0] <= max_seconds <= MAX_SECONDS[1]:
         raise _failure("input.out_of_range", "/max_seconds", f"must be between {MAX_SECONDS[0]} and {MAX_SECONDS[1]}, got {max_seconds}")
@@ -521,11 +611,13 @@ def view(
     deflection_mm = conversion.parse_deflection(mesh_deflection)
     parse_word(name, "/name")
     stem = conversion.output_name(name, model_path)
-    highlight_ids: list[int] = []
+    preview_mode = parse_preview(preview)
+    highlight_groups: list[tuple[str, list[int]]] = []
     if mode == "highlight":
-        highlight_ids = parse_highlight(highlight)
+        highlight_groups = parse_highlight_groups(highlight)
     elif highlight.strip():
         raise _failure("input.invalid", "/highlight", "face ids are used only with color_by 'highlight'; leave highlight empty for this color_by")
+    highlight_ids = sorted({face_id for _, ids in highlight_groups for face_id in ids})
     if Path(model_path).suffix.lower() == ".stl":
         raise _failure(
             "input.unsupported_format",
@@ -612,9 +704,9 @@ def view(
             + (" ..." if len(untessellated) > 20 else "")
         )
 
-    groups, named = _groups(mode, inv, highlight_ids, findings)
+    groups, named = _groups(mode, inv, highlight_groups, findings)
     normals = vertex_normals(fm.vertices, fm.triangles, fm.vertex_ranges, fm.triangle_ranges)
-    palette = PALETTES[mode]
+    palette = palette_for(mode, highlight_groups)
     primitives = [
         build_primitive(group, colour, [i + 1 for i, g in enumerate(groups) if g == group], fm, normals)
         for group, colour, _ in palette
@@ -678,6 +770,26 @@ def view(
             )
     singled = sorted(coloured_ids) if mode == "dfm" else (highlight_ids if mode == "highlight" else [])
     colour_of = {group: colour for group, colour, _ in palette}
+
+    picture = None
+    if preview_mode != "none":
+        picture = _preview(
+            job,
+            mode=mode,
+            views=("iso", "front", "top", "right") if preview_mode == "png" else ("iso",),
+            stem=stem,
+            source_name=original.path,
+            fm=fm,
+            normals=normals,
+            groups=groups,
+            palette=palette,
+            face_counts=face_counts,
+            show_edges=show_edges,
+            findings=findings,
+            deflection_mm=deflection_mm,
+            deadline=deadline,
+        )
+        warnings.extend(picture.warnings)
     mesh_area = float(math.fsum(back.face_area_mm2.values()))
 
     face_rows = [
@@ -702,6 +814,7 @@ def view(
             "glb_sha256": glb_artifact.sha256,
             "face_ids_valid_for": sha,
             "color_by": mode,
+            "preview": None if picture is None or picture.artifact is None else Path(picture.artifact.path).name,
             "legend": legend,
             "faces": face_rows,
             "findings": finding_rows,
@@ -745,6 +858,17 @@ def view(
         "groups": groups_data,
         "face_count": len(inv.faces),
         "highlighted_faces": [f"F{i}" for i in singled[:MAX_LISTED]],
+        "highlight_groups": [
+            {
+                "name": name,
+                "color": colour_of[name],
+                "faces": len(ids),
+                "face_ids": [f"F{i}" for i in ids[:MAX_LISTED]],
+            }
+            for name, ids in highlight_groups
+        ],
+        "supported_preview": list(PREVIEW_MODES),
+        "preview": None if picture is None else picture.data,
         "findings_total": len(findings),
         "findings_coloured": coloured_rows[:MAX_LISTED],
         "findings_not_coloured": uncoloured_rows[:MAX_LISTED],
@@ -805,8 +929,170 @@ def view(
         "highlighted_face_count": _count(len(singled)),
         "finding_count": _count(len(findings)),
     }
-    deadline("write")
-    return Computed(values=values, primary="triangle_count", warnings=warnings, data=data, artifacts=[glb_artifact, json_artifact])
+    artifacts = [glb_artifact, json_artifact]
+    if picture is not None and picture.artifact is not None:
+        artifacts.insert(1, picture.artifact)
+    return Computed(values=values, primary="triangle_count", warnings=warnings, data=data, artifacts=artifacts)
+
+
+@dataclass(frozen=True)
+class Picture:
+    artifact: Any  # the PNG artifact, or None when it could not be drawn
+    data: dict[str, Any]
+    warnings: list[str]
+
+
+COLOUR_TEXT = {
+    "none": "no colour coding",
+    "face_kind": "colour = face kind",
+    "dfm": "colour = DFM finding (rules of thumb)",
+    "highlight": "colour = highlighted faces",
+}
+PREVIEW_LABELS = {
+    "plane": "plane (flat face)",
+    "cylinder": "cylinder",
+    "cone": "cone",
+    "sphere": "sphere",
+    "torus": "torus",
+    "bspline": "B-spline surface",
+    "other": "other surface",
+    "dfm_error": "DFM error flagged",
+    "dfm_warn": "DFM warning flagged",
+    "dfm_info": "DFM info flagged",
+}
+
+
+def _legend_label(mode: str, group: str) -> str:
+    if group == NEUTRAL[0]:
+        return {"none": "model (no colour coding)", "dfm": "no DFM finding on the face", "highlight": "not highlighted"}.get(mode, "neutral")
+    if mode == "highlight" and group == "highlight":
+        return "highlighted faces"
+    return PREVIEW_LABELS.get(group, group)
+
+
+def _hex_rgb(colour: str) -> tuple[int, int, int]:
+    return (int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16))
+
+
+def _length_text(value: float) -> str:
+    return f"{value:.0f}" if abs(value) >= 1000 else f"{value:.4g}" if abs(value) >= 1 else f"{value:.3f}"
+
+
+def _preview(
+    job: JobHandle,
+    *,
+    mode: str,
+    views: tuple[str, ...],
+    stem: str,
+    source_name: str,
+    fm: brep.FaceMesh,
+    normals: np.ndarray,
+    groups: list[str],
+    palette: tuple[tuple[str, str, str], ...],
+    face_counts: Counter,
+    show_edges: bool,
+    findings: list[dfm.Finding],
+    deflection_mm: float,
+    deadline,
+) -> Picture:
+    """The PNG next to the GLB: the same triangles, colours and edges (see :mod:`eng_toolkit.preview`).  A failure to draw it
+    is a warning, never a failure of the tool: the GLB is complete without it."""
+    index = {group: k for k, (group, _, _) in enumerate(palette)}
+    face_group = np.array([index[g] for g in groups], dtype=np.int64)
+    triangles_per_face = [n for _, n in fm.triangle_ranges]
+    tri_face = np.repeat(np.arange(len(groups)), triangles_per_face)
+    table = np.array([_hex_rgb(colour) for _, colour, _ in palette], dtype=np.float64) / 255.0
+    lines: tuple[pic.LineSet, ...] = ()
+    drawn = [e for e in fm.edges if len(e.points_mm) > 1]
+    if show_edges and drawn:
+        segments = np.concatenate([np.stack([e.points_mm[:-1], e.points_mm[1:]], axis=1) for e in drawn])
+        lines = (pic.LineSet(segments, tuple(c / 255.0 for c in _hex_rgb(EDGE_COLOR)), 1.0),)
+    mesh = pic.Mesh(
+        vertices=fm.vertices,
+        triangles=fm.triangles,
+        normals=normals,
+        face_rgb=table[face_group][tri_face],
+        tri_group=face_group[tri_face],
+        lines=lines,
+    )
+    low, high = fm.vertices.min(axis=0), fm.vertices.max(axis=0)
+    size = [float(v) for v in high - low]
+    legend = [
+        pic.LegendItem(_legend_label(mode, group), _hex_rgb(colour), f"{face_counts[group]} face{'s' if face_counts[group] != 1 else ''}")
+        for group, colour, _ in palette
+        if face_counts.get(group, 0) > 0
+    ]
+    if lines:
+        legend.append(pic.LegendItem("B-rep edges", _hex_rgb(EDGE_COLOR), "", kind="line"))
+    info = [
+        f"Size X {_length_text(size[0])} x Y {_length_text(size[1])} x Z {_length_text(size[2])} mm",
+        f"{len(fm.triangles):,} triangles, chord error {deflection_mm:g} mm; {len(groups)} faces",
+    ]
+    if mode == "dfm":
+        count = Counter(f.severity for f in findings)
+        info.append(f"DFM findings: {count.get('error', 0)} error, {count.get('warn', 0)} warn, {count.get('info', 0)} info")
+    notes = ["Axes: X red, Y green, Z blue; Z is up."]
+    if mode == "dfm":
+        notes.append("A coloured face was flagged by a rule of thumb of this toolkit, not a verdict; a grey face is not a checked face.")
+    elif mode == "face_kind":
+        notes.append("Colour shows the kind of surface (how OpenCASCADE classifies it), not a finding.")
+    notes.append("Same colours as the GLB; shading only shows the form. Unreviewed.")
+    spec = pic.SheetSpec(
+        title=stem,
+        subtitle=(f"{Path(source_name).name}   -   {COLOUR_TEXT[mode]}",),
+        legend=tuple(legend),
+        legend_heading="Colours",
+        info=tuple(info),
+        notes=tuple(notes),
+        views=views,
+    )
+    started = time.monotonic()
+
+    def check(phase: str) -> None:
+        deadline(phase)
+        if time.monotonic() - started > PREVIEW_SECONDS:
+            raise TimeoutError(f"the picture took more than {PREVIEW_SECONDS:g} s")
+
+    try:
+        result = pic.render_sheet(mesh, spec, check=check)
+    except ToolFailure as exc:
+        if exc.family != "geometry.time_budget_exceeded":
+            raise
+        return Picture(None, {"file": None, "reason": "time budget"}, [f"The PNG preview was not drawn: {exc.message}. The GLB is complete"])
+    except (TimeoutError, MemoryError, ArithmeticError) as exc:
+        reason = f"{type(exc).__name__}: {exc}"[:200]
+        return Picture(None, {"file": None, "reason": reason}, [f"The PNG preview was not drawn ({reason}). The GLB is complete"])
+    artifact = job.write_bytes(f"{stem}.png", result.png, fmt="png")
+    warnings: list[str] = []
+    visible = max(result.visible_pixels, 1)
+    group_rows = []
+    for k, (group, colour, _) in enumerate(palette):
+        faces = face_counts.get(group, 0)
+        if faces == 0:
+            continue
+        seen = result.group_pixels.get(k, 0)
+        group_rows.append({"group": group, "color": colour, "faces": faces, "share_of_model_in_isometric_view": float(f"{seen / visible:.4g}")})
+        if result.group_pixels_all.get(k, 0) == 0:
+            warnings.append(f"Colour group {group!r} ({faces} faces) is not visible in {'any view' if len(result.views) > 1 else 'the view'} of the PNG (it faces away or lies inside): see the GLB")
+    return Picture(
+        artifact,
+        {
+            "file": Path(artifact.path).name,
+            "sha256": artifact.sha256,
+            "format": "PNG, 8-bit RGB",
+            "width": result.width,
+            "height": result.height,
+            "views": list(result.views),
+            "camera": "orthographic; isometric from (+x, -y, +z) with Z up; front from -y, top from +z, right from +x",
+            "supersampling": result.supersampling,
+            "colours": "the GLB's sRGB colours times a Lambert factor of a fixed light (0.55 to 1.0); legend swatches are the exact colours",
+            "edges_drawn": bool(lines),
+            "model_size_mm": {"x": float(f"{size[0]:.6g}"), "y": float(f"{size[1]:.6g}"), "z": float(f"{size[2]:.6g}")},
+            "groups": group_rows,
+            "rule": "drawn from the same tessellation as the GLB; a face colour means 'flagged' or 'of this kind', not a verdict",
+        },
+        warnings,
+    )
 
 
 def _losses(source: Path, deflection_mm: float, float32_bound: float, fm: brep.FaceMesh, show_edges: bool) -> list[dict[str, str]]:

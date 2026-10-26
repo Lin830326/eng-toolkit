@@ -21,7 +21,7 @@ artifacts preserve nonfinite inputs as quoted text. See the
 | skill `eng-motor-drive-sizing` + `/eng-motor-drive-sizing` | motor and gearbox sizing for a motion profile, induction and PM motor operating points, converters, transformers, faults |
 | skill `eng-optimize` + `/eng-optimize` | minimise, linear programs, root finding, curve fitting with intervals, uncertainty propagation, design of experiments |
 | skill `eng-plot-results` + `/eng-plot-results` | charts (SVG) from other tools' CSV artifacts or inline series: Bode, S-N, histograms, station diagrams |
-| skill `eng-3d-view` + `/eng-3d-view` | coloured GLB of a part, DFM findings or an FEM stress/displacement result |
+| skill `eng-3d-view` + `/eng-3d-view` | a PNG picture (to paste into a mail) and a coloured GLB of a part, DFM findings, named face groups or an FEM stress/displacement result |
 | `/eng-toolkit-setup` | connection and dependency check, registration command |
 | prompt hook (`hooks/hooks.json`) | one short reminder line with every prompt: engineering numbers must come from the `mcp__eng-toolkit__` tools, not hand arithmetic. Delete `hooks/` to turn it off |
 
