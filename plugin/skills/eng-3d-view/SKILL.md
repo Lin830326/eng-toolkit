@@ -1,6 +1,6 @@
 ---
 name: eng-3d-view
-description: Use to build a 3D part from a text spec, or to turn a part or a finite element result into a coloured GLB the user can look at (faces by kind, DFM findings, highlighted faces, or a stress or displacement colour map), with the eng-toolkit geometry_make_part, geometry_view, geometry_convert and fem_mesh, fem_static, fem_view tools. Covers colour choice, reading the legend, mesh deflection and the triangle cap, the FEM chain and its caveats, showing the file, and saying what the picture does not prove. Load eng-toolkit first.
+description: Use to build a 3D part from a text spec, or to turn a part or an FEM result into a coloured GLB (faces by kind, DFM findings, highlighted faces, stress or displacement map) with geometry_make_part, geometry_view, geometry_convert, fem_mesh, fem_static and fem_view. Load eng-toolkit first.
 ---
 
 # 3D view workflow (eng-toolkit)
@@ -20,19 +20,20 @@ What must the user SEE: the shape, the surface kind of each face, where manufact
 | Plain GLB/STL/STEP conversion with a loss report | `geometry_convert` (an `.stl` can only go to `stl`/`glb`) |
 | Stress or displacement map | `fem_mesh` (optional) -> `fem_static` -> `fem_view` |
 
-Colouring: `face_kind` to confirm what the geometry is (a hole is a cylinder); `dfm` after a `geometry_check_dfm` style review (same `process`, `tool_axis`, `limits`); `highlight` with `highlight="F3,F7"` for faces a message or the user named (ids `F<n>` as in `geometry_measure`, valid only for that file's bytes).
+Colouring: `face_kind` to confirm what the geometry is (a hole is a cylinder); `dfm` after a `geometry_check_dfm` style review (same `process`, `tool_axis`, `limits`); `highlight` with `highlight="F3,F7"` for faces a message or the user named (ids `F<n>` as in `geometry_measure`, valid only for that file's bytes). It takes ONE face set and ONE colour: for several groups give one GLB per group, or `face_kind` plus one highlight, and say plainly that a multi-colour GLB is not available.
 
 ## 3. Geometry inputs
 
+- Build parts with gravity along -z (vertical = z, sketch on plane `xz`): the GLB maps model z to +Y up, so the part then stands upright.
 - `geometry_make_part(spec=<JSON string>, name, formats, density, mesh_deflection)`: `{"params":{...},"features":[...]}`, every length a unit string, first feature a body (`box`, `cylinder`, ...), later `hole`, `fillet` (`"edges":"|z & convex"`), `pattern`. Check the volume against a closed form (box minus hole `pi d^2 t/4`). Results: mm^3, mm^2, kg; file paths in `artifacts[].path`.
 - `geometry_view(model_path, color_by, ...)`: a closed solid only. `dfm` also takes `process` (`cnc_milling`/`sheet_metal`), `tool_axis`, `limits` (JSON with units); otherwise ignored (warning).
 - `mesh_deflection` (chord error, `0.001 mm` to `100 mm`, default `0.01 mm`) sets triangles, file size and time: for viewing, a coarser value is enough.
 
 ## 4. Geometry refusals are answers
 
-- Over **600,000 triangles** (estimated before meshing): `input.out_of_range` at `/mesh_deflection`; the message gives the estimate, the cap and a coarser `details.suggested_mesh_deflection_mm`. Example: a 120 mm sphere at `0.001 mm`: 622,581 estimated, suggests `0.0012 mm`. Use the suggestion or a larger value.
+- Over **600,000 triangles** (estimated before meshing): `input.out_of_range` at `/mesh_deflection`, with a coarser `details.suggested_mesh_deflection_mm`: use it or a larger value.
 - Not a closed solid (open shell, loose faces, surface-only file): `geometry.not_a_solid`. `geometry_measure` shows what is open.
-- `.stl`: `input.unsupported_format` (a mesh has no faces to colour). Coordinates beyond 1,000,000 mm (1 km): refused. More than 2500 faces with `dfm`: `input.too_large`. Unknown face id: `geometry.unknown_entity`. `geometry.time_budget_exceeded`: raise `max_seconds` once (max 600).
+- `.stl`: `input.unsupported_format` (no faces to colour). Beyond 1 km: refused. More than 2500 faces with `dfm`: `input.too_large`. Unknown face id: `geometry.unknown_entity`. `geometry.time_budget_exceeded`: raise `max_seconds` once (max 600).
 
 ## 5. FEM chain
 
@@ -40,8 +41,8 @@ Order: geometry file (`geometry_make_part` STEP, one solid) -> `fem_mesh(model_p
 
 - Selectors are planes: supports `x = 0 mm` or `x = 0 mm : ux; point(0 mm, 5 mm, 0 mm) : uy`; loads `force (0 N, 0 N, -1 kN) on x = 100 mm` (spread by area) or `pressure 5 MPa on normal +z at z = 10 mm` (positive pushes in). Curved faces cannot be selected. A downward load has negative `Fz`.
 - Refusals to explain: `fem.not_constrained` (names the free motions; add supports), `fem.empty_selection`, `fem.overlapping_selection` (support face also loaded), `input.too_large` (over 60,000 elements or `element_size` under diagonal/1000; the message gives a size that fits), `units.bare_number`.
-- A fully fixed face stops the Poisson contraction (warning): stress at its corner is mesh-dependent. For tension cases constrain `ux` on the face plus point supports.
-- **Convergence**: run two or three sizes (halve `element_size`) and compare. Cantilever 100x10x10 mm, 1 kN, E 210 GPa, clamped: tip uz -1.894, -1.901, -1.904, -1.906 mm at 10, 5, 2.5, 1.25 mm against beam theory 1.9048; but max von Mises 591, 600, 594, 724 MPa does not converge (clamped-corner singularity). `max_displacement` is a magnitude (1.9098 there), not the deflection: read the component from the `uz` field range.
+- A fully fixed face stops the Poisson contraction (warning): stress at its corner is mesh-dependent; for tension cases constrain `ux` on the face plus point supports.
+- **Convergence**: run two or three sizes, each HALF the previous (4 -> 2 -> 1 mm, not 4 -> 3 -> 2.5), and give the location of the maximum for each (`data.max_von_mises_at_mm`). Cantilever 100x10x10 mm, 1 kN, clamped: tip uz -1.894, -1.901, -1.904, -1.906 mm at 10, 5, 2.5, 1.25 mm against beam theory 1.9048, but max von Mises 591, 600, 594, 724 MPa does not converge. A maximum that moves or sits on a clamped face is a **singularity**: say it grows with refinement and quote the stress at the feature you care about (a fillet, a hole). `max_displacement` is a magnitude, not the deflection: read the component (`data.max_displacement_components_mm` or the `uz` range).
 
 ## 6. Reading the colour map (`fem_view`)
 

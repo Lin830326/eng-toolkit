@@ -1,6 +1,6 @@
 ---
 name: eng-dfm-review
-description: Use to review a 3D CAD part (STEP/STP/IGES/BREP, millimetres) for manufacturability by CNC milling or sheet metal with the eng-toolkit geometry_measure and geometry_check_dfm tools. Covers confirming the process and shop limits, running the checks, interpreting findings (severity, exact vs heuristic, checks not performed) and writing the review. Load eng-toolkit first.
+description: Use to review a 3D CAD part (STEP/IGES/BREP, mm) for CNC milling or sheet-metal manufacturability with geometry_measure and geometry_check_dfm (shop limits, findings (exact vs heuristic), checks not performed). Load eng-toolkit first.
 ---
 
 # DFM review workflow (eng-toolkit)
@@ -11,7 +11,7 @@ Load the `eng-toolkit` skill first for the unit rules and report format. The DFM
 
 - The file must be a **closed solid** in `.step .stp .iges .igs .brep` (read as millimetres). Meshes (`.stl`) and surface-only files are refused. If the user has another CAD format, ask for a STEP export; `geometry_convert` converts between supported formats.
 - The process must be `cnc_milling` or `sheet_metal`. Turning, injection molding, casting and additive are **not supported**: say that plainly and offer the general guidance you can give without the tool, clearly marked as not tool-checked.
-- Ask (or state the default you assume) for the shop's limits, because findings depend on them: for milling `tool_radius` (smallest end mill), `min_wall`, `min_hole_diameter`, `max_hole_depth_ratio`, spindle axis `tool_axis`; for sheet metal `max_thickness`, `min_bend_radius_ratio`, `min_hole_edge_ratio`. Pass them in `limits` as JSON with units in strings, e.g. `{"min_wall": "1.5 mm", "tool_radius": "3 mm"}`.
+- **Ask for the shop's limits** (or its capability sheet) before judging; a limit you pick yourself is YOUR assumption, never "the tool's rule" or "the shop's rule". Findings depend on them: for milling `tool_radius` (smallest end mill), `min_wall`, `min_hole_diameter`, `max_hole_depth_ratio`, spindle axis `tool_axis`; for sheet metal `max_thickness`, `min_bend_radius_ratio`, `min_hole_edge_ratio`. Pass them in `limits` as JSON with units in strings, e.g. `{"min_wall": "1.5 mm", "tool_radius": "3 mm"}`.
 
 ## 2. Measure first
 
@@ -23,8 +23,10 @@ Call `geometry_measure` with the file path and no queries: volume, surface area,
 
 ## 4. Read the findings correctly
 
+- `limits[].source` says `default` (toolkit rule of thumb) or `caller` (what you passed, so your assumption): report which. A position "from the bend" needs a datum (outer face or bend line) before you compare it with an edge rule.
 - Each finding has rule id, **severity** (`error` must be fixed or justified, `warn` should be reviewed, `info` is advisory), measured value and limit, face/edge ids, a point in model coordinates, and **exact vs heuristic**. Present heuristic findings as "possible" and exact ones as measured.
-- The result also lists **checks that were NOT performed**: always repeat them in the review (the user must not assume those aspects were covered).
+- **Read `data.measurements` before saying a rule passed**: `bends: 0` on a part that visibly has bends, `smallest_wall` null, `holes_checked_against_edges: 0` mean that rule was not exercised: say "not checked", not "passed". Always repeat the **checks that were NOT performed**.
+- `cnc.internal_corner_radius` findings whose `details.material_angle_deg` is within about 5 deg of 180 are near-tangent kinks, not corners: drop them and say so.
 - Verify the important findings with `geometry_measure` queries at the reported point (wall thickness, hole diameter) before telling the user to change the design.
 - Group by feature (internal corners, thin walls, deep holes, unreachable faces / extra setups, sheet-metal bends and hole-to-edge), highest severity first.
 
@@ -34,7 +36,7 @@ For each issue propose a concrete change with a number (e.g. "increase the inter
 
 ## 6. Optional follow-ups
 
-`geometry_view` with `color_by="dfm"` (same process, tool axis and limits) writes a GLB whose faces are coloured by the worst DFM finding (red error, orange warning, blue info) with face ids that match `geometry_measure`: give the user that file to look at in a 3D viewer; it discloses findings that name more faces than it can colour. `drawing_make_views` can produce a dimensioned drawing sheet (PDF/DXF/PNG) of the part for the shop; `geometry_make_part` can build a modified candidate from a text spec when the user wants to compare alternatives (then re-run the same checks with the same limits).
+`geometry_view` with `color_by="dfm"` (same process, tool axis and limits) writes a GLB coloured by the worst finding (red error, orange warning, blue info), face ids as in `geometry_measure`. For a picture to send, use `color_by="highlight"` with only the confirmed problem faces and say what the colour means; do not write scripts to recolour a GLB. `drawing_make_views` can produce a dimensioned drawing sheet (PDF/DXF/PNG) of the part for the shop; `geometry_make_part` can build a modified candidate from a text spec when the user wants to compare alternatives (then re-run the same checks with the same limits).
 
 ## 7. Report
 

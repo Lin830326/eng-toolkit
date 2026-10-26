@@ -14,7 +14,7 @@ artifacts preserve nonfinite inputs as quoted text. See the
 
 | Piece | What it does |
 |---|---|
-| skill `eng-toolkit` | unit rules, how to read results and errors, the tool map for all domains, the report format |
+| skill `eng-toolkit` | unit rules, the ask-first rule (no invented datasheet values or verdicts on missing inputs), where numbers may come from, reading a tool's self-reporting, coverage limits, the tool map, the report format |
 | skill `eng-structural-check` + `/eng-structural-check` | beam, frame, truss, column, plate, vibration checks: model choice, inputs, hand check, convergence, utilization |
 | skill `eng-dfm-review` + `/eng-dfm-review` | CNC milling and sheet-metal review of a STEP/IGES/BREP file |
 | skill `eng-fatigue-check` + `/eng-fatigue-check` | infinite-life check with Marin factors and mean stress, rainflow + Miner damage, notches, strain-life, crack growth |
@@ -23,7 +23,7 @@ artifacts preserve nonfinite inputs as quoted text. See the
 | skill `eng-plot-results` + `/eng-plot-results` | charts (SVG) from other tools' CSV artifacts or inline series: Bode, S-N, histograms, station diagrams |
 | skill `eng-3d-view` + `/eng-3d-view` | coloured GLB of a part, DFM findings or an FEM stress/displacement result |
 | `/eng-toolkit-setup` | connection and dependency check, registration command |
-| prompt hook (`hooks/hooks.json`) | one short reminder line with every prompt: engineering numbers must come from the `mcp__eng-toolkit__` tools, not hand arithmetic. Delete `hooks/` to turn it off |
+| prompt hook (`hooks/hooks.json`) | one short reminder with every prompt: numbers that decide a result come from an `mcp__eng-toolkit__` call; unit scaling and sums of tool outputs are allowed only labelled "my arithmetic"; values from memory are labelled "from memory, not a tool result"; missing deciding inputs are asked for, not invented. Delete `hooks/` to turn it off |
 
 ## Install
 
