@@ -1,0 +1,24 @@
+{
+ "id": "F5_ntc_calibration_heatsink_opt",
+ "domains": [
+  "optimize",
+  "thermal",
+  "plot"
+ ],
+ "persona": "Test engineer in a power-module lab (Taiwan); writes English mixed with a little Chinese, comfortable with Excel but not with nonlinear fitting; wants numbers with error bars and a design he can send to the extrusion supplier.",
+ "goal": "Calibrate the 10 k NTC glued on a heatsink from the datasheet table (Steinhart-Hart or beta) with honest confidence intervals, convert one bench reading (2.15 kohm at 60 W in 25 degC air) to a base temperature and the measured heatsink thermal resistance, then pick fin count and fin thickness of a new fan-cooled heatsink with minimum mass such that Rth is at most 0.55 K/W, and see a plot of the calibration residuals or of mass versus fin count.",
+ "opening": "Hi 我有一顆 10k NTC (TDK B57861S0103F040) 貼在散熱器底座上量溫度。datasheet 給了 R/T 表，我想做校正（Steinhart-Hart 或 beta 都可以），要有信賴區間。然後我量到 2.15 kohm，是在 60 W 加熱、環境 25C 的時候，想知道底座溫度跟這個散熱器的熱阻。最後我要設計一個新的風冷散熱器，鰭片數跟厚度怎麼選才會最輕又讓熱阻小於 0.55 K/W？",
+ "facts": {
+  "ntc_table": "From the data sheet, R/T characteristic no. 8016, R25 = 10 kohm, resistance in ohm versus temperature in degC: -40:336500, -35:242600, -30:177000, -25:130400, -20:97070, -15:72930, -10:55330, -5:42320, 0:32650, 5:25390, 10:19900, 15:15710, 20:12490, 25:10000, 30:8057, 35:6531, 40:5327, 45:4369, 50:3603, 55:2986, 60:2488, 65:2083, 70:1752, 75:1481, 80:1258, 85:1072, 90:917.7, 95:788.5, 100:680, 105:588.6, 110:511.2, 115:445.4, 120:389.3, 125:341.7. The data sheet also says B25/100 = 3988 K and for this suffix R25 +-1 % and B +-1 %.",
+  "working_range": "You only care about 0 to 100 degC.",
+  "bench_test": "60 W heater power on the heatsink, NTC read 2.15 kohm (2150 ohm) after reaching steady state, ambient air 25 degC. Assume all 60 W go to the heatsink.",
+  "new_heatsink": "Fan-cooled, datasheet convection coefficient of the fan on the fins about 25 W/m2K. Aluminium 6063, k = 200 W/(m K), density 2700 kg/m3. Base plate 100 mm wide x 80 mm long x 6 mm thick (the fins run along the 80 mm), fins 30 mm tall, n fins of thickness t across the 100 mm width. Extrusion supplier limits: fin gap at least 3 mm, and fin height/thickness at most 20 (so t at least 1.5 mm). You want the lightest design with Rth at most 0.55 K/W; you would rather have an integer number of fins.",
+  "wrong_assumption": "You think the confidence interval from the fit is the uncertainty of the temperature reading; you did not think of the +-1 % tolerance of the part.",
+  "plot_wanted": "Either residuals of the fit (kelvin vs temperature) or minimum mass vs fin count."
+ },
+ "files": {},
+ "max_turns": 7,
+ "truth": "uat/truth/F5_ntc_calibration_heatsink_opt.py",
+ "expect_picture": true,
+ "tool_check": "optimize_fit with model 'a + b*log(R) + c*log(R)^3', independent R, dependent invT (1/T in 1/K, 21 points 0..100 C), initial a=0.001;b=0.0002;c=1e-7 converges: a 1.12794e-3, b 2.34253e-4, c 8.7691e-8, 95 % CIs ~ +-2e-6 / 3.5e-7 / 1.6e-9, rms 1.0e-7 1/K; temperature at 2150 ohm = 64.11 C (truth 64.11 with its T^2-weighted fit; coefficients differ slightly because of the weighting, the temperature error over 0..100 C is 0.027 K vs 0.019 K). The assistant has to compute 1/T = 1/(C+273.15) itself (no tool prepares the table: hand arithmetic over 21 rows). optimize_minimize (differential_evolution, n and t continuous, constraints Rth<=0.55 and gap>=3 mm) returns n = 14.20, t = 1.5 mm, 267.7 g; the integer optimum from the grid is 15 x 1.5 mm = 275.4 g (n=14 would need 2.2 mm = 329 g), so the assistant must round correctly. The Rth expression must be written out by hand (fin efficiency tanh(mLc)/(mLc)); thermal_fin can give a single fin check. No tool propagates the part tolerance (R25 +-1 %, B +-1 %): optimize_sensitivity (Monte Carlo) could."
+}

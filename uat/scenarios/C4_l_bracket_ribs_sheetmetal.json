@@ -1,0 +1,25 @@
+{
+  "id": "C4_l_bracket_ribs_sheetmetal",
+  "domains": [
+    "geometry",
+    "dfm",
+    "3d-view"
+  ],
+  "persona": "Mr. Chen, owner of a two-person machine-building shop in Taiwan, designing a motor-mount bracket without CAD software. Knows what M5 and 'bend radius' mean in practice, has never made a STEP file. Describes parts the way he would to a colleague on the phone: informal, mixed Chinese and English, dimensions given in pieces and sometimes only when asked.",
+  "goal": "Have the assistant build the bracket from his description, then leave with: the part's mass in steel, a coloured 3D file (GLB) he can open to check the shape, and a straight answer whether the shop can bend it from 3 mm plate (bend radius, hole positions) with what he should change; flat blank length for laser cutting if the tools can give it.",
+  "opening": "我想做一個 L 型的角碼，3mm 厚的鋼板折彎，底板大概 80 長、40 寬，立起來的那片 60 高，要鑽四個 M5 的螺絲孔，再加兩片三角形的肋板加強。幫我建個模型算重量，給我一個有顏色的 3D 檔看看長怎樣，還有這樣板金折得出來嗎？",
+  "facts": {
+    "dimensions": "Outside dimensions: base 80 mm long x 40 mm wide, upright 60 mm tall (outer faces), plate thickness 3 mm, one 90 degree bend across the full 40 mm width.",
+    "holes": "Four holes for M5 bolts (clearance holes, he does not know the diameter: 'the usual one'): two in the base, on the centreline of the 80 mm length at 60 mm from the back (the bend), 10 mm and 30 mm from the side edges; two in the upright, 45 mm above the base bottom, also 10 mm and 30 mm from the side edges.",
+    "ribs": "Two triangular stiffening ribs, same 3 mm steel, 25 mm legs along the base and along the upright, standing between the bracket's two legs inside the bend, one at about one third of the width and one at about two thirds (centres about 13.5 and 26.5 mm from one side). They will be welded in.",
+    "material": "S235 carbon steel, density 7850 kg/m3.",
+    "bend_radius_belief": "He assumes an inside bend radius of 2 mm is fine for 3 mm plate ('my shop did 2 mm before on 2 mm sheet'). If asked what the shop's minimum is: their press-brake supplier says minimum inside radius equal to the plate thickness for S235 (3 mm here). He will go with whatever radius the assistant recommends if it explains why.",
+    "flat_length": "He will ask for the flat blank length for the laser cutter; he does not know the K-factor, the shop uses 0.4 for air bending.",
+    "viewer": "He opens GLB files in the Windows 3D Viewer; he would like the bend, the holes and the ribs to be recognisable by colour."
+  },
+  "files": {},
+  "max_turns": 6,
+  "truth": "uat/truth/C4_l_bracket_ribs_sheetmetal.py",
+  "expect_picture": true,
+  "tool_check": "geometry_make_part with an extrude of a 'path' profile in plane xz (start (ro,0), lines, inner arc radius ri turn 'right', outer arc radius ro turn 'left'), distance 40 mm, 2 hole features (axis -z / -x, diameter 5.5 mm), 2 polygon extrudes (plane xz, offset 12/25 mm, distance 3 mm, triangle (3,3),(28,3),(3,28)): ri 3 -> volume 17786.54 mm3, mass 0.139624 kg (7850); ri 2 -> 17844.48 mm3, 0.140079 kg: both equal the closed form in the truth to 4 digits. This takes a non-trivial spec (path profile with arcs, offset ribs); the part grammar is in the tool description so a capable assistant can find it, but a weaker one may build only boxes (sharp corner, no bend radius at all). geometry_check_dfm sheet_metal on the ri 2 part: 11 errors: 3 exact 'Bend inner radius 2 mm is 0.667 times the thickness' (the one bend split into 3 faces by the rib junctions, so counted three times) and 8 HEURISTIC 'Sharp inside corner radius 0' at the gusset-to-plate junctions (not bends); info sheet.thickness 3 mm; holes_checked_against_edges 4, no hole finding. ri 3 without ribs: no findings except info; ri 3 with ribs: 8 heuristic sharp-corner errors remain. ROUGH EDGES: (1) the rib junctions give false 'bend radius 0' errors, so a person who forwards the raw list is told 8 more problems than exist; (2) the one real bend is reported 3 times; (3) the toolkit cannot produce a flat pattern or bend allowance (listed in not_performed): the assistant has to say so or compute it by hand; (4) geometry_make_part's own GLB is single colour: the coloured GLB needs geometry_view on the STEP (color_by face_kind, dfm or highlight); (5) the rendered/ PNG from uat/render_glb.py shows the DFM GLB all grey (it ignores material colours). TRIAL RUN (scripts/uat_run.py, haiku, 6 turns, scratch_bench/uat_try): works end to end; Haiku built a first model with wrong hole and rib positions (it invented 20 mm ribs), fixed them after the person's correction, hand-computed the flat length (135.03 mm for ri 2, K 0.4, correct), but told the person 'the tool did not flag the R2 bend as an error' although geometry_check_dfm had 3 exact errors for it, and could not give one GLB with bends, holes and ribs in three colours (geometry_view colours by face kind or ONE highlight set; it tried Python/Bash to merge GLBs, which the run's allowed tools forbid). That multi-colour request is a genuine gap in geometry_view (one highlight colour only) and is kept in the scenario on purpose."
+}

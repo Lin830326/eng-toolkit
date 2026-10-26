@@ -1,0 +1,25 @@
+{
+  "id": "M2_crane_hook_strain_fatigue",
+  "domains": [
+    "fatigue",
+    "plot"
+  ],
+  "persona": "Reliability engineer in the maintenance department of a steel plant in southern Taiwan. Writes Traditional Chinese with English abbreviations; practical, impatient with theory, wants an answer in hours and years he can put in an inspection report. Not sure what rainflow does exactly, just that the standard says to use it.",
+  "goal": "Leave with: damage per record from the strain-gauge file, hours to failure and the remaining hours (and years) of the lifting-lug weld, using the company's S-N curve, plus a histogram picture of the cycle ranges. He needs to trust the number: if the file has bad data he wants to know.",
+  "opening": "我們廠裡一台 6.3 噸橋式吊車,吊鉤橫樑的吊耳焊道旁邊貼了應變計,記錄了一段,檔案是 {raw}。想知道這個焊道還剩多少壽命。要用雨流計數加 Miner,S-N 曲線用公司規範的 FAT 63。順便給我一張循環大小的直方圖。",
+  "facts": {
+    "file": "logger export: columns time_s,strain_ue (microstrain) with one header line, 10 Hz, 20000 samples = 2000 s of hook-active time. The gauge is uniaxial on the plate next to the weld, steel E = 210 GPa, so stress = 210 GPa x strain",
+    "S-N curve": "company standard is IIW FAT 63: stress RANGE 63 MPa at 2 million cycles, slope m = 3; use a straight line (no endurance limit / no cut-off); as-welded detail so no mean stress correction. He says FAT classes are given as stress range, not amplitude",
+    "spikes": "the logger sometimes shows a one-sample spike when the welding machine next door fires; he has not looked at this file for them. The logger software also exports a filtered (despiked) copy without a header line, saved at C:/Users/USER/Documents/GitHub/eng-toolkit/.claude/worktrees/feat-uat/uat/data/crane_hook_strain_despiked.csv : give this path only if the assistant says the raw file cannot be read or contains spikes/implausible values",
+    "hours": "the 2000 s record is representative of normal use; the crane has already worked about 11000 hook-active hours at similar duty; one working year is about 1800 hook-active hours; he wants the remaining life in hours and years",
+    "plot": "histogram of cycle counts by stress range (MPa); he is fine with log scale or a table if the many tiny noise cycles make the plot useless",
+    "SWL": "the hook block is rated 6.3 t (about 109 MPa at the gauge at full load, from the load test); the gauge was zeroed with the empty hook block hanging, he is not sure how well"
+  },
+  "files": {
+    "raw": "C:/Users/USER/Documents/GitHub/eng-toolkit/.claude/worktrees/feat-uat/uat/data/crane_hook_strain_raw.csv"
+  },
+  "max_turns": 6,
+  "truth": "uat/truth/M2_crane_hook_strain_fatigue.py",
+  "expect_picture": true,
+  "tool_check": "fatigue_rainflow(history_file = despiked file, sample_scale 0.21 MPa, basquin_a 3968.8 MPa, basquin_b -1/3) -> damage_per_block 9.5797e-06, repeats_to_failure 104387 records = 58 000 h (truth 9.58e-6, 57 991 h; with hysteresis 2 MPa the damage is 9.576e-6, full cycles 332). ROUGH EDGE 1: the raw logger CSV with its header line 'time_s,strain_ue' is refused with input.invalid 'expected a finite decimal literal' at param /history_file/0 (the error does not say it is the header), so the person cannot use his own export directly and the assistant has no way to strip it (only Read and the MCP tools); hence the despiked header-less copy in the facts. ROUGH EDGE 2: the documented plot recipe (eng-fatigue-check: plot_bar on rainflow_cycles.csv, x_column range_MPa) fails on this real record with input.out_of_range '271 categories; at most 200'; plot_bar histogram mode on range_MPa counts CSV rows, not cycles, so it is wrong; what works is inline series built from data.range_histogram (the first bin holds ~4925 of 4987 noise cycles, so the picture needs the log/clipped y or coarser bins I chose). The raw file with the three EMI spikes runs only after the header is removed; the spikes then give a max range 1239 MPa and damage 4.4e-3 (126 h), visible to the assistant in the result (max stress 861 MPa vs 109 MPa at SWL)."
+}

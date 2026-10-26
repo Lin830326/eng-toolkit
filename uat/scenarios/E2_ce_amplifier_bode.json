@@ -1,0 +1,24 @@
+{
+  "id": "E2_ce_amplifier_bode",
+  "domains": ["spice", "plot"],
+  "persona": "Tzu-Yu, a hobbyist and part-time electronics-class assistant building a small microphone pre-amp on perfboard. Writes Traditional Chinese with English part names, short messages, knows resistor values and what a Bode plot is but has never written a SPICE netlist. Believes KiCad's bundled 2N2222 model file is a faithful 2N2222.",
+  "goal": "The gain of the stage at 1 kHz in dB and V/V, the 'bandwidth' (he wants one number: where the response drops by 3 dB), the DC operating point (is the transistor biased in the middle?), a Bode plot picture of gain vs frequency, and a picture of the output waveform for a 10 mV 1 kHz input.",
+  "opening": "我在麵包板上做一個 2N2222 共射極放大器,12V 供電,基極用 47k 跟 10k 分壓,集極電阻 2.2k,射極 470 再並一顆電容旁路。想用模擬看一下增益跟頻寬,最好有 Bode 圖。電晶體模型我只有 KiCad 附的那個檔:{model}",
+  "facts": {
+    "input": "signal generator output impedance 600 ohm, coupling capacitor from generator to base is 1 uF",
+    "emitter bypass": "100 uF electrolytic across the 470 ohm emitter resistor",
+    "output": "10 uF coupling capacitor from the collector to the load, load is a 10k resistor to ground (the next stage / headphone amp input)",
+    "signal": "the real signal is a dynamic microphone about 10 mV peak at 1 kHz",
+    "wants": "a Bode plot (gain in dB vs frequency, log axis), one number for 'bandwidth', the DC bias point of the transistor, and a waveform picture for 10 mV at 1 kHz; the Bode plot should show the range roughly 1 Hz to 10 MHz",
+    "wrong belief": "thinks the model file is a complete 2N2222 and that the amplifier 'bandwidth' is a single number like for a low-pass filter",
+    "if told the model has no capacitances": "he does have the datasheet: 2N2222A fT = 300 MHz minimum, Cobo = 8 pF max, Cibo = 25 pF max; he would accept an estimate using those",
+    "units": "when asked for gain he will say '大概幾倍' - he thinks in V/V, but a dB figure is fine"
+  },
+  "files": {
+    "model": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/demos/simulation/amplifier-ac/2n2222.model"
+  },
+  "max_turns": 5,
+  "truth": "uat/truth/E2_ce_amplifier_bode.py",
+  "expect_picture": true,
+  "tool_check": "Netlist written by hand from the description (Vcc 12, Vin AC 1 with SIN(0 10m 1k), Rs 600, Cin 1u, R1 47k, R2 10k, Q1, Rc 2.2k, Re 470, Ce 100u, Cout 10u, RL 10k, '.model Q2N2222 npn (bf=200)' inlined because .include/.lib are refused). spice_check_netlist ok. op: v(b)=2.000, v(e)=1.202, v(c)=6.402 V, i(vcc)=-2.757 mA: identical to standalone ngspice. ac 1 Hz-100 MHz, 50 pts/dec: max |v(out)| 129.7 at 100 MHz (flat, no capacitances in the model), value_at 1 kHz = 42.11 dB / 127.5 V/V, matches ngspice. tran 20 ms with SIN(0 10m 1k): v(out) min -1.33, max 1.25 V over the whole run (includes start-up asymmetry; steady-state amplitude 1.265 V). plot_xy on result.csv with x_column=frequency, y_columns='v(out).db', x_scale=log works. Rough edges found: (1) spice_measure bandwidth_3db only handles low-pass responses: on this band-pass it refuses with measure.not_found ('the gain never falls 3.0103 dB below its first sample ... not a low-pass response'), and no tool measures a lower -3 dB corner, so the assistant must read result.csv or bracket with value_at. (2) spice_measure value_at: the tool description says column 'v(out)' picks v(out).mag or .db for ac tables, but value_at with column='v(out)' fails with input.invalid (columns v(out).re,.im,.mag,.db,.phase_deg); bandwidth_3db accepts 'v(out)'. (3) value_at on 'v(out).db' returns {quantity:42.11, unit:'volt'} - a dB value labelled as volt. (4) An absolute path to 2n2222.model cannot be used with .include (refused), so the assistant has to Read the file and paste its single line."
+}

@@ -1,0 +1,56 @@
+{
+ "id": "F1_cooling_loop_pump",
+ "verdict": "PASS",
+ "one_line": "With the real catalogue points, fluids_pipe_network gave the right operating point (3.18 m3/h, 10.24 m) and branch split (A 1.31 short of 1.56, B 1.87 fine). The HX-dominated head was explained and confirmed per pipe from the tool output, and a pump/system chart was produced. Weak spots: turn 1 invented a 45 m pump curve and gave a wrong headline ('pump far too big'); the system curve was interpolated by hand; and the chart does not mark the operating point.",
+ "goal_met": true,
+ "turns": 6,
+ "answers": [
+  {"item": "operating flow (as-is, Kv 4.0)", "truth": "3.163 m3/h (+-8 %)", "assistant_said": "3.18 m3/h. With the valve opened to about Kv 10 it recommended, 3.26 m3/h, which became the final quoted point", "result": "right"},
+  {"item": "operating head", "truth": "10.29 m (+-0.7)", "assistant_said": "10.24 m as-is; 10.11 m with Kv 10", "result": "right"},
+  {"item": "pump efficiency at operating point", "truth": "0.445", "assistant_said": "0.445 (hand-interpolated from catalogue points, stated)", "result": "right"},
+  {"item": "pump shaft power", "truth": "0.198 kW", "assistant_said": "about 0.20 kW (calc_pump_power)", "result": "right"},
+  {"item": "required flow 15 kW / 5 K", "truth": "2.601 m3/h", "assistant_said": "2.58 m3/h (0.717 kg/s), later 2.6", "result": "right"},
+  {"item": "total flow enough", "truth": "yes", "assistant_said": "yes, pump can be used, head 10.1 m within curve", "result": "right"},
+  {"item": "branch A flow", "truth": "1.39 m3/h (+-8 %)", "assistant_said": "1.31 m3/h (-5.8 %)", "result": "right"},
+  {"item": "branch B flow", "truth": "1.773 m3/h (+-8 %)", "assistant_said": "1.87 m3/h (+5.5 %)", "result": "right"},
+  {"item": "branch requirements A / B", "truth": "1.56 / 1.04 m3/h", "assistant_said": "1.56 / 1.04 m3/h", "result": "right"},
+  {"item": "branch A enough / branch B enough", "truth": "A no / B yes", "assistant_said": "A not enough (dT about 5.9 K), B more than enough (dT about 2.8 K); balance A valve to about Kv 10", "result": "right"},
+  {"item": "PHE pressure drop at operating flow", "truth": "77.8 kPa at 3.163 m3/h", "assistant_said": "about 83 kPa (8.47 m) at 3.26 m3/h; 8.04 m at 3.18 m3/h in the as-is tool run", "result": "right"},
+  {"item": "pump/system curve chart with operating point", "truth": "crossing at about 3.16 m3/h, 10.3 m", "assistant_said": "plot_xy chart, curves crossing at 3.26 m3/h, 10.1 m (Kv 10 case); operating point not marked as a point", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "Person's assumption that any pump reaching 2.6 m3/h is fine (ignoring the branch split)", "caught": true},
+  {"trap": "Two parallel branches need pipe_network, not pump_system with one pipe", "caught": true},
+  {"trap": "Kv 4.0 m3/h and 70 kPa @ 3 m3/h must be turned into loss coefficients (K 152 for the valve at DN32, K 350 for the PHE at DN40, both correct)", "caught": true},
+  {"trap": "pump_points efficiency 0 at shut-off is refused (not met: pipe_network pump points carry no efficiency; turn 1 invented curve used 0.05)", "caught": true},
+  {"trap": "Inventing a pump curve when none was given", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 made up a pump curve (45 m shut-off, 20 m at 8 m3/h) and a 40 kPa PHE+branch loss. It then put a bold, wrong conclusion first ('泵太大，會把流量推到約 2.5 倍的設計值', 6.34 m3/h at 28.3 m) and drew it. It was labelled a placeholder and the assistant asked for the model, but a reader who stopped there would decide wrongly.", "severity": "high"},
+  {"issue": "The system curve in the chart and the Excel table were interpolated by hand from the operating point (H = 0.951 Q^2), not computed by a tool. This was disclosed each time ('不是逐點由工具算的').", "severity": "low"},
+  {"issue": "The Kv->K conversion, pump-efficiency interpolation, and elbow K 0.9 / tee K 0.5 were the assistant's own and disclosed. It did not ask for the tee K (the person would have said 1.0). It used DN25 ID 27.9 mm (sch40 is 26.64 mm) without saying where that came from; B-branch flow is about 5 % high as a result.", "severity": "low"},
+  {"issue": "The chart title says 'balance valve Kv set to 26 equiv', but 26 is the branch K (valve K about 22 plus fittings), not Kv. The text says Kv about 10.", "severity": "low"},
+  {"issue": "The turn-6 per-pipe head breakdown (0.52 + 8.47 + 0.61 + 0.52 = 10.12 m) matches the fluids_pipe_network data (sup 0.517, hx 8.469, bA/bB 0.609, ret 0.517 m) exactly. It was correctly attributed to the tool.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T041006Z-9d7834e8-plot_xy_plot.png", "score": 1, "notes": "Well drawn: axes in m3/h and m, design-flow line, crossings visible. But the pump curve is invented ('placeholder') and the system curves come from guessed losses. The legend is truncated ('System, 40 kPa HX+loads (K...'). It shows a situation that is not the person's."},
+  {"file": "rendered/20261026T041205Z-4700b395-plot_xy_plot.png", "score": 2, "notes": "The person's catalogue curve and a system curve crossing at about 3.26 m3/h / 10.1 m, plus the 2.6 m3/h requirement line, all in a sensible range. Missing: the operating point is not marked or labelled, which the person asked for. The system curve is a coarse polyline (kink at 1 m3/h). Both legend entries are cut off with an ellipsis. The vline label overlaps the system curve. The title calls K 26 'Kv'. 'm^3/h' is not typeset."}
+ ],
+ "problems": [
+  {"id": "F1-1", "kind": "model_error", "severity": "high", "what": "Invented a pump curve and HX/branch losses in turn 1 instead of asking, ran three pump_system calls and a chart on them, and led with a wrong conclusion.", "evidence": "Turn 1: '**結論：泵的揚程足夠，但泵太大，會把流量推到約 2.5 倍的設計值。**... 我用的是代表性的小多級泵曲線（關死揚程約 45 m...）'. Real pump: shut-off 12.4 m, 3.18 m3/h.", "fix": "plugin/skills/eng-toolkit/SKILL.md rule 7: add 'Never invent a pump curve, component datasheet value (pressure drop, Kv, Rds(on)) or load: ask for it first; if you must illustrate, do not state a conclusion from it.'"},
+  {"id": "F1-2", "kind": "tool_gap", "severity": "medium", "what": "Neither fluids_pipe_network nor fluids_pump_system returns pump-curve/system-curve tables or the operating point as a plottable artifact. The assistant hand-built the system curve as a*Q^2 for both the chart and the Excel table, which the skill says not to do.", "evidence": "plot_xy series 'System curve' y=[0,0.95,3.81,6.44,8.57,10.11,15.22,23.79,34.26]; turn 6: 'a = 10.11 ÷ 3.26² ≈ 0.951... 直接寫 =0.951*A2^2'.", "fix": "Have pump_system and pipe_network (with one pump) write curves.csv (Q, pump head, system head, efficiency, NPSH if given) on a grid from 0 to the end of the pump curve, plus operating_point in values. eng-plot-results can then plot it directly and mark the point."},
+  {"id": "F1-3", "kind": "tool_gap", "severity": "low", "what": "No way to give a valve Kv or a component pressure drop at a reference flow. The assistant converted Kv 4.0 -> K 152 and 70 kPa @ 3 m3/h -> K 350 by hand (correctly) and then had to guess K for 'Kv 10'.", "evidence": "pipes 'hx,H,J1,0.1 m,40.9 mm,0.05 mm,350;bA,J1,J2,15 m,35.1 mm,0.05 mm,155.7'.", "fix": "Allow the minor-loss field of a pipe record to take 'kv=4 m^3/h' or 'dp=70 kPa@3 m^3/h', or add a small calc_kv_to_k helper."},
+  {"id": "F1-4", "kind": "model_error", "severity": "low", "what": "The chart does not mark the operating point the person asked for. A one-point scatter series or a vline/hline pair at 3.26/10.1 was possible with plot_xy. The title mislabels K as Kv.", "evidence": "plot_xy input: two series, vlines '2.6,required...', title '... (balance valve Kv set to 26 equiv)'.", "fix": "plugin/skills/eng-plot-results/SKILL.md: add 'Pump/system curves: add the operating point as its own scatter series named with its value (kind \"line,line,scatter\").'"},
+  {"id": "F1-5", "kind": "tool_gap", "severity": "low", "what": "plot_xy shortens legend labels with an ellipsis even when the plot has free space, so both series names lose their key part.", "evidence": "Rendered PNG legend: 'Pump curve (your catalogue…', 'System curve (loop + HX +…' at width 800.", "fix": "In eng_toolkit/domains/plot/_chart.py, allow the legend box to grow to about 45 % of the plot width, or wrap to two lines before truncating."},
+  {"id": "F1-6", "kind": "tool_gap", "severity": "medium", "what": "No PNG output; the person wanted the chart for PowerPoint and spent turns 3-5 on it, ending with hand-made Excel instructions.", "evidence": "Turn 3: '圖我打不開 svg，可以給我 png 嗎？會議要貼 PPT。'", "fix": "format='png' on plot tools."},
+  {"id": "F1-7", "kind": "harness_artifact", "severity": "medium", "what": "The simulated person cannot see pictures and 'grants' shell permission in chat. The assistant then wasted tool calls on Bash/PowerShell checks for cairosvg and wrote a conversion script into its scratchpad.", "evidence": "Turn 4 PERSON: '你直接跑指令轉好給我，權限我同意。'; Turn 3/4 tools: Bash, PowerShell x3, Write.", "fix": "Show the rendered PNGs to the simulated person; disallow shell tools explicitly in uat_run.py."},
+  {"id": "F1-8", "kind": "docs", "severity": "low", "what": "The truth script's comment and 'how' text say the PHE drop is 45 kPa at 3.0 m3/h, while the code and scenario use 70 kPa (answers consistent with 70).", "evidence": "uat/truth/F1_cooling_loop_pump.py:26 'K_PHE_DP, Q_PHE = 70e3, 3.0 / 3600  # plate heat exchanger: 45 kPa at 3.0 m3/h'; how: 'plate HX dp 45 kPa at 3.0 m3/h'.", "fix": "Change '45 kPa' to '70 kPa' in the comment and in the 'how' string."}
+ ],
+ "what_worked": [
+  "Modelled the loop correctly in fluids_pipe_network with supply/return trunk, PHE as K 350 at DN40, and two parallel branches with the valve as K. Tool results are within 6 % of the truth on every flow, and the verdicts (total enough, A short, B fine) are exact.",
+  "Went beyond the question with a balancing study (Kv 4 / fully open / Kv 10), each run in the tool, and a practical field-tuning method by branch dT when the valve has only turns.",
+  "Answered the person's challenge ('HX alone is 7 m, can the total really be 10 m?') with a per-pipe breakdown taken from the tool output that sums to the pump head.",
+  "Admitted the turn-1 curve was made up and withdrew the conclusion ('上次給你的泵曲線是我自己編的，結論作廢').",
+  "Gave a usable Excel fallback (data table, formula, how to mark the operating point) when the PNG could not be produced."
+ ]
+}

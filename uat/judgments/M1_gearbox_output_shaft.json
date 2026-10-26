@@ -1,0 +1,62 @@
+{
+ "id": "M1_gearbox_output_shaft",
+ "verdict": "PARTIAL",
+ "one_line": "Bearing verdict (6210 too short with KA 1.25), key sizes and 'about 60 mm passes' agree with the truth, but the assistant ignored the helical axial-force couple (moments and reactions 7-11 % off, wrong moment diagram), assumed unconservative C45+QT strengths without asking, first told the person 50 mm was fine, and pushed the gear seat to 65 mm on a shoulder geometry it invented.",
+ "goal_met": false,
+ "turns": 7,
+ "answers": [
+  {"item": "Gear ratio / output speed", "truth": "3.55 / 414.1 rpm", "assistant_said": "71/20 = 3.55; 415 rpm used in bearing calls", "result": "right"},
+  {"item": "Design torque with KA 1.25", "truth": "851.8 N m (681.5 nominal with 98.5 % efficiency)", "assistant_said": "865 N m (692 x 1.25, losses ignored and stated)", "result": "right"},
+  {"item": "Gear forces Ft / Fr / Fa (with KA)", "truth": "5794 / 2183 / 1553 N", "assistant_said": "5.88 / 2.22 / 1.58 kN (1.5 % high from ignoring efficiency, conservative)", "result": "right"},
+  {"item": "Bearing reactions (with KA)", "truth": "A 4047 N radial + 1553 N axial, B 2320 N", "assistant_said": "A sqrt(3.53^2 + 1.33^2) = 3.77 kN, B sqrt(2.35^2 + 0.89^2) = 2.51 kN, axial 1.58 kN on A", "result": "wrong"},
+  {"item": "Bending moment at the gear plane", "truth": "485.6 N m left / 417.7 right (510.5 if the axial force points to B)", "assistant_said": "453 N m, no jump at the gear", "result": "wrong"},
+  {"item": "Bending moment at the shoulder", "truth": "324.9 N m", "assistant_said": "353 N m (x = 160)", "result": "wrong"},
+  {"item": "Minimum diameter at keyseat (DE-Goodman, n = 2, 99 %)", "truth": "55.5 mm -> 60 mm standard", "assistant_said": "turn 2: minimum 55 mm, use 60 (before KA, Su 700); turn 3: 60 passes with KA (Goodman 2.80 / Soderberg 2.33); final recommendation 65 mm", "result": "right"},
+  {"item": "Fatigue factor at d = 60 keyseat", "truth": "n_f 2.50 (Su 630, Kf 1.861, Kfs 2.608, M 485.6, T 851.8)", "assistant_said": "Goodman 2.80 (Su 700, Sy 450, Kf 1.9, Kfs 2.6, M 453, T 865)", "result": "wrong"},
+  {"item": "Minimum diameter at shoulder fillet", "truth": "45.8 mm (not governing; n_f 4.38 at d60, R6)", "assistant_said": "never sized; checked 60->50 R4 (2.71), 65->50 R6 (2.79), 65->72 R3 (Goodman 4.23) - only the last matches the real geometry", "result": "missing"},
+  {"item": "Person's guess 50 mm", "truth": "too small: n_f 1.49 < 2", "assistant_said": "turn 1: '50 mm 軸在目前假設下不會疲勞斷' (SF 1.9-2.6 with assumed 4140, 90 %); turn 2: 'minimum 55 mm'", "result": "right"},
+  {"item": "SKF 6210 L10h at locating bearing A (with KA)", "truth": "19294 h < 25000 h (P 4740 N)", "assistant_said": "18,660 h with P 4.79 kN, needs C 40.9 kN: 6210 not enough", "result": "right"},
+  {"item": "SKF 6210 L10h at B (with KA)", "truth": "164495 h", "assistant_said": "129,700 h (P 2.51 kN)", "result": "wrong"},
+  {"item": "Gear key", "truth": "DIN 6885 18 x 11; min length 19.5 mm crushing at n = 2; fitted length set by hub (56-70 mm)", "assistant_said": "18 x 11 x 70, crushing SF 6.0, shear SF 11.4; min lengths 4.9 / 9.3 mm (at SF 1, T 692, Sy 450); 'length set by hub width'", "result": "right"},
+  {"item": "Coupling key", "truth": "14 x 9, min length 31.7 mm crushing at n = 2", "assistant_said": "14 x 9 x 50 crushing SF 2.6 (Sy 450 assumed); suggests 60 mm", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "Axial force direction not given; its couple Fa*d/2 changes the moments - ask or take the worst case", "caught": false},
+  {"trap": "Service factor / shock (KA 1.25) only revealed when asked", "caught": false},
+  {"trap": "machine_gear is spur only: helical Fr, Fa must be computed by hand", "caught": true},
+  {"trap": "machine_shaft cannot size, Kf/Kfs must be supplied and d iterated", "caught": true},
+  {"trap": "machine_key has no design factor: minimum lengths are at n = 1", "caught": false},
+  {"trap": "Do not recommend the strength-minimum key length as the fitted length", "caught": true},
+  {"trap": "Bearing P = X Fr + Y Fa computed by hand, tool needs P", "caught": true},
+  {"trap": "Person's 50 mm guess is too small", "caught": true},
+  {"trap": "C45+QT minimum strengths for 40-100 mm (Rm 630, Re 370)", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 answered the headline question confidently ('50 mm 軸在目前假設下不會疲勞斷', '整根軸就用 50 mm 最省事') on invented inputs (4140 Su 850, 90 % reliability, gear at 110 mm, ratio 294/83) instead of asking; the assumptions were listed, but the conclusion was the opposite of the truth.", "severity": "medium"},
+  {"issue": "Assumed C45+QT 'typical' Su 700 / Sy 450 MPa without asking; EN 10083-2 minimum for 40-100 mm is Rm 630 / Re 370 (the person's fact). Unconservative by 11 % on Su; flagged 'please check the mill certificate' but never asked.", "severity": "medium"},
+  {"issue": "Catalogue values from memory were flagged as memory each time (6210 C 35.1, 6211 C 43.6, 6310 C 61.8 / C0 36.5 kN). Two of them are not SKF values (SKF 6210 C 37.1 kN, 6211 C 46.2 kN).", "severity": "low"},
+  {"issue": "Physics stated as fact: '軸向力 1.58 kN 由 A 軸承承受，不產生彎矩' - wrong for a helical gear (Fa acts at the pitch radius).", "severity": "medium"},
+  {"issue": "Minimum key lengths quoted without saying they are at safety factor 1 (tool has no design factor) while the person wanted n = 2.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T042431Z-585528e2-plot_xy_plot.png", "score": 1, "notes": "Labelled tangential, radial and resultant moment vs distance from bearing A, units N*m and mm, legend. But the data are wrong in shape and size: no axial couple, so no jump at the gear (truth 485.6 left / 417.7 right, plot 453 peak); only 3 points per series; axis padded to -50..350 mm and -100 N*m. The person never saw it (file path only)."},
+  {"file": "rendered/20261026T042547Z-311e1e3b-geometry_make_part_output_shaft.png", "score": 1, "notes": "Harness render of the d60 GLB: small, pale grey on white, steps barely visible, key slots invisible. The assistant did not call geometry_view or show any 3D picture; the person got STEP/GLB paths only, and the d65 rebuild produced only a STEP."}
+ ],
+ "problems": [
+  {"id": "M1_gearbox_output_shaft-1", "kind": "model_error", "severity": "high", "what": "Ignored the bending couple of the helical axial force (Fa x d/2 = 1553 N x 0.147 m = 228 N m) in the radial plane and never asked its direction; moments, reactions and the moment diagram are 7-11 % off and the diagram has the wrong shape.", "evidence": "'軸向力 1.58 kN 由 A 軸承承受，不產生彎矩'; gear-plane moment 453 N m vs truth 485.6/417.7 (510.5 worst case); A reaction 3.77 kN vs 4.047 kN", "fix": "New plugin skill (e.g. plugin/skills/eng-shaft-design/SKILL.md) or a section in eng-structural-check: 'Helical/bevel gear: Fa acts at the pitch radius and adds a couple Fa*d/2 in the radial plane; ask the helix hand and rotation (or take the worst case) and which bearing locates.'"},
+  {"id": "M1_gearbox_output_shaft-2", "kind": "tool_gap", "severity": "medium", "what": "No tool turns gear data into shaft loads: machine_gear is spur only (no helical Wa, Wr), nothing builds the two-plane moment diagram with axial couples and resultant, and mech_bearing_life needs P precomputed (no X, Y from Fa/C0). All of it was hand arithmetic, where the error above came from.", "evidence": "machine_gear description: 'External spur pair'; mech_bearing_life: 'The equivalent load P must already include radial and axial parts'; assistant: 'P_A 用 X = 0.56、Y ≈ 1.7 估算 ... Y 是我依 SKF 表手估'", "fix": "Add helix_angle to machine_gear (return Wt, Wr, Wa, transverse angle); add a shaft-load tool or a machine_shaft 'loads along the shaft' mode (point forces in two planes + axial forces at radius -> reactions, M_y, M_z, resultant table and CSV for plot_xy); add optional Fr, Fa, C0 to mech_bearing_life to compute e, X, Y for deep-groove ball bearings."},
+  {"id": "M1_gearbox_output_shaft-3", "kind": "model_error", "severity": "medium", "what": "Invented a 60 -> 50 mm step at the hub shoulder (the person only said the shoulder is at the right hub face), concluded R6 does not fit and moved the gear seat to 65 mm; with the person's real 60 -> 72 shoulder, 60 mm already passes (truth n_f 2.5) and the move to 65 then made the 72 mm shoulder only 3.5 mm high (R3).", "evidence": "Turn 3: '台階（右側輪轂端面，x = 160 mm，60 → 50）：R6 放不下'; turn 5: '建議：齒輪座 65 mm'; turn 7: 'x = 180（65 → 72）：台階只高 3.5 mm，R6 放不下。最大約 R3'", "fix": "Model behaviour; eng-toolkit SKILL rule 7 already says to ask. Could add to a shaft skill: 'ask for the diameters on both sides of every shoulder before choosing Kt'."},
+  {"id": "M1_gearbox_output_shaft-4", "kind": "model_error", "severity": "medium", "what": "Did not ask for material strengths, reliability, safety factor, duty/service factor or gear position before giving a sizing verdict in turn 1, contrary to eng-toolkit SKILL rule 7; KA 1.25 only entered when the person volunteered it in turn 3.", "evidence": "Turn 1 assumptions '4140 調質，Su = 850 MPa', '可靠度：90%', '齒輪位置：距馬達側軸承 110 mm'; turn 3 person: '我們公司負載都有乘 1.25 的係數，這個有算進去嗎?'", "fix": "plugin/skills/eng-toolkit/SKILL.md rule 7: add an explicit list for machine elements: 'shaft/bearing/key sizing: ask material grade and size range (use the standard minimum strengths), reliability, design factor, application/service factor, and load positions before the first verdict'."},
+  {"id": "M1_gearbox_output_shaft-5", "kind": "tool_gap", "severity": "low", "what": "machine_key has no design_factor input, so 'minimum_length' is at n = 1; the assistant reported 4.9 / 9.3 mm as the minimum lengths although the requirement was n = 2.", "evidence": "machine_key(d 60, 18x11, L 70, T 692, shear 260, bearing 450) -> minimum lengths 4.9 / 9.3 mm; tool_check: 'exactly half the truth numbers because the tool has no design factor'", "fix": "Add design_factor (default 1) to machine_key and return minimum lengths at that factor; or name the outputs minimum_length_at_n1."},
+  {"id": "M1_gearbox_output_shaft-6", "kind": "harness_artifact", "severity": "medium", "what": "The assistant had Bash, WebSearch and Read outside the toolkit (WebSearch was denied, Bash cp denied); the person demanded the STEP be copied into a 'project folder', which a real Claude Code user would not need, and the run ended at max turns on that.", "evidence": "Turn 4 tools: Bash, ToolSearch, WebSearch; turn 7: '把它複製到專案資料夾的 copy 指令被系統擋下'", "fix": "uat_run.py: restrict tools (--tools) and tell the person model that file paths open on his PC; forward rendered PNGs to the person."},
+  {"id": "M1_gearbox_output_shaft-7", "kind": "harness_artifact", "severity": "low", "what": "Simulated person 'confirmed' a recalled catalogue value that was not in his facts.", "evidence": "Person turn 5: '6310 的 C 我查到也是 61.8,C0 36.5,對' (SKF lists C0 38 kN)", "fix": "SIM_PROMPT: 'if you are asked to confirm a value not in THINGS YOU KNOW, say you will check, do not confirm'."},
+  {"id": "M1_gearbox_output_shaft-8", "kind": "skill_gap", "severity": "low", "what": "plugin/skills/eng-3d-view says to show a GLB with cad_show or a viewer, but the assistant had no viewer and did not call geometry_view; the person never saw the shaft.", "evidence": "Turn 6: 'GLB（看 3D 用）：同一資料夾下的 output_shaft.glb'", "fix": "eng-3d-view SKILL section 7: 'when no viewer tool is available, call geometry_view / drawing_make_views to produce a PNG/SVG preview and give that first'."}
+ ],
+ "what_worked": [
+  "Bearing life verdict right: 6210 with KA gives 18,660 h vs 25,000 h required (truth 19,294 h) and the needed C 40.9 kN; explained correctly that KA multiplies P, not C",
+  "Key sizes right (18 x 11 at the gear seat, 14 x 9 at the 45 mm stub) and the remark that the fitted length is set by the hub, not by strength",
+  "Iterated machine_shaft over 55/60/65 mm with stated Kf/Kfs and fatigue_sn Peterson q for the fillets; Kf 1.9/2.6 for the keyseat matches the truth 1.861/2.608",
+  "geometry_make_part built the person's stepped shaft with both key slots (volume 1,060,931 mm3 vs builder 1.059e6) and rebuilt it at d65",
+  "Spotted that the person's drawing (d60, 60 -> 72 shoulder) contradicted the agreed 65 mm and asked"
+ ]
+}

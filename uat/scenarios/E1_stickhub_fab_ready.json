@@ -1,0 +1,25 @@
+{
+  "id": "E1_stickhub_fab_ready",
+  "domains": ["pcb"],
+  "persona": "Wei, a firmware engineer at a small hardware start-up (not a PCB designer). A colleague left a KiCad project folder and went on leave; the board has to go to the fab tomorrow. Writes Traditional Chinese mixed with English, short messages, no KiCad vocabulary beyond 'DRC'. Does not know which of the files is the board and which is the schematic.",
+  "goal": "A plain verdict 'can I send this to the fab or not', backed by DRC/ERC status, how many parts and nets, board size and number of copper layers, whether the fab's 0.15 mm clearance rule is really met, and the gerber and drill files (and a picture of the board) ready to upload.",
+  "opening": "我同事丟給我一包 KiCad 的檔案,說明天要送板廠打樣,叫我先確認可不可以送。資料夾裡有這幾個:\n{file_a}\n{file_b}\n{file_c}\n{file_d}\n我不知道哪個才是板子。板廠說 clearance 要 0.15mm 以上,幫我跑一下 DRC 看有沒有問題?",
+  "facts": {
+    "fab rules": "the fab's capability sheet says: minimum clearance 0.15 mm, minimum track width 0.15 mm, minimum finished drill 0.3 mm, maximum board 100 x 100 mm, 2 or 4 copper layers.",
+    "wrong belief": "the colleague said in chat it is a '4-layer board' (it is not; the person has no way to check); the person also assumes that KiCad's DRC automatically knows the fab's rules",
+    "wants": "files to upload to the fab (gerbers plus drill, ideally zipped) and a picture of the board to look at; wants a plain yes/no at the end",
+    "what he does not know": "which file is the board (.kicad_pcb), which is the schematic (.kicad_sch), what .kicad_pro and .kicad_sym are",
+    "order": "5 pieces, 1.6 mm thick, tomorrow is the deadline so he will accept a 'yes with caveats' if the caveats are stated honestly",
+    "if the assistant reports library warnings": "he does not know what a footprint library is and will ask whether those warnings mean the board is broken"
+  },
+  "files": {
+    "file_a": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/demos/stickhub/RobotProtos.kicad_sym",
+    "file_b": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/demos/stickhub/StickHub.kicad_sch",
+    "file_c": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/demos/stickhub/StickHub.kicad_pro",
+    "file_d": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/demos/stickhub/StickHub.kicad_pcb"
+  },
+  "max_turns": 5,
+  "truth": "uat/truth/E1_stickhub_fab_ready.py",
+  "expect_picture": true,
+  "tool_check": "pcb_info on StickHub.kicad_pcb: footprint_count 94, net_count 47, copper_layers 2, board 16.5 x 40.0 mm, via_count 87 (agrees with kicad-cli). pcb_drc default: 0 errors, 0 unconnected, but 94 lib_footprint_issues warnings (footprint library 'footprints' not visible to the run) - direct kicad-cli in the project folder gives 0 violations, so the 94 warnings are noise the assistant must explain. pcb_drc min_clearance='0.15 mm', min_track_width='0.15 mm': 0 errors (same as truth); min_clearance='0.2 mm': 499 clearance errors (identical to kicad-cli with a .kicad_dru rule). pcb_erc on StickHub.kicad_sch: 0 errors, 234 warnings (140 lib_symbol_issues, 94 footprint_link_issues), again library visibility noise; direct kicad-cli ERC 0 violations. pcb_export gerbers: 9 layer files + job + gerbers.zip (10 files by file_count); drill: 1 file (board.drl, PTH+NPTH merged). Files are named board-*.* instead of StickHub-*.*. svg/pdf export works. Rough edge: scripts/uat_run.py rasterises SVGs with resvg_py, which raises 'SVG has an invalid size' on KiCad SVGs because width/height carry 'mm' (e.g. width=\"16.4846mm\"); only PDF exports will show up in rendered/. Rough edge: pcb_erc description says libraries are not visible, so every symbol/footprint link warning is noise; the toolkit gives no 'real vs library-noise' split."
+}

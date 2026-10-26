@@ -1,0 +1,24 @@
+{
+  "id": "M4_gantry_servo_sizing",
+  "domains": [
+    "electric",
+    "plot"
+  ],
+  "persona": "Machine builder at a small automation company in Hsinchu, building a pick-and-place gantry. Writes Traditional Chinese with English terms, quick messages. Has the Delta ECMA-C20807 datasheet in front of him but converts rpm and rad/s inconsistently.",
+  "goal": "Leave with: a clear yes/no on whether the 750 W Delta servo and the 5:1 planetary gearbox are adequate for the X-axis move, with peak torque, RMS torque (over the real cycle including the dwell), peak speed and inertia ratio compared with the datasheet, a suggestion for what to change if not, and a torque-speed picture with the motor limits.",
+  "opening": "我在做一個 X 軸龍門,皮帶驅動,移動質量大概 80kg,行程 1 公尺,希望 0.6 秒跑完。馬達想用台達 ECMA-C20807 (750W),前面接 5:1 的行星減速機。這樣夠用嗎?幫我算 RMS 扭矩,還有畫一張扭矩對轉速的圖。",
+  "facts": {
+    "motion profile": "trapezoid: accelerate for 0.2 s, cruise 0.2 s, decelerate 0.2 s (one third each); cycle = 0.6 s move forward, 0.4 s dwell, 0.6 s move back, 0.4 s dwell, repeated all day. He says this only when asked about the profile; if not asked he does not mind a triangle but prefers the trapezoid",
+    "belt drive": "Gates PowerGrip HTD 5M belt on a 40-tooth drive pulley, pitch diameter 63.66 mm; drive pulley + idler inertia 0.0011 + 0.0006 kg*m^2; the moving belt run adds about 1.2 kg to the 80 kg",
+    "gearbox": "planetary 5:1, efficiency 97 %, input inertia 0.2e-4 kg*m^2; the belt and bearings are another 96 %",
+    "friction": "guides and seals measured about 15 N total (Coulomb), no process force, axis is horizontal",
+    "motor datasheet": "Delta ECMA-C20807 (no brake): rated power 750 W, rated torque 2.39 N*m at 3000 rpm, peak (maximum momentary) torque 7.16 N*m, maximum speed 5000 rpm, rotor inertia 1.13e-4 kg*m^2",
+    "plot": "torque (N*m) on the vertical axis against motor speed (rpm) with the operating points of the move and the motor's continuous and peak torque limits",
+    "follow-up": "if told it is not adequate he asks what ratio or which motor torque class would work, or whether a longer acceleration would do; he can accept a 0.8 s move"
+  },
+  "files": {},
+  "max_turns": 6,
+  "truth": "uat/truth/M4_gantry_servo_sizing.py",
+  "expect_picture": true,
+  "tool_check": "electric_drive_sizing(belt, profile = the full 2.0 s cycle with dwell and the return stroke, load_mass 82.9 kg [80 + 1.2 belt + 1.03 pulley-equivalent, the tool has no pulley inertia input for belts], radius 31.83 mm, gear_ratio 5, efficiency 0.931, rotor_inertia 1.33e-4, Coulomb 15 N, candidate row) -> peak torque 7.449 N*m (truth 7.45), RMS 4.367 N*m (truth 4.369), inertia ratio 25.3, candidate status 'fail', peak speed 392.7 rad/s = 3750 rpm. With the generated-move shortcut (distance, move_time, acceleration_time) the tool gives RMS 5.64 N*m because it averages over the 0.6 s move only; the 0.4 s dwell has to come through an explicit profile or the duty parameter, so an assistant that does not think about the cycle overstates RMS by 30 %. Rough edges: the rotor inertia must be passed as rotor + gearbox input by hand; candidates take rad/s (datasheet is in rpm); drive_profile.csv has speeds in rad/s and the torque at the start/end of each segment, so a torque-speed plot needs a unit conversion and hand-made limit lines; plot_xy with inline series for the profile polyline and the two limit lines works."
+}

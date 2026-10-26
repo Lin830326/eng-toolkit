@@ -1,0 +1,48 @@
+{
+ "id": "M2_crane_hook_strain_fatigue",
+ "verdict": "PASS",
+ "one_line": "Damage per record, hours to failure, remaining hours and years all match the truth within 0.1 %, and the three EMI spikes were found and excluded. Caveats: the assistant found the despiked file and the generator script by itself through shell access, which broke the role-play, and the person never saw the histograms.",
+ "goal_met": true,
+ "turns": 3,
+ "answers": [
+  {"item": "FAT 63 as Basquin amplitude form", "truth": "A = 3968.8 MPa, b = -1/3, no cut-off, no mean-stress correction", "assistant_said": "A = 3969 MPa, b = -1/3, N = 2e6 (63/range)^3, no cut-off (below_knee none, no endurance limit), no mean correction", "result": "right"},
+  {"item": "Damage per 2000 s record (despiked)", "truth": "9.58e-06 (9.31e-06 with 2 MPa gate)", "assistant_said": "9.5757e-06 (1 MPa hysteresis gate)", "result": "right"},
+  {"item": "Hours to failure", "truth": "57,991 h", "assistant_said": "58,017 h", "result": "right"},
+  {"item": "Remaining hours after 11,000 h", "truth": "46,991 h (26.1 years at 1800 h/yr)", "assistant_said": "47,017 h, 26.1 years, 19 % used", "result": "right"},
+  {"item": "Max stress in the despiked record", "truth": "127.0 MPa", "assistant_said": "605 microstrain = 127.05 MPa (after a wrong '約 550 µε' in turn 1, corrected)", "result": "right"},
+  {"item": "Cycles with range > 60 MPa", "truth": "5", "assistant_said": "histogram bins above 57.96 MPa: 1 + 0 + 1 + 2 + 1 = 5", "result": "right"},
+  {"item": "Spikes identified as artefacts", "truth": "3 one-sample spikes 3600, -1800, 4100 microstrain (756, -378, 861 MPa); raw-file life 126 h is wrong", "assistant_said": "431.7 s +3600, 990.2 s -1800, 1556.1 s +4100 microstrain, 'about ±380 to 860 MPa, measurement interference'; raw run showed false 743-1239 MPa cycles", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "EMI spikes in the raw file must be recognised and excluded", "caught": true},
+  {"trap": "FAT class is a stress RANGE; Basquin A in the tool is amplitude", "caught": true},
+  {"trap": "Raw CSV with header line is refused by fatigue_rainflow", "caught": true},
+  {"trap": "Total cycle count dominated by sensor noise; compare damage, not counts", "caught": true},
+  {"trap": "Hours: record time / D, then subtract the elapsed 11,000 h", "caught": true},
+  {"trap": "plot_bar histogram mode counts CSV rows not cycles / category limit", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "Turn 2 told the person his logger data is 'probably simulated' because it read uat/data/gen_crane_strain.py, and turn 3 cited file timestamps of the CSV, script and truth JSON. True of the test fixture, but it was found by browsing the repo with Bash/Grep, outside the person's request; it broke the role-play and confused the person.", "severity": "medium"},
+  {"issue": "Several unchecked statements later corrected by the assistant itself: despiked max '約 550 µε' (actually 605), '每 2000 s 記錄代表一小時' (wrong wording; the arithmetic was right), and a report line about the 'elementary' setting that had actually failed.", "severity": "low"},
+  {"issue": "Good: clearly separated tool numbers from hand arithmetic (hours conversion labelled as hand calculation, cross-checked with repeats = 1.8 in the tool), and raised the nominal-vs-hot-spot applicability of FAT 63.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T042331Z-e7314d8d-plot_bar_plot.png", "score": 2, "notes": "Rainflow range histogram, 20 bins of 5.8 MPa from the tool's range_histogram, value labels, axis labels with units. Linear y: everything after the first bar (829 noise cycles) is flat; tick labels only every third bin; odd bin width. Counts match the tool."},
+  {"file": "rendered/20261026T042451Z-0f9f0e07-plot_xy_plot.png", "score": 2, "notes": "Log-y stem chart of the same bins at bin centres, readable, shows the single 113 MPa cycle. Empty bins dropped, x axis padded to -20..120 MPa, and it is a stem plot, not bars with bin edges. The person never saw either picture (paths only; writing into uat/ was denied)."}
+ ],
+ "problems": [
+  {"id": "M2_crane_hook_strain_fatigue-1", "kind": "harness_artifact", "severity": "high", "what": "The assistant listed uat/data, uat/truth and uat/scenarios with Bash, found the despiked file the person was supposed to give only on request, diffed the files and read the generator script. The scenario's 'give the despiked path only if asked' gate was bypassed.", "evidence": "Turn 1 Bash: 'ls -la uat/data/ ... ls uat/truth uat/scenarios'; turn 2 Read uat/data/gen_crane_strain.py; reply: '這筆資料可能是模擬的'", "fix": "scripts/uat_run.py: restrict tools with --tools 'mcp__eng-toolkit,Skill,Read', run from an empty cwd, and copy only the scenario's input files into the run folder (not the despiked copy or gen_*.py)."},
+  {"id": "M2_crane_hook_strain_fatigue-2", "kind": "tool_bug", "severity": "medium", "what": "A logger CSV with a header line is refused with an error that does not say the problem is the header. The description says 'no header', but the error only names /history_file/0, so a user with no shell cannot see the fix.", "evidence": "fatigue_rainflow(history_file=uat/data/crane_hook_strain_raw.csv, sample_scale '0.21 MPa', basquin_a '3968.8 MPa', basquin_b -1/3) -> {ok: false, error: {family: input.invalid, message: 'expected a finite decimal literal', details: {param: '/history_file/0'}}} (re-run in-process)", "fix": "In the history_file reader: skip a first line that is non-numeric (and say so in warnings), or fail with 'line 1 \"time_s,strain_ue\" is not numeric: remove the header row'."},
+  {"id": "M2_crane_hook_strain_fatigue-3", "kind": "tool_gap", "severity": "low", "what": "fatigue_rainflow reports no history extremes (min/max sample, max range) and gives no plausibility warning for isolated one-sample excursions. The assistant had to grep the CSV to find the spikes and the 605 microstrain maximum, which a Read-only user could not do.", "evidence": "values of the raw run: full_cycles, half_cycles, weighted_cycles, range_count_sum, filtered_total_variation only; max range visible only as the last histogram edge 1239 MPa", "fix": "Return history_min, history_max and max_range in values. Add a warning when a single sample deviates from both neighbours by more than, say, 10x the median absolute step, or when yield_strength is given and a peak exceeds it."},
+  {"id": "M2_crane_hook_strain_fatigue-4", "kind": "model_error", "severity": "low", "what": "Applied 'tail -n +2' to the header-less despiked file, so its first sample was dropped (19999 samples counted). Negligible effect on damage.", "evidence": "result.json input_samples 19999 for hook_strain_despiked_noheader.csv", "fix": "None needed; fatigue_rainflow already accepts 'time,value' CSVs without a header, so no preprocessing was required."},
+  {"id": "M2_crane_hook_strain_fatigue-5", "kind": "harness_artifact", "severity": "medium", "what": "The person cannot see any picture or open any path, so the requested histogram never reached him. The assistant spent a turn trying to write into uat/ (denied).", "evidence": "Person turn 2: '直方圖那個路徑太長了,我打不開'; turn 3: Write uat/crane_hook_cycle_histogram_log.svg denied", "fix": "uat_run.py: attach the rendered PNGs to the person prompt each turn."},
+  {"id": "M2_crane_hook_strain_fatigue-6", "kind": "skill_gap", "severity": "low", "what": "eng-fatigue-check's plot recipe (plot_bar on rainflow_cycles.csv, x_column range_MPa) does not work on a real record: the builder found it fails with '271 categories; at most 200'. The assistant had to build an inline series from data.range_histogram instead, which the skill does not describe.", "evidence": "plugin/skills/eng-fatigue-check/SKILL.md: 'Rainflow: plot_bar on rainflow_cycles.csv, x_column=\"range_MPa\", y_columns=\"weighted_count\"'", "fix": "Change the recipe to: 'plot_bar with series from data.range_histogram (labels from edges, counts as y); use y_scale log or range_bins 10-20 when the first bin holds sensor noise'."}
+ ],
+ "what_worked": [
+  "fatigue_rainflow with sample_scale 0.21 MPa and A = 3969 MPa, b = -1/3 reproduced the truth damage to 0.05 %",
+  "Spikes found, located in time and value, explained physically (far above the SWL stress) and excluded; the raw-file run was used to show the contamination",
+  "Clear hour and year conversion with a tool cross-check (repeats = 1.8 per hour)",
+  "Raised relevant caveats: nominal vs hot-spot stress for FAT 63, no cut-off is conservative, hysteresis gate stated",
+  "Took 3 turns; asked exactly the one question needed (what the record represents) to convert to hours"
+ ]
+}

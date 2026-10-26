@@ -1,0 +1,25 @@
+{
+ "id": "F2_mosfet_heatsink_thermal",
+ "domains": [
+  "thermal",
+  "control",
+  "plot"
+ ],
+ "persona": "Hardware design engineer at a small German power-electronics company; writes English with some missing units and abbreviations ('45C', '8W'), practical, trusts catalogue numbers, wants a yes/no and a plot he can paste into a design review.",
+ "goal": "Decide whether an IRF540N dissipating 8 W on a given extruded heatsink in a 45 degC enclosure stays within his Tj rule of 90 degC with natural convection or needs a fan, with the realistic junction temperature (not just the catalogue number), and see a warm-up plot (temperature versus time) of the 200 g heatsink after power-on.",
+ "opening": "Hi, I have an IRF540N (TO-220) dissipating about 8W, bolted to an extruded aluminium heatsink inside a closed box where the air is around 45C. The heatsink catalogue says 3 K/W so I think the junction is about 90C and I'm fine without a fan? Can you check that, tell me the real junction temperature and whether I need a fan? Also I'd like a plot of how the heatsink warms up after switch-on, it weighs about 200 g.",
+ "facts": {
+  "heatsink_geometry": "Extruded 6063-T5 aluminium, black anodised (emissivity about 0.85). Overall 60 mm wide, 100 mm long (the fins run along the 100 mm length and the heatsink stands upright so air flows up the fins), base plate 5 mm thick, 9 fins each 2 mm thick and 24 mm tall (gap between fins about 5.25 mm). Mass measured 198 g, you round to 200 g. The MOSFET is clamped at the middle of the base.",
+  "catalogue": "The catalogue lists thermal resistance 3.0 K/W for natural convection, 100 mm length. You did not read the footnote that says this is at a temperature rise of 75 K above ambient.",
+  "mosfet": "IRF540N datasheet: junction-to-case 1.15 K/W, maximum junction temperature 175 degC. It is electrically isolated from the heatsink by a silicone pad, which you think adds about 1.4 K/W case-to-sink (supplier figure for TO-220).",
+  "design_rule": "Your company's reliability rule: junction temperature at most 90 degC at the enclosure air temperature of 45 degC. You first quote 150-175 degC as the limit if the assistant asks, then correct to 90 degC when it asks about your company's own limit.",
+  "power": "8 W constant dissipation (average of conduction plus switching loss), switched on at time zero with everything at 45 degC.",
+  "airflow": "A small 40 mm fan could be mounted at the front if needed, you have no airflow data. Box is sealed, so the 45 degC is the air at the heatsink, no hot recirculation modelled.",
+  "plot_wanted": "Heatsink temperature in degC versus time in minutes for the first hour, with the final value marked."
+ },
+ "files": {},
+ "max_turns": 6,
+ "truth": "uat/truth/F2_mosfet_heatsink_thermal.py",
+ "expect_picture": true,
+ "tool_check": "thermal_convection natural_vertical_plate (L 100 mm, Ts 80 degC, Tinf 45 degC, air k 0.0285 rho 1.05 mu 1.95e-5 cp 1007) gives h = 5.70 W/m2K (Ra 2.0e6): this is the ISOLATED plate value; feeding it into thermal_fin + a radiation term reproduces the naive Rsa ~ 2.9 K/W, Tj ~ 89 C (below the 90 C rule, 'no fan'), whereas the channel (Elenbaas/Bar-Cohen) correlation for the 5.25 mm gaps gives h = 3.1 W/m2K, Rsa 4.6 K/W, Tj 102 C. The toolkit has no fin-array/channel natural convection correlation, so a correct answer needs the assistant to flag the effect (the truth tolerance says so). thermal_transient lumped has NO heat input term: with h 3.9 and ambient set to the equivalent T_inf = 45 + P Rsa = 82 degC (a trick) it returns T(600 s) = 70.9 degC and tau; it gives a single time per call, no table. control_response with numerator '37' denominator '[821, 1]' (first-order step, t_final 3600 s) returns a CSV table of the warm-up curve that plot_xy can draw (rise 1804 s, 36.5 of 37 K at 3600 s). Truth: Tj 102.3 C, fan needed, tau 821 s (constant R) / 63 % at 672 s (nonlinear h)."
+}

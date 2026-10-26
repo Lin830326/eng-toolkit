@@ -1,0 +1,45 @@
+{
+ "id": "C2_pico_drawing_a3",
+ "verdict": "FAIL",
+ "one_line": "No drawing was produced. The assistant routed the request to the text-to-cad 'engineering-drawing' skill (cadgen via uvx) instead of eng-toolkit's drawing_make_views, every shell run was blocked, and Kevin gave up after 2 turns with only a correct hole list.",
+ "goal_met": false,
+ "turns": 2,
+ "answers": [
+  {"item": "overall_size_mm_x_y_z", "truth": "21.0 x 52.3 x 3.7", "assistant_said": "整体外形 21 x 52.3 x 3.7 mm 是保守的包围盒，含 USB 接头与元件", "result": "right"},
+  {"item": "usb_connector_overhang (why 52.3 not 51)", "truth": "micro-USB shell overhangs the 51 mm board by 1.3 mm", "assistant_said": "only 'bounding box includes USB connector and components; check the board outline against the official drawing'. The 51 mm board length and the 1.3 mm overhang are not given", "result": "missing"},
+  {"item": "pcb_thickness_mm", "truth": "1.0", "assistant_said": "板厚没有标注 ... 我无法确认 (although every hole in the inventory has depth_mm 1.0, z 0..1)", "result": "missing"},
+  {"item": "mounting_holes count/diameter/centres", "truth": "4 x d2.1 through at (+-5.7, +-23.5)", "assistant_said": "4 x Ø2.1 at (±5.70, ±23.50), table M1..M4", "result": "right"},
+  {"item": "mounting hole spacing", "truth": "11.4 x 47.0", "assistant_said": "中心距為 x 向 11.40 mm、y 向 47.00 mm", "result": "right"},
+  {"item": "pin_holes", "truth": "40 x d1.0, pitch 2.54, row spacing 17.78", "assistant_said": "40 x Ø1.0, x = ±8.89 (= 17.78 apart), y -24.13..+24.13, pitch 2.54", "result": "right"},
+  {"item": "debug_pad_holes", "truth": "3 x d1.0, pitch 2.54", "assistant_said": "3 x Ø1.0 SWD at (-2.54, -23.90), (0, -23.90), (+2.54, -23.90). This matches inventory H21-H23", "result": "right"},
+  {"item": "total_holes", "truth": "47", "assistant_said": "47", "result": "right"},
+  {"item": "A3 multi-view dimensioned drawing (PDF/PNG)", "truth": "A3 sheet, >=3 views, overall dims, 4x D2.1 and 43x D1 callouts, scale, title block, 11.4 x 47 readable", "assistant_said": "我还没有产出 PDF ... 还是沒辦法幫你產出 PDF (gave a cadgen script and a 'uvx --from cadgen==0.7.21' command to run himself)", "result": "missing"}
+ ],
+ "traps": [
+  {"trap": "the 43 small 1 mm holes vs the 4 mounting holes: explain which are which", "caught": true},
+  {"trap": "the 43 castellated half-holes on the board edge are not holes", "caught": true},
+  {"trap": "explain 52.3 vs datasheet 51 (USB overhang 1.3 mm)", "caught": false},
+  {"trap": "mounting-hole spacing 47 mm must be readable from the drawing (drawing_make_views draws no y ordinates for this part)", "caught": false},
+  {"trap": "overlapping ordinate texts 0 / 1.61 under the top view (layout_warnings)", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Honest about the failure: it said clearly that no PDF exists and that the script had never been rendered or checked for overlapping labels. It did not claim a drawing.", "severity": "low"},
+  {"issue": "It never mentioned that the connected eng-toolkit server has drawing_make_views, which would have produced the A3 PDF/PNG in one MCP call without any shell approval. The person was told the only route was to install and run uvx/cadgen himself.", "severity": "medium"},
+  {"issue": "Turn 1 answers in Simplified Chinese to a user writing Traditional Chinese (turn 2 switches to Traditional).", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "(none produced)", "score": 0, "notes": "rendered/ is empty. No PDF, PNG or SVG reached the person. For reference, I re-ran drawing_make_views in-process (model_path RaspberryPi_Pico.step, sheet A3, views front,top,right, formats pdf,png, title 'Raspberry Pi Pico'): ok in a few seconds, scale 2:1, overall 21 / 52.3 / 3.7, callouts '4x Ø2.1 THRU' and '43x Ø1 THRU', title block. Its rough edges would still bother Kevin: x ordinates '0' and '1,61' overlap; there are no y ordinates, so 47 mm cannot be read; the part fills only the left third of the sheet; and the decimal separator is mixed ('52,3', '4,8' with a comma, 'Ø2.1' with a point). I would score that sheet 2."}
+ ],
+ "problems": [
+  {"id": "C2_pico_drawing_a3-1", "kind": "skill_gap", "severity": "high", "what": "The eng-toolkit plugin has no drawing workflow skill, and the eng-toolkit skill description does not mention engineering drawings. Haiku therefore picked the competing text-to-cad:engineering-drawing skill, whose description matches 'A3 drawing, dimensioned sheet, PDF' exactly. It never loaded drawing_make_views.", "evidence": "Turn 1 first call: Skill {skill: 'text-to-cad:engineering-drawing'}; ToolSearch only selected geometry_measure and geometry_check_dfm. plugin/skills/eng-toolkit/SKILL.md description lists '... STEP files, tolerances' with no 'drawing'.", "fix": "Add plugin/skills/eng-drawing/SKILL.md ('Use to make a dimensioned multi-view engineering drawing (A4-A0 PDF/DXF/PNG) of a STEP part, hole callouts and ordinates, with drawing_make_views; read or convert DXF/PDF drawings with drawing_read/drawing_convert'). Add 'engineering drawings (dimensioned A3/A4 sheets as PDF/DXF/PNG)' to the eng-toolkit skill description."},
+  {"id": "C2_pico_drawing_a3-2", "kind": "harness_artifact", "severity": "high", "what": "The run exposed the user's globally installed text-to-cad plugin skills and the Bash/PowerShell/Write/Grep tools, contrary to the brief ('only mcp__eng-toolkit__*, Skill and Read'). Every shell call needed an approval nobody could give. The scenario therefore partly tests skill routing against a third-party plugin rather than the toolkit.", "evidence": "Turn 1 tools: Skill text-to-cad:engineering-drawing, Read of ~/.claude/plugins/cache/earthtojake/text-to-cad/0.7.21/.../sheet-api.md, Bash 'uvx ... cadgen==0.7.21' x3, PowerShell x1; ending '<DONE> gave up, assistant could not produce the PDF/PNG itself'", "fix": "scripts/uat_run.py: run with an isolated settings/plugin directory (no user plugins) and an explicit allowedTools list. Keep a separate 'competing plugins' scenario if routing robustness is meant to be tested."},
+  {"id": "C2_pico_drawing_a3-3", "kind": "model_error", "severity": "medium", "what": "It did not take the PCB thickness (1.0 mm) from data it already had: all 47 holes report depth_mm 1.0, z 0..1. It also did not explain the 52.3 vs 51 mm difference (USB overhang).", "evidence": "'板厚没有标注。孔的 z 坐标显示板顶约在 z=1、板底约在 z=0，但我无法确认'", "fix": "No toolkit change. geometry_measure 'distance' between the top and bottom PCB faces would confirm it."},
+  {"id": "C2_pico_drawing_a3-4", "kind": "tool_gap", "severity": "medium", "what": "Counterfactual check of the tool the assistant should have used: drawing_make_views draws no y ordinates when the holes sit at more than 16 distinct y values. The 47 mm mounting-hole spacing (Kevin's main need) therefore cannot be read off the sheet, and the 0 / 1.61 x ordinates overlap.", "evidence": "Re-run warnings: 'top view: the holes lie at 23 different y coordinates, more than the 16 that can be dimensioned legibly; no y ordinates are drawn there'; 'the x ordinates 0 and 1.61 are 3.2 mm apart and their texts overlap'", "fix": "drawing_make_views: add a 'dimension_holes' argument (e.g. 'H44,H45,H46,H47' or 'largest') that ordinates or dimensions only the chosen holes. When ordinates would overlap, drop the castellation/edge ordinates first, or stagger them."},
+  {"id": "C2_pico_drawing_a3-5", "kind": "tool_bug", "severity": "low", "what": "Counterfactual re-run: the drawing mixes decimal separators. Dimensions and ordinates use a comma ('52,3', '3,7', '4,8', '7,96', '1,61'), while the callouts use a point ('4x Ø2.1 THRU').", "evidence": "scratch_bench/judge_c123/ws/20261026T044154Z-e6ddd0d4-drawing_make_views/drawing.png", "fix": "drawing_make_views: use one decimal separator for every text, chosen by an argument (default point for ISO 129-1 international drawings, or follow the dimension style)."}
+ ],
+ "what_worked": [
+  "One geometry_measure call gave a complete and correct hole inventory (47 holes, ids, entry points). The hole list it built from it is right: 40 header, 3 SWD, 4 mounting, with positions and the 11.4 x 47 spacing.",
+  "When Kevin asked 'what are the 47 holes', it explained the pin, SWD and mounting holes in plain words and narrowed the list to the 4 mounting holes.",
+  "It did not pretend the drawing existed, and it refused to bypass the permission system."
+ ]
+}

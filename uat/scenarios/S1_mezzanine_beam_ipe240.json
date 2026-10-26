@@ -1,0 +1,27 @@
+{
+  "id": "S1_mezzanine_beam_ipe240",
+  "domains": [
+    "structures",
+    "mech",
+    "plot"
+  ],
+  "persona": "Allen, 29, junior design engineer at a small steel fabrication shop in Taichung who has just been given a mezzanine floor to detail. Writes Traditional Chinese with English steel terms mixed in (IPE, S275, kN/m2), short messages, does not always give units, trusts a rule of thumb from his senior (\"S275 means 275 MPa allowable\"). Wants a clear yes/no and a picture he can paste into the calculation sheet for his boss.",
+  "goal": "Know whether the IPE 240 secondary beam is acceptable (stress and deflection against his company limit), and if not what the next IPE size is; leave with a bending-moment diagram and a deflection diagram he can paste into his report.",
+  "opening": "你好，我在做一個夾層樓板的次梁，用 IPE240，材質 S275，跨度 6m，兩端簡支。樓板荷重 3 kN/m2，次梁間距 2.5m。另外上面要放一台壓縮機 1200 kg，大概在離左邊支承 2m 的位置。這樣夠不夠安全？我們 S275 就是容許應力 275 MPa 對吧？可以的話也幫我畫彎矩圖跟撓度圖。",
+  "facts": {
+    "section": "IPE 240 from the catalogue (he does not know the section properties by heart: h 240 mm, b 120 mm, tw 6.2 mm, tf 9.8 mm; he would accept the assistant's catalogue values if they are stated)",
+    "steel": "S275, E = 210 GPa (he has never needed E before and would just say 'normal steel')",
+    "loads": "the 3 kN/m2 is the total working (unfactored) floor load including finishes and live load; the 1200 kg compressor is one point load on this beam 2 m from the left support; the beam's own weight has not been included and he did not think about it (if asked, include it)",
+    "deflection_limit": "his company rule is span/360 under all the loads listed (reveal only if asked what deflection limit applies, or when the assistant reports the deflection)",
+    "support": "pinned at both ends (end-plate/shear-tab connections), floor deck welded to the top flange so he does not worry about lateral buckling",
+    "wrong_assumption": "he believes S275 means an allowable stress of 275 MPa (it is the yield strength)",
+    "follow_up": "if IPE 240 fails he wants the smallest IPE size that works and the same two diagrams for it; the diagrams should have kN*m and mm on the axes (he does not read N*m and metres for deflection)",
+    "language": "answers in Traditional Chinese; if the assistant answers in English he says it is fine but asks for the main numbers in Chinese"
+  },
+  "files": {},
+  "max_turns": 5,
+  "truth": "uat/truth/S1_mezzanine_beam_ipe240.py",
+  "expect_picture": true,
+  "tool_check": "structures_frame, one 6 m member (E 210 GPa, A 3912 mm^2, I 3892e4 mm^4), supports 'a,pinned;b,roller_y', member_loads 'e,uniform,global,0 N/m,-7.5 kN/m;e,point,global,2 m,0 N,-11.77 kN', stations 61: reactions 30.347 / 26.423 kN (truth 30.345 / 26.423), M_max 46.546 kN*m at x = 2.477 m (truth 46.544 at 2.477), max deflection 21.017 mm at x = 2.9 m read from member_1_stations.csv (truth 21.019 mm at 2.928 m). plot_panels on the station CSV works but plots raw SI (N*m, m); plot_xy with inline series in kN*m and mm, fill 'zero' and hlines '16.67,L/360' works. Rough edges: (1) supports 'b,roller_x' is refused as a mechanism (scaled eigenvalue 4.9e-17 at b, param /supports): roller_y is the vertical roller for a horizontal beam, but neither the tool description nor the structural skill says what roller_x/roller_y mean; (2) the frame result reports maximum_nodal_displacement = 0 (nodes only), the maximum deflection exists only in the station CSV; (3) no section library: structures_section for an I built from the four IPE 240 dimensions has no root radius (Ix 3671 cm4 vs catalogue 3892, A 37.2 vs 39.1 cm2, Sx 306 vs 324 cm3), so deflection reads about 6 % high and stress 8 % high; the verdict (stress OK, L/360 fails, IPE 270 passes) is unchanged; (4) mech_beam_bending cannot take UDL plus a point load, so the assistant must go to structures_frame or superpose by hand.",
+  "not_realistic": "No real catalogue file exists on the machine, the IPE 240 / HEA values come from the Eurocode tables written in the truth script; there is no real drawing or photo of a mezzanine."
+}

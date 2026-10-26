@@ -1,0 +1,25 @@
+{
+  "id": "M3_air_receiver_manway",
+  "domains": [
+    "machine",
+    "mech",
+    "plot"
+  ],
+  "persona": "Plant engineer at a food-factory utilities group in Taiwan who has been asked to specify a new compressed-air receiver for a plate shop. Writes Traditional Chinese with English terms and units mixed, a little unsure; assumes the end caps are hemispheres because that is what he drew in a sketch.",
+  "goal": "Leave with: the required shell and end thickness and the plate to order, hydrotest pressure check, a clear statement of what the quick calculation does NOT cover (nozzle openings, code stamp), a bolt check of the 8 x M12 handhole cover (preload torque, utilisation, fatigue from pressure cycling), and a picture of required thickness versus design pressure to pick plate.",
+  "opening": "要做一個空壓儲氣罐,內徑 1200mm,工作壓力 10 bar,材料 P265GH。想算筒身板要幾 mm。兩端封頭我是畫成半球形的 dished end,應該用球殼公式厚度大概是筒身一半吧?罐上還有一個 DN200 的出氣口,跟一個手孔蓋用 8 顆 M12 8.8 螺栓。幫我算板厚,螺栓也檢查一下。",
+  "facts": {
+    "design": "design pressure = relief valve setting 11 bar(g); working pressure 10 bar(g); design temperature about 50 degC (ignore the small strength drop)",
+    "code": "European PED: EN 13445 with f = min(Re/1.5, Rm/2.4); P265GH Re 265 MPa, Rm 410 MPa min; joint coefficient z = 0.85 (spot radiography); corrosion allowance 1 mm; plate under-tolerance 0.3 mm; he wants a commercial plate thickness in 0.5 mm or whole mm",
+    "heads": "the head supplier only makes standard 2:1 semi-ellipsoidal dished ends (not hemispheres); he only mentions it if asked about the head shape or told the sphere formula does not apply",
+    "nozzle": "the DN200 outlet is welded into the shell with no reinforcing pad yet; length of the cylindrical part is 2.4 m; supports are two saddles; he only needs the wall thickness now but would like to know if the nozzle is OK",
+    "hydrotest": "the notified body will do a hydrotest at 1.43 x design pressure; he wants to know the test stress is fine",
+    "handhole cover": "gasket mean diameter 230 mm, 8 x M12 class 8.8 tightened with a torque wrench, dry plain thread, nut factor 0.2, wants 75 % of proof load as preload; joint stiffness fraction C (bolt share of the external load) about 0.25 per the flange supplier; the compressor loads and unloads, so pressure cycles between 6 and 10 bar(g) about 200 times a day; he asks if the bolts survive the fatigue (Se for rolled thread 8.8 about 129 MPa per Shigley)",
+    "chart": "wants the required thickness (including corrosion and tolerance allowance) for design pressures from 6 to 16 bar as a line chart, to decide which plate stock to buy in case the pressure rating changes"
+  },
+  "files": {},
+  "max_turns": 7,
+  "truth": "uat/truth/M3_air_receiver_manway.py",
+  "expect_picture": true,
+  "tool_check": "machine_pressure_vessel(cylinder, r 600 mm, 1.1 MPa, model thin, allowable 145.2 MPa [= 170.8 x 0.85, the joint efficiency folded into the allowable because the tool has no joint-efficiency input]) -> required_thickness_thin 4.545 mm, required_thickness_lame 4.563 mm (truth EN 13445: 4.56 mm); thickness 6 mm gives hoop 110 MPa. The sphere model with the same inputs gives 2.27 mm, which is the WRONG hemisphere answer for a 2:1 ellipsoidal end (truth 4.55 mm); the tool has no ellipsoidal head and gives no warning, so only the assistant's judgement catches the person's wrong assumption; nozzle opening reinforcement and ASME/EN code check are outside the tool (flagged in its assumptions). mech_bolt_check(M12 8.8, preload 36.7 kN, external 5.71 kN, load_share 0.25) -> torque 88.08 N*m (truth 88.0), bolt_load 38.13 kN, utilization 0.786 (truth 0.779; the tool estimates Sp = 0.9 x 640 = 576 MPa instead of 580 MPa and As 84.27 instead of 84.3); the tool states that fatigue and joint stiffness are not checked, so the bolt fatigue question (truth n = 12.3 with Se 129 MPa, C 0.25) has no tool and is a hand-calculation or an 'outside the toolkit' answer. plot_xy with inline series (thickness vs bar) works."
+}

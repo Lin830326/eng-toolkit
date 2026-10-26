@@ -1,0 +1,49 @@
+{
+ "id": "F5_ntc_calibration_heatsink_opt",
+ "verdict": "PARTIAL",
+ "one_line": "Every number for calibration, uncertainty, Rth and fin optimum matches the truth and comes from tool calls, but the run is contaminated (the assistant read the scenario file with the R/T table and the builder's expected answers before the person gave any data), the person never saw the residual plot, and he gave up when the assistant could not estimate the heater spreading resistance.",
+ "goal_met": false,
+ "turns": 7,
+ "answers": [
+  {"item": "Steinhart-Hart coefficients A, B, C (0..100 C)", "truth": "A 1.12448e-3, B 2.34881e-4, C 8.4797e-8", "assistant_said": "a 1.12448e-3, b 2.34881e-4, c 8.4797e-8 (optimize_fit on T in degC, so residuals in K)", "result": "right"},
+  {"item": "95 % CI half-widths of A, B, C", "truth": "1.37e-6 / 2.53e-7 / 1.22e-9", "assistant_said": "[1.12311, 1.12585]e-3, [2.34628, 2.35134]e-4, [8.358, 8.602]e-8 (half-widths 1.37e-6 / 2.53e-7 / 1.22e-9)", "result": "right"},
+  {"item": "SH residual rms / max error 0..100 C", "truth": "0.0076 K rms, 0.0193 K max", "assistant_said": "rms 0.0076 K, max 0.019 K at 70 C", "result": "right"},
+  {"item": "Beta model comparison", "truth": "datasheet B 3988 K: max error 0.77 K; best free 2-parameter fit B 3951.6 K, max error 0.62 K", "assistant_said": "beta fit with R25 fixed at 10 k: B = 3969.9 K (95 %: 3959.3..3980.6), rms 0.268 K, 0.67 K error at 0 C; 'use Steinhart-Hart'", "result": "right"},
+  {"item": "Temperature at 2150 ohm", "truth": "64.11 C", "assistant_said": "64.11 C", "result": "right"},
+  {"item": "Fit-only 95 % CI of the temperature", "truth": "0.0052 K", "assistant_said": "about +-0.006 K (95 %)", "result": "right"},
+  {"item": "Uncertainty from part tolerance R25 +-1 %, B +-1 %", "truth": "0.56 K at 95 %, 0.73 K worst case", "assistant_said": "1 sigma 0.30 K (R25 0.16 K, B 0.25 K), 95 % about +-0.6 K, worst-case linear +-0.72 K (optimize_sensitivity GUM, uniform tolerances)", "result": "right"},
+  {"item": "Measured heatsink Rth", "truth": "0.652 K/W, range 0.640..0.664", "assistant_said": "0.652 K/W, 95 % +-0.010, worst case 0.640..0.664", "result": "right"},
+  {"item": "Lightest integer design for Rth <= 0.55 K/W", "truth": "15 fins x 1.5 mm, 275.4 g, Rth 0.524, gap 5.54 mm", "assistant_said": "15 x 1.5 mm, 275.4 g, Rth 0.526 (thermal_fin, adiabatic tip), gap 5.17 mm", "result": "right"},
+  {"item": "Continuous relaxation and rounding", "truth": "n = 14.2, t 1.5 mm, 267.7 g; 14 fins need 2.2 mm (329 g)", "assistant_said": "n = 14.29, t 1.5 mm, ~268 g; 14 fins need ~2.17-2.2 mm, 326.6 g; 15 x 1.5 is the lightest integer design", "result": "right"},
+  {"item": "Fin gap of the recommended design", "truth": "5.54 mm ((100 - 15*1.5)/14)", "assistant_said": "5.17 mm ((100 - n t)/n)", "result": "wrong"}
+ ],
+ "traps": [
+  {"trap": "Fit CI taken as the uncertainty of the reading (person's wrong assumption)", "caught": true},
+  {"trap": "Continuous optimiser gives a non-integer fin count; rounding down to 14 violates Rth", "caught": true},
+  {"trap": "Hand arithmetic 1/T table (no tool prepares it)", "caught": true},
+  {"trap": "Plain beta model with datasheet B is ~1 K off over 0..100 C", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "In turn 1 the assistant used Grep/Glob/Read on the repo, found uat/scenarios/F5_ntc_calibration_heatsink_opt.json and took the R/T table (and could see the tool_check text that names the expected answers 64.11 C, n = 14.20 -> 15 x 1.5 mm) before the person had pasted anything. It did say the table came from 'repo 裡 UAT 場景檔' and later that it did not open the truth file (true per the tool log), but a real product would never have had the data.", "severity": "high"},
+  {"issue": "Turn 2 claims the residual-plot path it gave 'was wrong because the session code differs'; the path in turn 1 was correct (the file exists). False self-blame that confuses the person.", "severity": "low"},
+  {"issue": "Turn 6 calls its own corrected-length fin formula 'wrong' and the adiabatic-tip thermal_fin result right; both are accepted models (thermal_fin with tip='convective' gives 139.6 W for 14 x 2.2 mm = 0.537 K/W, feasible). The retraction of 14-fin designs is model-dependent, not an error found.", "severity": "low"},
+  {"issue": "Good: refused to invent a spreading-resistance number and clearly said the FEM tool has no heat transfer; stated limits (uniform h, no contact resistance, H/t = 20 at the extrusion limit).", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T041803Z-91e42da3-plot_xy_plot.png", "score": 2, "notes": "Residuals in K vs temperature, title, axis labels and units, zero line; values match the fit (max -0.019 K at 70 C). x axis padded to -20..120 C for data 0..100 C. The person never saw it: he got a file path, then an HTML in a temp folder, and finally only a table of residuals."}
+ ],
+ "problems": [
+  {"id": "F5_ntc_calibration_heatsink_opt-1", "kind": "harness_artifact", "severity": "high", "what": "The assistant can read the scenario and truth files: claude -p runs with the worktree as cwd, and --allowedTools only pre-approves tools, it does not restrict them (Grep, Glob, Bash, PowerShell, Write, Artifact were all called).", "evidence": "Turn 1 tools: Grep 'B57861|NTC|thermistor' on the worktree, Read uat/scenarios/F5_ntc_calibration_heatsink_opt.json; reply: '你沒有貼 R/T 表，我用 repo 裡 UAT 場景檔 ... 的 R/T no. 8016 表'", "fix": "scripts/uat_run.py: run the assistant with cwd set to an empty temporary folder outside the repo, pass --tools 'mcp__eng-toolkit,Skill,Read' (or --disallowedTools 'Bash,PowerShell,Grep,Glob,Write,Edit,WebSearch,WebFetch,Artifact') and keep uat/scenarios, uat/truth and uat/data/gen_* out of reach (copy only the files[] inputs into the run folder)."},
+  {"id": "F5_ntc_calibration_heatsink_opt-2", "kind": "harness_artifact", "severity": "medium", "what": "The simulated person only receives the assistant's text, so no tool picture can ever reach him; he asked three times for the residual plot and gave up on it.", "evidence": "Turn 2 '那個殘差圖我打不開那個路徑'; turn 4 '我打不開 temp 資料夾那些，所以圖不用了'", "fix": "uat_run.py: attach the rasterised PNGs of the turn to the person's prompt (or tell the person model that paths shown by the assistant open on his machine)."},
+  {"id": "F5_ntc_calibration_heatsink_opt-3", "kind": "tool_gap", "severity": "medium", "what": "No tool estimates spreading/constriction resistance of a small heater on a finned base (thermal_conduction is 1-D, fem_static is linear-elastic only). For the person's 40 x 40 mm heater on the 6 mm base this matters: my own hand estimate with the Lee/Song/Au (1995) correlation (h_eff 240 W/m2K on the fin side, a = 22.6 mm, b = 50.5 mm, t = 6 mm, k = 200) gives about 0.05 K/W (0.08 K/W at the source centre), which would push the 15 x 2 mm design to about 0.57 K/W, above 0.55. The person left without that number.", "evidence": "Turn 6: '工具包的 FEM 做不了熱傳 ... 粗估我不給數字'; Turn 7 asked for CalculiX, assistant wrote fem_spread.py but could not run it; person: 'gave up — 沒拿到擴散熱阻的數字'", "fix": "Add a spreading-resistance option to thermal_conduction (circular/rectangular source on a plate with h on the far side, Lee-Song-Au or Yovanovich/Muzychka closed form, average and max), or a steady heat-conduction mode in fem_static (CalculiX *HEAT TRANSFER, flux patch + film)."},
+  {"id": "F5_ntc_calibration_heatsink_opt-4", "kind": "model_error", "severity": "low", "what": "Fin gap counted with n gaps instead of n - 1, so the gap given for the supplier is wrong and the gap constraint in optimize_minimize was slightly too strict.", "evidence": "'間距：(100 − n·t)/n ≥ 3 mm' ... '推薦 15 片 × 1.5 mm：間距 5.17 mm' (correct 77.5/14 = 5.54 mm); constraint '0.003*n + n*t - 0.1 <= 0'", "fix": "None in the toolkit; optionally a note in plugin/skills/eng-optimize/SKILL.md heat-sink example: 'n fins across width W leave n - 1 gaps: gap = (W - n t)/(n - 1)'."},
+  {"id": "F5_ntc_calibration_heatsink_opt-5", "kind": "skill_gap", "severity": "low", "what": "thermal_fin defaults to tip='adiabatic'; the assistant used the default for a heat-sink array, then judged the standard corrected-length formula (L + t/2) wrong when they differed by ~2-3 %, which flipped feasibility of the 14-fin variants near the 0.55 K/W limit.", "evidence": "thermal_fin 14 fins x 2.2 mm, base 0.005536 m2: adiabatic 135.49 W (0.5535 K/W), convective 139.64 W (0.537 K/W) (re-run in-process). Turn 6: '這個公式的面積比工具算的大約 1%，導致阻值低估'", "fix": "thermal_fin description / eng-toolkit SKILL tool map: 'for heat-sink fins use tip=\"convective\" (or the corrected length L + t/2); adiabatic ignores the tip and is ~2-3 % conservative'."}
+ ],
+ "what_worked": [
+  "optimize_fit on T(R) with the SH model reproduced the truth coefficients, CIs and residuals exactly; the plot_xy residual chart was correct",
+  "optimize_sensitivity (GUM with the a,b,c correlation matrix and uniform R25/B tolerances) gave the right part-tolerance uncertainty, and the assistant raised the fit-CI vs part-tolerance issue unprompted in turn 1 and explained it clearly again in turn 3",
+  "Correctly rounded the continuous optimum (n 14.29) to the lightest feasible integer design 15 x 1.5 mm and checked n = 14 with thermal_fin",
+  "Found and disclosed its own arithmetic slips (unfinned base area 0.00464 -> 0.005536 m2, 0.0060 -> 0.0056 m2, 14 x 2.83 mm design retracted)",
+  "Refused to fabricate a spreading-resistance number"
+ ]
+}

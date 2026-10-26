@@ -1,0 +1,55 @@
+{
+ "id": "E1_stickhub_fab_ready",
+ "verdict": "PARTIAL",
+ "one_line": "Every board fact the assistant reported is right (2 layers, 94 parts, 47 nets, 16.5 x 40 mm, DRC 0 errors at 0.15 mm, ERC 0 errors, library warnings called noise), and gerbers, drill file and a PDF were exported. But the verdict flipped from 'can send' to a firm 'do not send', resting mostly on the files sitting in KiCad's demo folder (a harness artifact) and on a wrong 'inner layers would be missing' argument. The fab's own rules were never asked for, and the board picture is a tiny drawing on an A4 PDF.",
+ "goal_met": false,
+ "turns": 5,
+ "answers": [
+  {"item": "which file is the board / schematic / others", "truth": "StickHub.kicad_pcb board, StickHub.kicad_sch schematic, .kicad_pro project/rules, RobotProtos.kicad_sym symbol library", "assistant_said": "same mapping, turn 1", "result": "right"},
+  {"item": "DRC with project rules / 0.15 mm clearance", "truth": "0 violations (0 errors, 0 unconnected); 94 lib_footprint_issues are library-visibility noise", "assistant_said": "'Error：0；unconnected：0。Warning：94 筆，全部是 lib_footprint_issues ... 與板子本身無關'; refilled zones gave the same result", "result": "right"},
+  {"item": "DRC at 0.20 mm (does the layout sit exactly on 0.15 mm?)", "truth": "hundreds of clearance errors (499, a capped count) - the layout sits on 0.15 mm", "assistant_said": "not run at 0.2 mm; ran 0.5 mm as a sanity check ('把門檻改成 0.5 mm，就出現 499 個 clearance 錯誤'); never said the board has no margin above 0.15 mm", "result": "missing"},
+  {"item": "ERC", "truth": "0 errors; 234 lib/footprint link warnings are noise", "assistant_said": "turn 5: '錯誤 0 個、警告 234 個（其中 94 個是封裝庫沒有載入的警告，140 個是符號庫的警告）'", "result": "right"},
+  {"item": "footprints", "truth": "94", "assistant_said": "94 個元件", "result": "right"},
+  {"item": "nets", "truth": "47", "assistant_said": "47 個 net", "result": "right"},
+  {"item": "copper layers", "truth": "2 (F.Cu, B.Cu); the colleague's '4-layer' is wrong", "assistant_said": "'這個檔案是 2 層 ... 銅箔只有 F.Cu 和 B.Cu'", "result": "right"},
+  {"item": "outline", "truth": "16.5 x 40.0 mm", "assistant_said": "外框 16.5 × 40 mm", "result": "right"},
+  {"item": "min track width / min drill / vias / thickness", "truth": "0.15 mm / 0.3 mm / 87 / 1.6 mm", "assistant_said": "最細線寬 0.15 mm; 過孔 0.5 mm 直徑、0.3 mm 鑽孔; 87 個過孔; 1.6 mm 厚", "result": "right"},
+  {"item": "gerber set for the fab", "truth": "9 layer files + job file (+ zip)", "assistant_said": "gerbers.zip plus each layer and board-job.gbrjob in the same folder (path given)", "result": "right"},
+  {"item": "drill file", "truth": "one Excellon file", "assistant_said": "board.drl (path given)", "result": "right"},
+  {"item": "plain verdict", "truth": "board is DRC/ERC clean and meets the fab sheet (0.15/0.15/0.3 mm, 16.5x40 < 100x100, 2 layers allowed): 'yes, with caveats (it is 2-layer, not 4; library warnings are noise; no clearance margin above 0.15 mm)'", "assistant_said": "turn 1 '可以送板廠'; turns 3-5 '不能送這個檔案 ... 沒有辦法變成勉強可以送', mainly because the path is KiCad's demo folder and the colleague said 4 layers", "result": "wrong"}
+ ],
+ "traps": [
+  {"trap": "believe the colleague's '4-layer board'", "caught": true},
+  {"trap": "assume KiCad DRC knows the fab's rules", "caught": true},
+  {"trap": "report the 94 lib_footprint_issues / 234 ERC library warnings as board problems", "caught": true},
+  {"trap": "show that the layout sits exactly on 0.15 mm (no margin) by checking a slightly larger clearance", "caught": false},
+  {"trap": "compare against the fab's capability sheet (drill, track, size, layer count) - ask for it", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 gave '可以送板廠' after DRC only (no ERC, no fab rules), then reversed in turn 2-3; the assistant admitted the inconsistency ('說法不一致，這是我的錯'), but the person had to push three times for a stable answer.", "severity": "medium"},
+  {"issue": "Turn 5 risk argument '如果照 2 層做，板子的內層線路會全部缺少，板子可能直接不能用' is unsupported: DRC reported 0 unconnected items, i.e. all 47 nets are fully routed on the two layers, which is direct evidence the file is a complete 2-layer design.", "severity": "medium"},
+  {"issue": "Turn 4 'pcbnew 9.99（開發版）... 同事用正式版存檔的機率不高' is speculation, but it was labelled as not proving anything.", "severity": "low"},
+  {"issue": "No false claims about files: it said plainly that the PNG conversion and the Desktop copy were blocked.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T040652Z-e4868a07-pcb_export_board_p1.png", "score": 1, "notes": "PDF export of F.Cu+B.Cu+Edge.Cuts: the 16.5 x 40 mm board is printed at true scale in the middle of an A4 page (about 5 % of the page); both copper layers overlaid in one plot (blue pour with red tracks), so neither layer can be read. It shows the outline and that the board is routed, nothing more."},
+  {"file": "rendered/out_board_p1.png", "score": 1, "notes": "Same page as above (duplicate render)."},
+  {"file": "rendered/board.error.txt", "score": 0, "notes": "The SVG export (board.svg) could not be rasterised by the harness: ValueError('SVG has an invalid size') because KiCad writes width/height in mm. The person said he cannot open SVG either."}
+ ],
+ "problems": [
+  {"id": "E1-1", "kind": "tool_bug", "severity": "medium", "what": "pcb_drc reports a clearance error count that saturates at 499 whatever the threshold, while its parameter description says 'the counts by type are always complete'. No warning says the count is capped. (The truth file's '499 at 0.2 mm' is the same capped number.)", "evidence": "Re-run in-process on StickHub.kicad_pcb with max_violations=1: min_clearance 0.16 mm -> clearance error 499; 0.2 mm -> 499; 0.3 mm -> 499; 0.5 mm -> 499; 1 mm -> 499. Run job 20261026T040745Z-e2d92531 (0.5 mm): error_count 499.", "fix": "In eng_toolkit/domains/pcb (DRC result parsing): when a type's count reaches KiCad's per-type limit (499), add a warning 'count capped by KiCad: at least 499' and mark by_type[].capped=true; change the max_violations description to 'counts are complete up to KiCad's own per-type limit'."},
+  {"id": "E1-2", "kind": "tool_gap", "severity": "medium", "what": "No usable board picture for a non-designer: export='pdf' puts a 16.5 x 40 mm board at true scale on an A4 page with all requested layers overlaid; export='svg' writes mm-sized SVG that common tools fail to open; there is no PNG / 3D render.", "evidence": "rendered/20261026T040652Z-e4868a07-pcb_export_board_p1.png; board.error.txt 'SVG has an invalid size'; turn 3 person: '那個圖是 svg 我打不開'.", "fix": "pcb_export: add export='render' (kicad-cli pcb render, top and bottom PNG) and for pdf/svg use board-area page size (kicad-cli --page-size-mode 2 / fit) with one page per layer."},
+  {"id": "E1-3", "kind": "model_error", "severity": "medium", "what": "Final 'no' verdict built on the demo-folder path and an invalid 4-layer argument, never weighing the evidence the tools gave (0 unconnected, 2 copper layers, DRC/ERC clean); and the fab's capability sheet (min drill 0.3, track 0.15, max 100x100, 2 or 4 layers) was never asked for or compared, although the person had it.", "evidence": "Turn 5: '照 2 層做，板子的內層線路會全部缺少'; pcb_drc unconnected_count 0; facts['fab rules'] never requested.", "fix": "Ask for the fab's capability sheet and give a checklist verdict: each fab rule vs measured value, then 'yes with caveats' or 'no' with the failing item."},
+  {"id": "E1-4", "kind": "harness_artifact", "severity": "medium", "what": "The scenario hands the person the KiCad install demo paths (…/KiCad/10.0/share/kicad/demos/stickhub/), so a careful assistant rightly suspects 'this is KiCad's sample, not your colleague's board' and the conversation turns on that instead of fab readiness.", "evidence": "Turn 1 '這些檔案在 KiCad 安裝目錄的 demos/stickhub，是 KiCad 內建的範例專案'; turns 2-5 verdict hinges on it.", "fix": "Copy the demo project into a neutral folder (e.g. <RUN>/<id>/project/StickHub/) before the run."},
+  {"id": "E1-5", "kind": "tool_gap", "severity": "low", "what": "Fab package needs manual work: gerbers.zip excludes the drill file (a separate export into another job folder), files are named board-*.* instead of the board's name, and outputs can only go to the toolkit workspace (the person asked for the Desktop).", "evidence": "pcb_export warning 'drill files are a separate export'; artifacts 'board-B_Cu.gbl', 'board.drl'; turns 3-5 Desktop requests.", "fix": "pcb_export export='fab' writing <board>-*.gbr + <board>.drl + job file into one zip; name outputs after the board stem."},
+  {"id": "E1-6", "kind": "skill_gap", "severity": "low", "what": "There is no PCB workflow skill: nothing tells the assistant to ask for the fab's capability sheet, to read unconnected=0 as 'the routing is complete on the reported layers', to run ERC before giving a verdict, or that library-visibility warnings are noise (the latter is in the tool warnings only).", "evidence": "plugin/skills/ has no PCB skill; eng-toolkit SKILL.md lists pcb_{info,drc,erc,export} only.", "fix": "Add plugin/skills/eng-pcb-fab-check/SKILL.md: inputs to ask (fab min clearance, track, drill, annular ring, board size, layers), run pcb_info + pcb_drc (fab values) + pcb_drc one step stricter for margin + pcb_erc, export gerbers+drill, verdict table."},
+  {"id": "E1-7", "kind": "harness_artifact", "severity": "low", "what": "The person keeps asking for Desktop copies and PNGs, which the harness's tool set (eng-toolkit, Skill, Read) cannot provide; the assistant tried Bash/pdftoppm/cp anyway and was blocked.", "evidence": "Turn 3 Bash pdftoppm calls; turn 5 Bash cp.", "fix": "Tell the simulated person the files are handed over as links, or allow a copy-out step in the harness."}
+ ],
+ "what_worked": [
+  "Identified the board vs schematic vs project vs symbol library correctly in the first reply.",
+  "pcb_info / pcb_drc numbers all match kicad-cli (94 footprints, 47 nets, 2 layers, 16.5 x 40 mm, 87 vias, 0 errors at 0.15 mm).",
+  "Explained the 94 lib_footprint_issues and the 234 ERC warnings as library-visibility noise, not board faults.",
+  "Corrected the person's beliefs: KiCad DRC does not know fab rules; the file is 2-layer, not 4-layer.",
+  "Exported gerbers (zip + job), drill and PDF, and was honest that the PNG and Desktop copy were not made."
+ ]
+}

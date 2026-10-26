@@ -1,0 +1,53 @@
+{
+ "id": "E2_ce_amplifier_bode",
+ "verdict": "PASS",
+ "one_line": "Correct bias point (2.00/1.20/6.40 V, 2.55 mA), 1 kHz gain 42.1 dB / 127 V/V, lower corner 190 Hz, and a well-caveated upper corner of about 420 kHz from datasheet capacitances. The bf=200 model trap was caught, and the Bode and waveform charts are good. Minor problems: spice_measure labels dB as volt, has no band-pass corner measurement, and the phase is wrapped.",
+ "goal_met": true,
+ "turns": 5,
+ "answers": [
+  {"item": "DC operating point (demo model)", "truth": "Vb 2.000, Ve 1.202, Vc 6.402 V, Ic 2.545 mA", "assistant_said": "V(base) = 2.000 V, V(emit) = 1.202 V, V(coll) = 6.402 V, Ic ≈ 2.55 mA, Vce ≈ 5.2 V, '大致在中間'", "result": "right"},
+  {"item": "gain at 1 kHz", "truth": "42.11 dB / 127.5 V/V", "assistant_said": "42.1 dB（約 127 V/V）, phase -180 deg", "result": "right"},
+  {"item": "mid-band peak gain", "truth": "42.26 dB", "assistant_said": "中頻平坦區約 42.26 dB（約 130 V/V）", "result": "right"},
+  {"item": "lower -3 dB corner", "truth": "186 Hz (+-15 %)", "assistant_said": "約 190 Hz (bracketed with value_at on the 600 ohm / 1 uF / 100 uF / 10 uF circuit)", "result": "right"},
+  {"item": "upper -3 dB corner", "truth": "none with the bf=200 model (flat to 1 GHz); 469 kHz with a full Q2N2222 model", "assistant_said": "turn 1: no roll-off, '高頻沒有滾降是模型的問題'; turn 2 with datasheet cje=25p cjc=8p tf=0.53n: '約 420 kHz', flagged as low-confidence estimate", "result": "right"},
+  {"item": "'bandwidth' as one number", "truth": "band-pass: lower and upper corner", "assistant_said": "'整段 190 Hz 到 420 kHz 才是頻寬 ... 頻寬約 420 kHz'", "result": "right"},
+  {"item": "output for 10 mV, 1 kHz input", "truth": "amplitude 1.265 V after settling (2.53 V p-p)", "assistant_said": "+1.196 / -1.333 V, 2.53 V p-p (window 100-103 ms), 126.5 V/V", "result": "right"},
+  {"item": "hand estimate cross-check", "truth": "Ic 2.76 mA, gain ~138 V/V (42.8 dB), corner ~250 Hz (+-20 % / x1.5)", "assistant_said": "Ic 2.55 mA, |A| ≈ 130 (42.3 dB), input/bypass poles 70 and 125 Hz -> 190 Hz", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "KiCad's 2n2222.model is only '.model Q2N2222 npn (bf=200)': quoting an upper bandwidth from it", "caught": true},
+  {"trap": "'bandwidth' is a single number like a low-pass", "caught": true},
+  {"trap": ".include of an absolute path is refused: paste the model line", "caught": true},
+  {"trap": "spice_measure bandwidth_3db refuses a band-pass response: read the table or bracket", "caught": true},
+  {"trap": "transient start-up: measure the waveform after the coupling capacitors settle", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 simulated with assumed Cin 10 uF and Rs 1 kohm instead of asking (eng-toolkit SKILL.md rule 7: ask when a missing input changes the answer by more than a few percent); the lower corner moved from 120 Hz to 190 Hz and the gain from 40.8 to 42.1 dB once the real values came. The assumptions were stated clearly and a re-run was offered.", "severity": "low"},
+  {"issue": "Turn 2 called the 8.6 kHz maximum a 'peak'; turn 3 corrected it ('其實不是共振峰，是我講得不精確') and verified with ideal capacitors.", "severity": "low"},
+  {"issue": "Turn 1 '真實 2N2222 的頻寬 ... 通常在幾十 MHz 以下就會開始滾降' is vague; the realistic upper corner of this stage is a few hundred kHz (Miller), which the assistant found itself in turn 2.", "severity": "low"},
+  {"issue": "Before loading the skill, turn 1 read the user's private memory file (…/memory/eng-toolkit-external-tools-installed.md) and tried to run ngspice directly via Write/Bash; in turn 5 it probed the Desktop by writing the literal content 'test' to C:\\Users\\USER\\Desktop\\bode.svg (blocked) - had it succeeded, the person's requested file would have held junk.", "severity": "medium"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T040918Z-ad6ad15a-plot_xy_plot.png", "score": 2, "notes": "Bode 1 Hz-10 MHz, gain and phase on two axes, labelled with units; correct for its inputs but those were the ASSUMED Cin 10 uF / Rs 1 k and the capacitance-free model (title says 'ideal model'); legend truncated 'v(out).phase_deg (right ax...'."},
+  {"file": "rendered/20261026T041029Z-1b4903f4-plot_xy_plot.png", "score": 2, "notes": "Bode 1 Hz-1 GHz with datasheet caps: corners visible (data match: 42.2 dB plateau, roll-off from ~400 kHz). Range wider than the person asked; phase wraps from -180 to +180 at ~9 kHz drawn as a vertical jump in the passband; only every second decade labelled (1, 100, 10000, 1e6, 1e8); legend truncated."},
+  {"file": "rendered/20261026T041111Z-0129ca10-plot_xy_plot.png", "score": 3, "notes": "10 mV 1 kHz input vs output, 100-103 ms (settled), dual axes with units, inversion and +1.2/-1.33 V asymmetry visible; ready for a report."},
+  {"file": "rendered/20261026T041121Z-e61a7526-plot_xy_plot.png", "score": 3, "notes": "Same as above over two cycles, clean legend placement."},
+  {"file": "rendered/20261026T041309Z-ed00532f-plot_xy_plot.png", "score": 2, "notes": "Requested 1 Hz-10 MHz Bode; data spot-checked (42.11 dB at 1 kHz, 14.68 dB at 10 MHz in result.csv). Phase wrap jump at ~9 kHz, truncated legend, no -3 dB markers although plot_xy has vlines/hlines."}
+ ],
+ "problems": [
+  {"id": "E2-1", "kind": "tool_bug", "severity": "medium", "what": "spice_measure value_at on a '.db' (or '.phase_deg') column returns the number with unit 'volt'.", "evidence": "Re-run in-process: spice_measure(csv_file=<run>/ws/20261026T041305Z-f1ac5f0b-spice_simulate/result.csv, measurement='value_at', column='v(out).db', at='1 kHz') -> value {quantity: 42.1104, unit: 'volt'}. Cause: eng_toolkit/domains/spice/measure.py:175 sets unit from the 'v(' prefix of the column name.", "fix": "measure.py:175: unit 'decibel' (or dimensionless with a 'dB' note) for '.db', 'degree' for '.phase_deg', dimensionless for '.re/.im' ratios of ac tables; keep volt/ampere only for plain transient/op columns."},
+  {"id": "E2-2", "kind": "tool_bug", "severity": "low", "what": "The column description promises \"ac tables: 'v(out)' picks v(out).mag or v(out).db\", but value_at with column='v(out)' is refused (only bandwidth_3db resolves it).", "evidence": "Re-run: value_at column='v(out)' on the ac result.csv -> input.invalid \"'column' 'v(out)' is not in the file; columns: v(out).re, v(out).im, v(out).mag, v(out).db, v(out).phase_deg\"; description at measure.py:244.", "fix": "Make _resolve map 'v(out)' to '.mag' (or '.db') for every measurement on an ac table, or narrow the description to bandwidth_3db."},
+  {"id": "E2-3", "kind": "tool_gap", "severity": "medium", "what": "No measurement for a band-pass response: bandwidth_3db is low-pass only (reference = first sample), so the lower corner of any AC-coupled amplifier needs manual bracketing (the assistant made 11 value_at calls to find 190 Hz and 420 kHz).", "evidence": "Re-run: bandwidth_3db column='v(out)' -> measure.not_found 'the gain never falls 3.0103 dB below its first sample ... (or this is not a low-pass response)', details first_gain_db -18.95.", "fix": "Add measurement 'corners_3db' (reference = maximum gain; returns peak gain and frequency, lower and upper -3.0103 dB crossings interpolated in log f, or 'none within the sweep'), or a 'reference=peak' option for bandwidth_3db."},
+  {"id": "E2-4", "kind": "tool_gap", "severity": "low", "what": "AC phase is wrapped to (-180, 180]; for an inverting amplifier it jumps from -180 to +180 in the middle of the passband, and plot_xy draws a vertical line there.", "evidence": "rendered/20261026T041309Z-ed00532f-plot_xy_plot.png at ~9 kHz; assistant had to explain '實際仍是 −220° 左右'.", "fix": "spice_simulate: add an unwrapped phase column (v(out).phase_unwrapped_deg), or plot_xy option 'unwrap_phase'."},
+  {"id": "E2-5", "kind": "tool_bug", "severity": "low", "what": "plot_xy legend truncates the y2 series label ('v(out).phase_deg (right ax...') and there is no parameter to rename a CSV series; log-axis tick labels mix plain and exponent formats (10000, 100000, 1e6, 1e7).", "evidence": "All three Bode PNGs.", "fix": "Widen the legend box to fit labels or allow 'y_labels' to rename series; use one tick format per axis (1, 10, 100, 1k, 10k ... or 10^n)."},
+  {"id": "E2-6", "kind": "model_error", "severity": "low", "what": "Turn 1 ran the full analysis on assumed coupling capacitor and source impedance instead of asking first, costing one turn; and it tried raw ngspice via Bash before loading the eng-toolkit skill.", "evidence": "Turn 1 tools: Write ce_amp.cir, Bash ngspice_con.exe ... then Skill; netlist 'RS src in 1k / CIN in base 10u'.", "fix": "eng-toolkit SKILL.md already says 'Always load it before calling any mcp__eng-toolkit__* tool' and rule 7; add to the electronics line: 'for an amplifier ask source impedance, coupling/bypass capacitors and load before the ac run'."},
+  {"id": "E2-7", "kind": "harness_artifact", "severity": "low", "what": "The assistant could read the user's private memory directory and attempt Write/Bash/PowerShell, despite the brief saying the harness only gave eng-toolkit tools, Skill and Read; the simulated person asked for Desktop copies the harness cannot allow.", "evidence": "Turn 1 Read C:\\Users\\USER\\.claude\\projects\\...\\memory\\eng-toolkit-external-tools-installed.md; turn 5 PowerShell Copy-Item and Write to the Desktop (blocked).", "fix": "Run the assistant with an isolated HOME/CLAUDE config so memory files are not visible; restrict Read to the scenario files and the run workspace."}
+ ],
+ "what_worked": [
+  "Read KiCad's model file, noticed it is only bf=200, pasted the line (since .include is refused) and stated that the upper corner from it is meaningless.",
+  "Used the person's datasheet values (Cibo -> cje, Cobo -> cjc, fT -> tf) to get an upper corner of about 420 kHz, within about 10 % of the full PSpice model's 469 kHz, with a Miller hand estimate (345 kHz) as a check.",
+  "Ran the transient long enough (window at 100 ms) to avoid the coupling-capacitor start-up, and reconciled the waveform gain (126.5) with the ac gain (127.0).",
+  "Explained band-pass bandwidth and the 0.15 dB difference between 1 kHz and the plateau correctly (10 log10(1 + (190/1000)^2)).",
+  "Charts have titles, axis labels with units, log frequency axis and a second axis; the requested 1 Hz-10 MHz range was produced on request."
+ ]
+}

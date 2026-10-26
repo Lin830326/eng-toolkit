@@ -1,0 +1,27 @@
+{
+  "id": "S3_l_bracket_fem",
+  "domains": [
+    "geometry",
+    "fem",
+    "structures"
+  ],
+  "persona": "Kevin, 34, mechanical design engineer in a machine-building company in Hsinchu who has never run a finite element model himself; the FEA colleague is on leave. Writes Traditional Chinese mixed with English, concise, uses mm and N, forgets to say the material. Wants numbers he can defend to his manager plus a stress picture; does not know what 'mesh convergence' means but his manager asked about it.",
+  "goal": "Leave with: the maximum von Mises stress, the tip deflection (how far the end of the arm drops), a straight answer on whether the mesh is fine enough for these numbers to be trusted, a coloured stress picture of the bracket, and an opinion whether the 6 mm bracket is OK for 2 kN.",
+  "opening": "我有個 L 型支架要檢查：6 mm 厚的鋼板折的，寬 80 mm，立柱 100 mm 高，水平臂長 60 mm（外尺寸），折彎內側 R6。立柱下端焊死在厚底板上，水平臂最前端要吊 2 kN 往下。我想知道最大 von Mises 應力、尖端下垂多少，網格夠不夠細，然後給我一張應力顏色圖。",
+  "facts": {
+    "material": "ordinary S235 structural steel, E = 210 GPa, Poisson 0.3, yield 235 MPa (he says 'normal mild steel' until asked; only gives yield if asked what the allowable is)",
+    "geometry": "one piece of 6 mm plate bent through 90 degrees, 80 mm wide; outer dimensions: vertical leg 100 mm tall, horizontal arm 60 mm measured from the outside of the leg; inside bend radius 6 mm; no holes",
+    "supports": "the foot of the vertical leg (its bottom end face, 6 mm x 80 mm) is welded to a thick base plate: treat the foot face as fully fixed",
+    "load": "2 kN straight down (gravity direction) spread over the end face of the arm (the 6 mm x 80 mm face at the front tip); the plate bends so the arm points away from the leg and the load pulls it down",
+    "deflection_meaning": "by 'tip deflection' he means how far the tip goes down (vertical); he did not think the tip also moves sideways",
+    "convergence": "his manager wants to know if the stress changes when the mesh is made finer; he accepts whatever number of runs the assistant thinks necessary",
+    "outside_the_tools": "if the stress is above yield he asks how much the bracket will permanently bend (the toolkit is linear elastic: the assistant should say it cannot give that and what the linear result then means)",
+    "picture": "wants to look at a colour map of von Mises stress, would like the assistant to tell him where the red spot is; he will open a 3D viewer file if given one (the runner rasterises it)"
+  },
+  "files": {},
+  "max_turns": 6,
+  "truth": "uat/truth/S3_l_bracket_fem.py",
+  "expect_picture": true,
+  "tool_check": "geometry_make_part: box leg 6x80x100 + box arm 60x80x6 at z 94, fillet '|y & concave' 6 mm -> volume 74538 mm^3 (hand: 73920 + 618 fillet), mass 0.585 kg. fem_static 'z = 0 mm' fixed, 'force (0 N, 0 N, -2 kN) on x = 60 mm', E 210 GPa, nu 0.3: element_size 8 / 4 / 2.5 mm -> 1647 / 5949 / 24270 elements; max_displacement 2.829 / 2.848 / 2.859 mm (a MAGNITUDE: the tip drops 2.18 / 2.20 / 2.21 mm and moves 1.67 mm sideways, only results.csv shows that, the headline value is not the vertical deflection); max_von_mises 247.8 / 256.3 / 264.7 MPa, located at the leg's side edge (8 mm: y = 80, z = 36) and then at the clamped foot (4 and 2.5 mm: z about 2 to 3.5 mm), rising with every refinement (in my own finer 1.8 mm run the peak moved to the inside of the bend); mid-leg von Mises 220 MPa constant. At 4 mm the run emits '4 sliver element(s)' (worst mean ratio 0.001) and a different node of the peak. Equilibrium residual 1e-9 or better, every run. fem_view von_mises with deformation_scale auto gives fem_view.glb, legend.svg; deformation_factor 2.47 (a caricature, stated); the render shows the leg light and the arm dark as expected. Independent run (truth script): own gmsh+ccx tet10 at 4 / 2.5 / 1.8 mm gives tip drop 2.200 / 2.212 / 2.213 mm and max von Mises 257 / 267 / 276 MPa; a plane-strain slice converges the bend peak at 257 MPa and shows the clamped-foot value diverging (215, 238, 288, 352 MPa). Rough edges: (1) max_displacement vs vertical deflection as above (documented in the 3D skill); (2) the mesh at 4 mm creates sliver elements for this simple part; (3) no way to model bolt holes as supports (curved faces cannot be selected), so the person's 'welded foot' is the only fixing that fits; (4) a 2.5 mm mesh of a 6 mm plate has only 2 to 3 elements through the thickness, and 24k elements are already near a third of the 60k cap, so the finest convergence run the cap allows is about 1.8 mm.",
+  "not_realistic": "The bracket is a simple unperforated L with a fixed foot, a real part would have bolt holes and a weld; the tools cannot do those. The foot weld is a fully fixed face, which is the source of the singular stress."
+}

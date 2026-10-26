@@ -1,0 +1,52 @@
+{
+ "id": "S1_mezzanine_beam_ipe240",
+ "verdict": "PARTIAL",
+ "one_line": "The engineering is right first time. It added self-weight unprompted, corrected 'S275 = 275 MPa allowable', and got M 47.86 kN*m, 148 MPa, 21.6 mm (L/277) failing L/360, then IPE 270 at 112 MPa and 14.6 mm passing. It caught that the frame tool's 'maximum displacement' misses the in-span maximum. But the only diagram is an IPE 240 SVG in N*m and metres that the person could not open. Turns 2-5 went into blocked Python instead of re-running plot_panels in kN*m/mm, and no IPE 270 diagram was ever made.",
+ "goal_met": false,
+ "turns": 5,
+ "answers": [
+  {"item": "load_line_kN_per_m (without / with self-weight)", "truth": "7.5 / 7.801", "assistant_said": "3 kN/m² × 2.5 m = 7.50 kN/m + 0.30 = 7.80 kN/m", "result": "right"},
+  {"item": "point load", "truth": "11.768 kN at 2 m", "assistant_said": "1200 kg × 9.81 = 11.77 kN at 2 m", "result": "right"},
+  {"item": "R_left / R_right (with self-weight)", "truth": "31.25 / 27.33 kN", "assistant_said": "最大剪力 31.2 kN（支承處）; right reaction not given", "result": "right"},
+  {"item": "M_max_kNm and location (with self-weight)", "truth": "47.86 at 2.497 m", "assistant_said": "47.86 kN·m，位於左支承起算 2.50 m", "result": "right"},
+  {"item": "sigma_max_MPa / utilisation vs fy", "truth": "147.6 / 0.537", "assistant_said": "約 148 MPa (catalogue I and W) and a conservative 156 MPa from the sharp-cornered section; 0.54", "result": "right"},
+  {"item": "delta_max_mm / span_over_delta", "truth": "21.64 mm at 2.93 m / 277", "assistant_said": "21.6 mm, '位於跨中', L/277", "result": "right"},
+  {"item": "passes_L360", "truth": "false (16.67 mm)", "assistant_said": "不通過 L/360 (16.7 mm); 通過 L/250", "result": "right"},
+  {"item": "verdict_IPE240", "truth": "stress fine, deflection governs and fails L/360", "assistant_said": "IPE 240 強度足夠，但撓度 21.6 mm 超過 L/360 的 16.7 mm，不建議使用", "result": "right"},
+  {"item": "smallest_IPE_passing_L360", "truth": "IPE 270", "assistant_said": "IPE 270", "result": "right"},
+  {"item": "IPE 270 sigma / delta", "truth": "112.1 MPa / 14.62 mm", "assistant_said": "112 MPa / 14.6 mm (L/411)", "result": "right"},
+  {"item": "note_on_allowable (S275 is yield, not allowable)", "truth": "fy = 275 MPa, ASD ~0.6 fy = 165 MPa, EC3 fy/gM0 against factored loads", "assistant_said": "'S275 的 275 MPa 是降伏強度 f_y ... 若用 ASD 容許應力（約 0.6·f_y ≈ 165 MPa）' plus a labelled hand estimate for factored loads", "result": "right"},
+  {"item": "not_checked list", "truth": "LTB (deck restrains), shear, web crippling, connections, vibration", "assistant_said": "LTB assumption stated, shear checked by hand (23 MPa), compressor vibration flagged; web crippling under the point load and connections not mentioned", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "S275 is the yield strength, not a 275 MPa allowable", "caught": true},
+  {"trap": "self-weight not included by the person", "caught": true},
+  {"trap": "mech_beam_bending cannot combine UDL + point load: use structures_frame or superpose", "caught": true},
+  {"trap": "frame maximum_nodal_displacement (19.1 mm) is not the in-span maximum (21.6 mm)", "caught": true},
+  {"trap": "roller_x vs roller_y for a horizontal beam", "caught": true},
+  {"trap": "idealised sharp-corner I section has 5.7 % lower I than the catalogue", "caught": true},
+  {"trap": "diagram axes in kN*m and mm for the report", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "The catalogue section values (IPE 240: 3890 cm4, 324 cm3, 30.7 kg/m; IPE 270: 5790 cm4, 429 cm3, 45.9 cm2, 36.1 kg/m) were recalled from memory. They are correct and were labelled each time ('型錄值，非工具算出', '下單前請用你們採用的型錄核對').", "severity": "low"},
+  {"issue": "The factored-load stress '約 220–235 MPa' is a rough hand scaling (148 x 1.4-1.5 is 207-222 MPa, so the range is slightly high). It was labelled 'my estimate, not a tool result'.", "severity": "low"},
+  {"issue": "Turn 5 tells the person to edit Claude Code permission settings or restart the session. That is accurate about the blocked tools, but it is advice the person in this setting cannot act on.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261026T042825Z-b313562e-plot_panels_plot.png", "score": 2, "notes": "Correct data: M peaks at about 47.9 kN*m near 2.5 m with the kink at the 2 m point load; deflection minimum about -0.0216 m near 2.9-3 m. Clean two-panel layout with a shared x axis in m and a descriptive title. But the y axes are 'N·m' (0-50000) and 'm' (-0.025..0), which the person explicitly cannot read. There is no L/360 line, no peak annotation, and it is IPE 240 only. The person could not open the SVG and never saw it."}
+ ],
+ "problems": [
+  {"id": "S1_mezzanine_beam_ipe240-1", "kind": "model_error", "severity": "high", "what": "The person asked for kN*m/mm diagrams for IPE 240 and IPE 270. The assistant had plot_panels available, already passing inline series, but never re-ran it with scaled numbers. It spent four turns trying to run matplotlib through blocked Bash/Write, so the IPE 270 diagrams were never produced and the requested units never delivered.", "evidence": "Turn 1 plot_panels series y in N·m ('47856.70') and m; turns 2-5 tools: Bash, PowerShell, Write, Bash ...; turn 5 'PNG 還是沒有產生'. No second plot_panels call.", "fix": "eng-plot-results SKILL.md section 3: 'Station CSVs are SI (N, N*m, m). For a report in kN*m and mm, pass inline series scaled by 1e-3 / 1e3 and say so in the axis label; do not leave the toolkit to rescale.'"},
+  {"id": "S1_mezzanine_beam_ipe240-2", "kind": "tool_gap", "severity": "medium", "what": "plot_xy/plot_panels cannot rescale a CSV column, and structures_frame station CSVs are SI-only. Every report-quality beam diagram needs the assistant to retype all the stations as inline series. The tools also output SVG only, which this person could not open.", "evidence": "plot_panels panels record is 'title|y_columns|y_label|y_scale' (y_scale = linear/log only, eng_toolkit/domains/plot/panels.py). Person turn 2: '圖我打不開那個 svg，可以給我 png 嗎？軸要 kN*m 跟 mm'.", "fix": "Add a per-column unit or factor (e.g. y_columns 'M_N_m:kN*m', or y_unit='kN*m' converted with pint) to plot_xy/plot_panels, and an output_format='png' option."},
+  {"id": "S1_mezzanine_beam_ipe240-3", "kind": "tool_gap", "severity": "medium", "what": "structures_frame's only displacement summary is maximum_nodal_displacement, which reports 19.13 mm at the point-load node. The true maximum deflection of 21.64 mm (2.93 m) exists only in member_2_stations.csv, so a less careful user would report a 12 % unconservative deflection and pass L/300. The assistant caught it by reading the CSVs.", "evidence": "structures_frame(nodes a,c,b; I 3.89e7 mm^4; 7.80 kN/m + 11.77 kN at c) -> values {maximum_abs_moment 47856.7 N*m, maximum_abs_shear 31246.7 N, maximum_nodal_displacement 0.019127 m}; data has maximum_moment_location but no deflection extremum; member_2_stations.csv v_local_m reaches -0.0216.", "fix": "Add maximum_member_deflection (transverse, with member and x) to structures_frame values, found from the exact Hermite/integrated curve like the M/V extrema, and a warning when it exceeds the nodal maximum."},
+  {"id": "S1_mezzanine_beam_ipe240-4", "kind": "tool_gap", "severity": "low", "what": "There is no standard-section library (IPE/HEA/UB). The idealised section from structures_section (no root radius) gives I 3671 cm4 and W 306 cm3 instead of the catalogue 3892 and 324, so catalogue values had to come from memory. They were correct here and were labelled.", "evidence": "structures_section(i, 240, 120, tf 9.8, tw 6.2 mm) -> Ix 3.671e-5 m4, Sx 3.059e-4 m3; turn 2 'IPE 270 的 I、W、A、自重是我從標準 IPE 型錄值填入的'.", "fix": "Add an EN 10365 IPE/HEA/HEB (and AISC W) table to structures_section (shape='IPE 240'), or a root_radius field for rolled I shapes."},
+  {"id": "S1_mezzanine_beam_ipe240-5", "kind": "harness_artifact", "severity": "medium", "what": "Write and Bash were reachable but blocked by the permission system. The simulated person said '我已經按允許了' twice, which cannot grant a permission, so three turns repeated the same blocked attempt and explanation.", "evidence": "Turn 4 person '我已經按允許了，你可以直接跑 python 畫 PNG 了嗎？'; assistant turn 4/5 '兩者都顯示「尚未授權」'.", "fix": "Harness: deny non-allowed tools outright and tell the person simulator it cannot grant permissions."}
+ ],
+ "what_worked": [
+  "Every number matches the truth within 1 %: M 47.86 kN*m at 2.50 m, 148 MPa, 21.6 mm (L/277), IPE 270 112 MPa / 14.6 mm. The verdict (stress OK, L/360 fails, IPE 270 passes) is exactly right.",
+  "It proactively added the beam self-weight and corrected the 'S275 = 275 MPa allowable' belief, giving both the ASD 0.6 fy and EC3 readings.",
+  "It cross-checked three routes: mech_beam_bending UDL + point superposition (16.1 + 5.6 mm), structures_frame stations, and a hand formula. It noticed that the frame's nodal maximum (19.1 mm) is not the midspan value.",
+  "It ran the idealised section and the catalogue values side by side and explained the 5.6 % I difference (root radius).",
+  "It used roller_y correctly on the first try and gave a clean Chinese summary table ready for the report (turn 3)."
+ ]
+}
