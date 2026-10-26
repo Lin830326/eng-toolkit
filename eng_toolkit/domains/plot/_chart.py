@@ -79,6 +79,7 @@ class Chart:
     x_range: tuple[float, float] | None
     panels: list[Panel]
     vlines: list[tuple[float, str]] = field(default_factory=list)
+    point: tuple[float, float, str] | None = None  # one marked point (plot_xy 'marker'): x, y on the left axis of the first panel, label
 
 
 @dataclass
@@ -266,7 +267,13 @@ def render_xy(chart: Chart) -> Rendered:
 
     # ---------------------------------------------------------------- x axis
     x_target = max(2, min(12, round((W - 2 * PAD - 60) / X_TICK_PX)))
-    xlo, xhi = _extent([s.x for s in all_series], [v for v, _ in chart.vlines])
+    if chart.point is not None:
+        px_, py_, _ = chart.point
+        if chart.x_scale == "log" and px_ <= 0:
+            fail("marker", f"the marked point's x {px_:g} cannot be drawn on a log x axis (it needs a positive value)")
+        if chart.panels[0].y_scale == "log" and py_ <= 0:
+            fail("marker", f"the marked point's y {py_:g} cannot be drawn on a log y axis (it needs a positive value)")
+    xlo, xhi = _extent([s.x for s in all_series], [v for v, _ in chart.vlines] + ([chart.point[0]] if chart.point is not None else []))
     x_axis = make_axis(chart.x_scale, xlo, xhi, x_target, chart.x_range, param="x_range" if chart.x_range else all_series[0].x_param, what="x axis", margin=margin)
     warnings += x_axis.notes
 
@@ -295,7 +302,7 @@ def render_xy(chart: Chart) -> Rendered:
         right_series = [s for s in p.series if s.axis == "y2"]
         if not left_series:
             fail("y2_columns", "every series is on the right axis; at least one must stay on the left (y) axis")
-        extra = [v for v, _ in p.hlines] + ([p.band[0], p.band[1]] if p.band else [])
+        extra = [v for v, _ in p.hlines] + ([p.band[0], p.band[1]] if p.band else []) + ([chart.point[1]] if chart.point is not None and pi == 0 else [])
         if chart.fill == "zero" or (any(kind_of[id(s)] == "stem" for s in left_series) and p.y_scale == "linear"):
             extra.append(0.0)
         lo, hi = _extent([s.y for s in left_series], extra)
@@ -362,7 +369,7 @@ def render_xy(chart: Chart) -> Rendered:
 
     # ---------------------------------------------------------------- drawing
     pid = chart_id(chart.tool, chart.kind, chart.theme, W, H, chart.title, chart.x_label, chart.x_scale, chart.x_range, chart.fill, chart.markers, chart.grid, chart.legend,
-                   chart.vlines, [(p.title, p.y_label, p.y_scale, p.y_range, p.y2_label, p.hlines, p.band, [(s.name, s.axis, kind_of[id(s)]) for s in p.series]) for p in chart.panels],
+                   chart.vlines, *([("marked point", chart.point)] if chart.point is not None else []), [(p.title, p.y_label, p.y_scale, p.y_range, p.y2_label, p.hlines, p.band, [(s.name, s.axis, kind_of[id(s)]) for s in p.series]) for p in chart.panels],
                    arrays=[a for s in all_series for a in (s.x, s.y)])
     cv = Canvas(W, H, chart.theme, pid)
     cv.el("rect", [("x", "0"), ("y", "0"), ("width", str(W)), ("height", str(H))], fill="bg")
@@ -390,6 +397,7 @@ def render_xy(chart: Chart) -> Rendered:
         cv.text(W / 2, PAD + TITLE_SIZE, texts.fit(chart.title, W - 2 * PAD, TITLE_SIZE, "title"), size=TITLE_SIZE, anchor="middle", weight="600")
 
     series_out = []
+    marked_out = None
     total_in = total_drawn = 0
     decimated_any = False
     for pi, p in enumerate(chart.panels):
@@ -532,6 +540,20 @@ def render_xy(chart: Chart) -> Rendered:
                 shown = texts.fit(label, pw * 0.6, 11, f"hline {i + 1} label")
                 spots = [(plot_right - 4, yv - 4, "end"), (plot_right - 4, yv + 13, "end"), (left + 4, yv - 4, "start"), (left + 4, yv + 13, "start")]
                 place_label(cv, shown, spots, frame_box, placed, warnings, f"hline {v:g}")
+        if pi == 0 and chart.point is not None:
+            mx_, my_, mlabel = chart.point
+            if x_axis.contains(mx_) and ya.contains(my_):
+                mpx, mpy = x_axis.px(mx_), ya.px(my_)
+                ring = f"M{num(mpx - 7)} {num(mpy)}a7 7 0 1 0 14 0a7 7 0 1 0 -14 0Z"
+                cv.el("path", [("d", ring), ("stroke-width", "2")], fill="none", stroke="fg")
+                cv.el("circle", [("cx", num(mpx)), ("cy", num(mpy)), ("r", "2.5")], fill="fg")
+                marked_out = {"x": mx_, "y": my_, "label": mlabel, "x_px": mpx, "y_px": mpy}
+                if mlabel:
+                    shown = texts.fit(mlabel, pw * 0.5, 11, "marker label")
+                    spots = [(mpx + 11, mpy - 9, "start"), (mpx + 11, mpy + 17, "start"), (mpx - 11, mpy - 9, "end"), (mpx - 11, mpy + 17, "end")]
+                    place_label(cv, shown, spots, frame_box, placed, warnings, "the marked point")
+            else:
+                warnings.append(f"the marked point ({mx_:g}, {my_:g}) is outside the axis ranges and is not drawn")
         if pi == 0:
             for i, (v, label) in enumerate(chart.vlines):
                 if not x_axis.contains(v):
@@ -623,6 +645,7 @@ def render_xy(chart: Chart) -> Rendered:
         "decimation": {"applied": decimated_any, "threshold_points_per_px": 4,
                        "rule": "lines and steps with more than 4 points per pixel of plot width keep the first, last, minimum and maximum point of each pixel column; "
                                "markers (scatter, stem, markers=true) above the same density keep one marker per occupied 2 x 2 px cell (larger cells beyond 20000 markers) plus the y extremes"},
+        **({"marked_point": marked_out} if marked_out is not None else {}),
         "x_tick_labels_hidden_to_avoid_overlap": hidden_x, "truncated_text": texts.truncated, "element_id_prefix": pid,
         "layout": {"pad": PAD, "title_band": TITLE_BAND, "label_band": LABEL_BAND, "tick_len": TICK_LEN, "tick_gap": TICK_GAP, "tick_font": TICK_SIZE, "char_em": 0.6,
                    "panel_title_band": PANEL_TITLE_BAND, "panel_gap": PANEL_GAP, "legend_outside": bool(outside and legend_w)},

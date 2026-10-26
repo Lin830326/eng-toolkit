@@ -70,4 +70,22 @@ def render_png(pdf: bytes, width_mm: float, height_mm: float) -> tuple[bytes, in
     return encode_png(array.tobytes(), width, height), width, height, round(per_mm * 25.4, 2)
 
 
-__all__ = ["DPI", "MAX_SIDE_PX", "encode_png", "pixels_per_mm", "render_png", "require_engine"]
+def render_rgb(pdf: bytes, scale: float) -> tuple[bytes, int, int]:
+    """(RGB bytes, width px, height px) of the first page of ``pdf`` at ``scale`` pixels per PDF point, on white.
+
+    The one other caller is the ``plot`` domain, which rasterises the one-page PDF it has just made from its own SVG; the same
+    rules hold: the PDF is never a caller's file, and every call into PDFium holds the lock.
+    """
+    pdfium = require_engine()
+    with _LOCK:
+        document = pdfium.PdfDocument(pdf)
+        try:
+            bitmap = document[0].render(scale=scale, rev_byteorder=True)
+            array = bitmap.to_numpy()
+        finally:
+            document.close()
+    height, width = array.shape[:2]
+    return array[:, :, :3].tobytes(), width, height
+
+
+__all__ = ["DPI", "MAX_SIDE_PX", "encode_png", "pixels_per_mm", "render_png", "render_rgb", "require_engine"]

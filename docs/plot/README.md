@@ -1,7 +1,8 @@
 # Plot tools
 
 `plot_xy`, `plot_panels`, and `plot_bar` write a self-contained `plot.svg` and a `plot_data.json` file with the chart data and
-axis mappings. Results carry `review_status: "unreviewed"`. See [the design notes](design.md) for input formats, limits, and layout rules.
+axis mappings. `format="png"` (or `"both"`) writes `plot.png` as well, 1600 px wide, with its path in `data.png_path`; it needs the
+`png` extra (`uv sync --extra png`) and returns the SVG with a warning when that is missing. The default stays SVG. Results carry `review_status: "unreviewed"`. See [the design notes](design.md) for input formats, limits, and layout rules.
 
 Fixed ranges clip lines, fills, and stems to the visible frame. A stem starts at zero on a linear axis, even when zero is outside
 the selected range. Its line can remain visible when the marker lies outside the frame. On a log axis, stems start at the bottom.

@@ -1,6 +1,6 @@
 ---
 name: eng-plot-results
-description: Use to turn results of other eng-toolkit tools (their CSV artifacts such as filter response, Bode data, S-N curve, rainflow table, beam stations, channel profile, step response, spectrum) or numbers the user gives into an SVG chart with plot_xy, plot_panels or plot_bar. Covers choosing the chart, artifact paths and column names, labels with units, log axes, ranges, reference lines, histograms, checking the drawn data against the source tool, and handing over the SVG. Load eng-toolkit first.
+description: Use to turn results of other eng-toolkit tools (their CSV artifacts such as filter response, Bode data, S-N curve, rainflow table, beam stations, channel profile, step response, spectrum) or numbers the user gives into a chart picture (PNG for slides and reports, or SVG) with plot_xy, plot_panels or plot_bar. Covers choosing the chart, artifact paths and column names, labels with units, log axes, ranges, reference lines, a marked operating point, histograms, checking the drawn data against the source tool, and handing over the picture in words and as a PNG path. Load eng-toolkit first.
 ---
 
 # Plot results workflow (eng-toolkit)
@@ -9,7 +9,7 @@ Load the `eng-toolkit` skill first for unit rules and report format. The plot to
 
 ## 1. Pin down the picture
 
-Which quantity against which (with units), where the numbers come from (a tool run here, a file, values typed by the user), linear or log per axis, the range that matters (0..2 kHz, gain down to -80 dB), reference lines (cutoff, yield, allowable), and the use (`theme="print"` for reports). Not covered: contour, heat map, 3D, polar, pie, horizontal bars, date axes (use seconds), curve fitting or smoothing, PNG/PDF, second x axis, log axis on bars.
+Which quantity against which (with units), where the numbers come from (a tool run here, a file, values typed by the user), linear or log per axis, the range that matters (0..2 kHz, gain down to -80 dB), reference lines (cutoff, yield, allowable), and the use (`theme="print"` for reports). Ask early where the picture goes: a person who wants to paste it into slides, a report or a chat needs a PNG (`format="png"`, section 6). Not covered: contour, heat map, 3D, polar, pie, horizontal bars, date axes (use seconds), curve fitting or smoothing, PDF output, second x axis, log axis on bars.
 
 ## 2. Choose the tool
 
@@ -33,7 +33,7 @@ Which quantity against which (with units), where the numbers come from (a tool r
 - Tables: `dsp_filter_design` `filter_response.csv` (`frequency_hz,magnitude_db,phase_deg`; 512 rows, 0 Hz to Nyquist, floor -300 dB); `control_frequency` `bode.csv` (`frequency_rad_s,...`, log grid); `control_response` `response.csv` (`time_s,input,output`); `fatigue_sn` `sn_curve.csv` (`cycles,amplitude_MPa`; 61 rows, 1e3..1e9); `fatigue_rainflow` `rainflow_cycles.csv` (`range_MPa,mean_MPa,full_cycles,half_cycles,weighted_count`); `structures_frame` `member_<n>_stations.csv` (`x_m,side,N_N,V_N,M_N_m,u_local_m,...`, one per member); `fluids_open_channel` `channel_profile.csv` (`x_m,bed_m,depth_m,water_surface_m,...`); `dsp_spectrum` `spectrum.csv` (`frequency_hz,amplitude,...`). `thermal_transient` returns single numbers, no table: call it for several times and pass the results as inline `series`.
 - `x_column` blank = first column. **`y_columns` blank = every other numeric column** (six unit-mixed series on a station table): always name them. Naming a text column (`side`) is refused.
 - Inline: `series='[{"name":"gain","x":[1,10],"y":[0,-3]}]'`, plain numbers (no units, nan, `1_000`), equal lengths, `x` optional; bars take text categories in `x` and `"err"`.
-- Labels with unit: `x_label="Frequency (Hz)"`, `y_label="Stress amplitude (MPa)"` (at most 120 characters). `hlines="250,yield"`, `vlines="1000,cutoff"`, `band="-3,0,passband"` use plain numbers in axis units (`"-3 dB"` refused). `x_range`/`y_range` = `"min,max"`, min < max. `width`/`height` 200..2400 px.
+- Labels with unit: `x_label="Frequency (Hz)"`, `y_label="Stress amplitude (MPa)"` (at most 120 characters). `hlines="250,yield"`, `vlines="1000,cutoff"`, `band="-3,0,passband"` use plain numbers in axis units (`"-3 dB"` refused). `x_range`/`y_range` = `"min,max"`, min < max, plain numbers in the axis unit (`"0,3600"` for seconds, never `"0,10 s"`; the unit goes in the label). `marker="1200,45.5,duty point"` (`plot_xy`) rings one point, for example the operating point on a pump or torque-speed curve. `width`/`height` 200..2400 px (the PNG is always 1600 px wide).
 
 ## 4. Run, then verify
 
@@ -52,8 +52,16 @@ Which quantity against which (with units), where the numbers come from (a tool r
 - Bars: same categories in every series; no error bars when stacked; blank `y_columns` also draws error columns as bars.
 - `kind` lists need one per series; `fill="zero"` needs a linear y axis. Constant data is padded with a warning.
 
-## 6. Hand over and report
+## 6. Hand over the picture and report
 
-`plot.svg` and `plot_data.json` are in the job folder (`artifacts[]`, `format: "svg"`). `data.svg_inline` holds the SVG text when it is at most 150 kB (else `svg_inline_omitted`: give the path). Give the `plot.svg` path; where the client renders SVG/HTML, show `data.svg_inline` unedited. Describe the chart by its numbers and settings, never by visual impressions.
+Most people cannot open an SVG file from a path and the chat shows no picture, so **ask for the PNG whenever the person wants to see, paste or send the chart**: `format="png"` (or `"both"` to keep the vector `plot.svg` as well). The default `format="svg"` is only for a client that renders SVG. The result gives the PNG path in `data.png_path` (also `artifacts[]`, `format: "png"`, file `plot.png`) and its size in `data.png_width` / `data.png_height` (1600 px wide, the aspect of `width` x `height`). Hand over like this:
 
-Report: chart and file path; source tool and columns; scales, ranges, labels; checks (points drawn, ranges, extremes vs the source tool, warnings); limits (picture only, data not checked, unreviewed).
+1. **Give the full `data.png_path`**, copied exactly, as plain text and say it is a PNG they can paste into slides, a report or an email. If they name a folder or file name and you have no file tool, say that the file stays at that path and they can copy it.
+2. **Say in words what the picture shows**, from the tool's numbers (`data.series[i]`, `data.panels[k].axes`, `data.histogram`, warnings): title, both axes with units and ranges, each curve with its start, end and peak or crossing values, reference lines and the marked point, anything clipped. The person must be able to use the chart even if the file never opens.
+3. **Never** hand over only an SVG path ("open the SVG file") or `svg_inline` as the delivery, and never write chart code, a hand-made SVG or an HTML page to get a picture: the tool makes it.
+
+If the result has `data.png_path` null and a warning that no PNG was written (`engine.unavailable`), the png extra is missing: say so, quote the install command from the warning (`uv sync --extra png`), still give the SVG path and the written description, and offer to redraw once it is installed. A PNG uses the light colours for `theme="auto"`; use `theme="print"` for black-and-white reports. Text outside Latin, Greek and the usual symbols draws as `?` (the warning counts them); Chinese, Japanese and Korean text depends on a CJK font on the machine.
+
+Describe the chart by its numbers and settings, never by visual impressions you cannot have.
+
+Report: chart and PNG path; source tool and columns; scales, ranges, labels; checks (points drawn, ranges, extremes vs the source tool, warnings); limits (picture only, data not checked, unreviewed).

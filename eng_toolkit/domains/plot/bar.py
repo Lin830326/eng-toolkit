@@ -47,7 +47,7 @@ from eng_toolkit.domains.plot._common import (
 )
 from eng_toolkit.domains.plot._axes import format_value
 from eng_toolkit.domains.plot._data import CsvTable, Series, cell_pointer, check_one_source, csv_series, display, inline_series, numeric_cells
-from eng_toolkit.domains.plot._output import finish
+from eng_toolkit.domains.plot._output import FORMAT_TEXT, FORMATS, finish, wants_png
 from eng_toolkit.domains.plot._server import server
 from eng_toolkit.domains.plot._svg import DASHES, Canvas, num, series_style, text_width
 from eng_toolkit.domains.plot.xy import THEME_NAMES
@@ -83,6 +83,9 @@ def _bin_edges(raw: object) -> np.ndarray | None:
     return edges
 
 
+LABEL_DIGITS = (4, 3, 2)  # significant digits the value labels of a chart try, most first; a label that still does not fit is written vertically
+
+
 def _fmt(v: float) -> str:
     """A bar value label: exact integers below 1e9, plain decimals with 4 significant digits for 1e-4 <= |v| < 1e9, else 1.235e-5."""
     return format_value(v, 4)
@@ -93,7 +96,8 @@ def _fmt(v: float) -> str:
     description=(
         "Draw a bar chart (categories x up to 6 series, grouped or stacked, optional error bars and value labels) or a histogram "
         "of one column (2..200 bins or explicit edges; counts, density or cumulative) as a deterministic SVG plus plot_data.json "
-        "with the bin edges and counts. Data: a CSV with a header row or inline JSON series."
+        "with the bin edges and counts; format=png (or both) also writes plot.png, a 1600 px wide picture to paste into slides and "
+        "reports (data.png_path; needs the png extra). Data: a CSV with a header row or inline JSON series."
     ),
 )
 def bar(
@@ -111,18 +115,19 @@ def bar(
     title: Annotated[str, Field(description="Chart title, plain text <= 120 characters, e.g. 'Cycle ranges'; blank = none.")] = "",
     x_label: Annotated[str, Field(description="x axis title with unit, plain text <= 120 characters, e.g. 'Stress range (MPa)'.")] = "",
     y_label: Annotated[str, Field(description="y axis title with unit, plain text <= 120 characters, e.g. 'Cycles'.")] = "",
-    y_range: Annotated[str, Field(description="Fixed y axis 'min,max', e.g. '0,50'; blank = automatic from 0 with nice ticks.")] = "",
+    y_range: Annotated[str, Field(description="Fixed y axis 'min,max': plain numbers in the axis unit, no unit text, e.g. '0,50' (not '0,50 kN'); blank = automatic from 0.")] = "",
     legend: Annotated[str, Field(description="auto (2+ series), off, top_right, top_left, bottom_right, bottom_left or right (outside the plot).")] = "auto",
     grid: Annotated[bool, Field(description="true draws horizontal grid lines at the y ticks; false draws none.")] = True,
     width: Annotated[int, Field(description="SVG width in px, 200..2400, e.g. 800.")] = 800,
     height: Annotated[int, Field(description="SVG height in px, 200..2400, e.g. 450.")] = 450,
     theme: Annotated[str, Field(description="auto (follows the viewer's light/dark), light, dark, or print (black and grey).")] = "auto",
+    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = "svg",
 ) -> ToolResult:
     inputs = {
         "mode": mode, "data_file": data_file, "series": record_text(series), "x_column": x_column, "y_columns": y_columns, "err_columns": err_columns,
         "stacking": stacking, "value_labels": value_labels, "bins": bins, "bin_edges": record_text(bin_edges), "histogram": histogram,
         "title": record_text(title), "x_label": record_text(x_label), "y_label": record_text(y_label), "y_range": y_range, "legend": legend,
-        "grid": grid, "width": width, "height": height, "theme": theme,
+        "grid": grid, "width": width, "height": height, "theme": theme, "format": format,
     }
 
     def compute(handle: JobHandle) -> Computed:
@@ -133,6 +138,7 @@ def bar(
         hist_mode = choice(histogram, "histogram", ("counts", "density", "cumulative"))
         leg = choice(legend, "legend", LEGENDS)
         th = choice(theme, "theme", THEME_NAMES)
+        fmt = choice(format, "format", FORMATS)
         w, h = whole(width, "width", *SIZE_RANGE), whole(height, "height", *SIZE_RANGE)
         n_bins = whole(bins, "bins", 0, BINS_RANGE[1])
         if n_bins == 1:
@@ -159,9 +165,9 @@ def bar(
                 fail("err_columns" if source == "csv" else "series", "error bars cannot be drawn on stacked bars; use stacking grouped")
         spec["source_param"] = "data_file" if source == "csv" else "series"
         svg, data, drawn, zero_height = _render(spec, m, stack, vlabels, chart_grid, leg, th, w, h, labels, yr, notes)
-        return finish(handle, svg, data, notes, {"bars_drawn": drawn, "zero_height_bars": zero_height}, "bars_drawn")
+        return finish(handle, svg, data, notes, {"bars_drawn": drawn, "zero_height_bars": zero_height}, "bars_drawn", fmt)
 
-    return run("plot_bar", inputs, compute)
+    return run("plot_bar", inputs, compute, engines=("pypdfium2",) if wants_png(format) else ())
 
 
 # ----------------------------------------------------------------------------------------------- data
@@ -325,7 +331,7 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
     base = ya.px(0.0) if ya.contains(0.0) else (ya.p0 if ya.lo > 0 else ya.p1)
 
     rects: list[tuple[float, float, float, float, int, float]] = []  # x, y, w, h, series index, value
-    label_jobs: list[tuple[float, float, float, str]] = []  # x centre, value y px, slot width, text
+    label_jobs: list[tuple[float, float, float, float]] = []  # x centre, value y px, slot width, value
     err_paths: list[str] = []
     if hist:
         xa.set_pixels(left, plot_right)
@@ -334,7 +340,7 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
             x0, x1 = xa.px(float(edges[i])), xa.px(float(edges[i + 1]))
             yv = ya.px(v)
             rects.append((x0, min(yv, base), x1 - x0, abs(yv - base), 0, v))
-            label_jobs.append(((x0 + x1) / 2, yv, x1 - x0, _fmt(v)))
+            label_jobs.append(((x0 + x1) / 2, yv, x1 - x0, v))
     else:
         n, m = len(cats), len(series_list)
         band = pw / n
@@ -356,7 +362,7 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
                 else:
                     y0, y1 = base, ya.px(v)
                     tip = v + (float(s.err[i]) if s.err is not None else 0.0) * (1 if v >= 0 else -1)
-                    label_jobs.append((x0 + bw / 2, ya.px(tip), bw, _fmt(v)))
+                    label_jobs.append((x0 + bw / 2, ya.px(tip), bw, v))
                     if s.err is not None and s.err[i] > 0:
                         e = float(s.err[i])
                         cx, cw = x0 + bw / 2, min(bw * 0.5, 10.0) / 2
@@ -367,7 +373,7 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
             totals = np.sum([s.y for s in series_list], axis=0)
             for i, t in enumerate(totals.tolist()):
                 ytop = ya.px(pos_top[i]) if t >= 0 else ya.px(neg_bot[i])
-                label_jobs.append((left + (i + 0.5) * band, ytop, group, _fmt(t)))
+                label_jobs.append((left + (i + 0.5) * band, ytop, group, t))
 
     # ---------------------------------------------------------------- SVG
     # the id prefix covers everything that defines the drawing: options, labels, categories, names, values, errors, bin edges
@@ -428,15 +434,26 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
         cv.el("line", [("x1", num(left)), ("y1", num(base)), ("x2", num(plot_right)), ("y2", num(base)), ("stroke-width", "1.25")], stroke="fg")
     skipped = 0
     if vlabels:
-        for cx, yv, slot, text in label_jobs:
-            if text_width(text, VALUE_SIZE) > slot + 6:
-                skipped += 1
+        vertical = 0
+        # one precision for the whole chart: the most digits at which every label fits its bar (else the fewest, and the rest go vertical)
+        digits = next((d for d in LABEL_DIGITS if all(text_width(format_value(v, d), VALUE_SIZE) <= slot + 6 for _, _, slot, v in label_jobs)), LABEL_DIGITS[-1])
+        for cx, yv, slot, value in label_jobs:
+            above = yv < base or (yv == base and value >= 0)
+            text = format_value(value, digits)
+            if text_width(text, VALUE_SIZE) <= slot + 6:
+                ty = yv - 4 if above else yv + VALUE_SIZE + 2
+                cv.text(cx, min(max(ty, top + VALUE_SIZE), bottom - 2), text, size=VALUE_SIZE, anchor="middle")
                 continue
-            above = yv < base or (yv == base and not text.startswith("-"))
-            ty = yv - 4 if above else yv + VALUE_SIZE + 2
-            cv.text(cx, min(max(ty, top + VALUE_SIZE), bottom - 2), text, size=VALUE_SIZE, anchor="middle")
+            room = (yv - 4 - top) if above else (bottom - 4 - yv)
+            if VALUE_SIZE <= slot + 6 and text_width(text, VALUE_SIZE) <= room:  # written upwards above the bar, downwards below it
+                cv.text(cx + VALUE_SIZE * 0.35, yv - 4 if above else yv + 4, text, size=VALUE_SIZE, anchor="start" if above else "end", rotate=-90)
+                vertical += 1
+            else:
+                skipped += 1
+        if digits != LABEL_DIGITS[0] or vertical:
+            notes.append(f"value labels have {digits} significant digits (4 do not fit the bars)" + (f" and {vertical} are written vertically" if vertical else ""))
         if skipped:
-            notes.append(f"{skipped} value label(s) were left out because the bar is narrower than the label")
+            notes.append(f"{skipped} value label(s) were left out because they do not fit the bar or the room above or below it; the values are in data.series")
     cv.end("g")
     cv.el("rect", [("x", num(left)), ("y", num(top)), ("width", num(pw)), ("height", num(ph)), ("stroke-width", "1")], fill="none", stroke="frame")
     ticks = [f"M{num(left)} {num(ya.px(t))}h{-TICK_LEN}" for t in ya.ticks]

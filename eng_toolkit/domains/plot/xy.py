@@ -21,13 +21,14 @@ from eng_toolkit.domains.plot._common import (
     name_list,
     range_param,
     record_text,
+    point_param,
     ref_lines,
     run,
     text_param,
     whole,
 )
 from eng_toolkit.domains.plot._data import check_one_source, csv_series, inline_series
-from eng_toolkit.domains.plot._output import finish
+from eng_toolkit.domains.plot._output import FORMAT_TEXT, FORMATS, finish, wants_png
 from eng_toolkit.domains.plot._server import server
 
 KINDS = ("line", "scatter", "step", "stem")
@@ -52,9 +53,10 @@ def parse_kinds(raw: object) -> list[str]:
     name="xy",
     description=(
         "Draw a line, scatter, step or stem chart of up to 20 series as a deterministic, self-contained SVG (plot.svg; also inline "
-        "in data.svg_inline when <= 150 kB) plus plot_data.json (axes, ticks, data-to-pixel mapping, decimation). Data: a CSV with "
-        "a header row (e.g. another tool's CSV artifact) or inline JSON series. Log axes, fixed ranges, a right axis, reference "
-        "lines, a shaded band, fill to zero, light/dark/print themes. Series above 4 points per pixel are min/max decimated (extrema kept)."
+        "in data.svg_inline when <= 150 kB) plus plot_data.json (axes, ticks, data-to-pixel mapping, decimation). format=png (or "
+        "both) also writes plot.png, 1600 px wide, to paste into slides and reports (data.png_path; needs the png extra). Data: a "
+        "CSV with a header row (e.g. another tool's CSV artifact) or inline JSON series. Log axes, fixed ranges, a right axis, "
+        "reference lines, a shaded band, one marked point, fill to zero, light/dark/print themes. Dense series are min/max decimated."
     ),
 )
 def xy(
@@ -72,22 +74,25 @@ def xy(
     y2_label: Annotated[str, Field(description="Right axis title including its unit, e.g. 'Phase (deg)'; used together with y2_columns.")] = "",
     x_scale: Annotated[str, Field(description="linear or log; a log x axis refuses zero or negative x values (nothing is dropped silently).")] = "linear",
     y_scale: Annotated[str, Field(description="linear or log for the left axis; log refuses zero or negative y values.")] = "linear",
-    x_range: Annotated[str, Field(description="Fixed x axis 'min,max', e.g. '0,4000'; blank = automatic with nice padded ticks.")] = "",
-    y_range: Annotated[str, Field(description="Fixed left-axis 'min,max', e.g. '-80,5'; blank = automatic. Points outside are clipped and counted.")] = "",
+    x_range: Annotated[str, Field(description="Fixed x axis 'min,max': plain numbers in the axis unit, no unit text, e.g. '0,4000' (not '0,10 s'); blank = automatic.")] = "",
+    y_range: Annotated[str, Field(description="Fixed left-axis 'min,max': plain numbers in the axis unit, no unit text, e.g. '-80,5'; blank = automatic; outside points are clipped.")] = "",
     hlines: Annotated[str, Field(description="Horizontal reference lines 'value,label;...' in left-axis units, e.g. '250,yield;-250,'; at most 10.")] = "",
     vlines: Annotated[str, Field(description="Vertical reference lines 'value,label;...' in x units, e.g. '1000,cutoff'; at most 10.")] = "",
     band: Annotated[str, Field(description="One shaded horizontal band 'lo,hi,label' in left-axis units, e.g. '-100,100,allowable'; blank = none.")] = "",
+    marker: Annotated[str, Field(description="Optional: ring one point 'x,y,label' in x and left-axis units, e.g. '1200,45.5,duty point' (operating point); blank = none.")] = "",
     legend: Annotated[str, Field(description="auto (2+ series, emptiest corner), off, top_right, top_left, bottom_right, bottom_left or right (outside).")] = "auto",
     grid: Annotated[bool, Field(description="true draws grid lines at the major ticks (and log minor ticks); false draws none.")] = True,
     width: Annotated[int, Field(description="SVG width in px, 200..2400, e.g. 800.")] = 800,
     height: Annotated[int, Field(description="SVG height in px, 200..2400, e.g. 500.")] = 500,
     theme: Annotated[str, Field(description="auto (follows the viewer's light/dark setting), light, dark, or print (black and grey with dash patterns).")] = "auto",
+    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = "svg",
 ) -> ToolResult:
     inputs = {
         "data_file": data_file, "series": record_text(series), "x_column": x_column, "y_columns": y_columns, "y2_columns": y2_columns, "kind": kind,
         "markers": markers, "fill": fill, "title": record_text(title), "x_label": record_text(x_label), "y_label": record_text(y_label),
         "y2_label": record_text(y2_label), "x_scale": x_scale, "y_scale": y_scale, "x_range": x_range, "y_range": y_range, "hlines": record_text(hlines),
-        "vlines": record_text(vlines), "band": record_text(band), "legend": legend, "grid": grid, "width": width, "height": height, "theme": theme,
+        "vlines": record_text(vlines), "band": record_text(band), "marker": record_text(marker), "legend": legend, "grid": grid, "width": width, "height": height,
+        "theme": theme, "format": format,
     }
 
     def compute(handle: JobHandle) -> Computed:
@@ -104,6 +109,8 @@ def xy(
         xr, yr = range_param(x_range, "x_range"), range_param(y_range, "y_range")
         h_lines, v_lines = ref_lines(hlines, "hlines", notes), ref_lines(vlines, "vlines", notes)
         bd = band_param(band, "band", notes)
+        pt = point_param(marker, "marker", notes)
+        fmt = choice(format, "format", FORMATS)
         xcol = column_param(x_column, "x_column")
         ycols, y2cols = name_list(y_columns, "y_columns"), name_list(y2_columns, "y2_columns")
         if set(ycols) & set(y2cols):
@@ -133,14 +140,14 @@ def xy(
             notes.append("the right axis is always linear")
         chart = Chart(
             tool="plot_xy", width=w, height=h, theme=th, kind=kinds[0], markers=chart_markers, fill=fill_mode, grid=chart_grid, legend=leg,
-            title=labels["title"], x_label=labels["x_label"], x_scale=xs, x_range=xr, vlines=v_lines,
+            title=labels["title"], x_label=labels["x_label"], x_scale=xs, x_range=xr, vlines=v_lines, point=pt,
             panels=[Panel(series=loaded, y_label=labels["y_label"], y_scale=ys, y_range=yr, y2_label=labels["y2_label"], hlines=h_lines, band=bd)],
         )
         out = render_xy(chart)
         return finish(handle, out.svg, out.data, notes + out.warnings,
-                      {"points_drawn": out.points_drawn, "points_in": out.points_in, "series": len(loaded)}, "points_drawn")
+                      {"points_drawn": out.points_drawn, "points_in": out.points_in, "series": len(loaded)}, "points_drawn", fmt)
 
-    return run("plot_xy", inputs, compute)
+    return run("plot_xy", inputs, compute, engines=("pypdfium2",) if wants_png(format) else ())
 
 
 __all__ = ["xy"]

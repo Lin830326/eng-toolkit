@@ -186,7 +186,13 @@ def number_token(token: str, param: str, what: str) -> float:
     """One strict decimal number from text; NaN, inf and non-numbers are ``input.invalid``, |x| > 1e100 is ``input.out_of_range``."""
     t = token.strip()
     if len(t) > MAX_CELL_CHARS or NUMBER.fullmatch(t) is None:
-        fail(param, f"{what}: {short(t, 30)} is not a plain decimal number (digits, optional sign, point and exponent; no nan, inf, hex or underscores)")
+        lead = NUMBER.match(t) if len(t) <= MAX_CELL_CHARS else None
+        unit_hint = (
+            f" It looks like a number followed by the unit text {short(t[lead.end():].strip(), 12)}: this value is a plain number in the unit of the axis "
+            "(for example '0,3600' for seconds); write the unit in the axis label instead"
+            if lead is not None and t[lead.end():].strip().isalpha() else ""
+        )
+        fail(param, f"{what}: {short(t, 30)} is not a plain decimal number (digits, optional sign, point and exponent; no nan, inf, hex or underscores).{unit_hint}")
     value = float(t)
     if not math.isfinite(value) or abs(value) > VALUE_ABS_MAX:
         fail(param, f"{what}: {short(t, 30)} is beyond the supported magnitude {VALUE_ABS_MAX:g}", "input.out_of_range", limit=VALUE_ABS_MAX)
@@ -246,6 +252,19 @@ def band_param(raw: Any, name: str, notes: list[str]) -> tuple[float, float, str
     if not lo < hi:
         fail(name, f"'{name}': lo must be below hi, got {lo:g},{hi:g}")
     return lo, hi, text_param(parts[2] if len(parts) == 3 else "", name, notes=notes)
+
+
+def point_param(raw: Any, name: str, notes: list[str]) -> tuple[float, float, str] | None:
+    """One marked point ``x,y,label`` (label optional, may contain commas); None when blank."""
+    records = split_records(raw, name, 1)
+    if not records:
+        return None
+    parts = records[0].split(",", 2)
+    if len(parts) < 2:
+        fail(name, f"'{name}' must be 'x,y,label' (the label is optional), got {short(records[0])}")
+    x = number_token(parts[0], name, f"'{name}' x")
+    y = number_token(parts[1], name, f"'{name}' y")
+    return x, y, text_param(parts[2] if len(parts) == 3 else "", name, notes=notes)
 
 
 def column_param(raw: Any, name: str) -> str:
@@ -313,7 +332,7 @@ def pointer_details(details: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
-def run(tool_name: str, inputs: dict[str, Any], compute) -> ToolResult:
+def run(tool_name: str, inputs: dict[str, Any], compute, *, engines: tuple[str, ...] = ()) -> ToolResult:
     """Run a tool body under the runner: refusals get JSON-pointer params, numerical trouble is ``input.out_of_range``."""
 
     def guarded(handle: JobHandle) -> Computed:
@@ -330,13 +349,13 @@ def run(tool_name: str, inputs: dict[str, Any], compute) -> ToolResult:
         finally:
             _REPLACED.reset(token)
 
-    return run_tool(tool_name=tool_name, engine=ENGINE, version=__version__, inputs=inputs, compute=guarded, engines=("numpy",), standing_warnings=STANDING)
+    return run_tool(tool_name=tool_name, engine=ENGINE, version=__version__, inputs=inputs, compute=guarded, engines=("numpy", *engines), standing_warnings=STANDING)
 
 
 __all__ = [
     "BINS_RANGE", "Computed", "DECIMATE_PER_PX", "INLINE_SVG_MAX", "JobHandle", "MAX_BAR_SERIES", "MAX_BLANK_LINES", "MAX_CATEGORIES", "MAX_CELL_CHARS",
     "MAX_COLUMNS", "MAX_CSV_BYTES", "MAX_HEADER_CHARS", "MAX_LABEL", "MAX_PATH", "MAX_POINTS", "MAX_REF_LINES", "MAX_SERIES",
     "MAX_SERIES_TEXT", "NUMBER", "PANELS_RANGE", "SIZE_RANGE", "STANDING", "VALUE_ABS_MAX", "VALUE_ABS_MIN", "band_param", "choice",
-    "clean", "clean_text", "column_param", "fail", "flag", "name_list", "number_token", "pointer_token", "range_param", "record_text", "ref_lines",
+    "clean", "clean_text", "column_param", "fail", "flag", "name_list", "number_token", "point_param", "pointer_token", "range_param", "record_text", "ref_lines",
     "replaced_text_warning", "run", "scrub", "scrub_text", "short", "split_records", "text_param", "whole",
 ]

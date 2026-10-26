@@ -13,7 +13,7 @@ server = FastMCP(
         "another eng-toolkit tool wrote) named in 'data_file', or inline JSON in 'series': "
         '[{"name": "a", "x": [...], "y": [...]}]. At most 20 series of 200000 points each. Labels are plain text (at most 120 '
         "characters, escaped); write the unit in the label yourself, e.g. 'Frequency (Hz)'. The SVG is returned inline when it "
-        "is at most 150 kB and always written as plot.svg. Nothing you send is executed."
+        "is at most 150 kB and written as plot.svg; format=png (or both) also writes plot.png, 1600 px wide, whose path is data.png_path (needs the png extra). Nothing you send is executed."
     ),
 )
 
