@@ -83,7 +83,11 @@ CONVENTIONS: dict[str, str] = {
         "between the axes as lines, 0 to 90 degrees"
     ),
     "thickness": (
-        "distance between the first two exact hits of the ray from the point along the axis; start outside the part"
+        "the material the ray from the point along the axis crosses, between exact hits. A start point outside the part: "
+        "the first wall the ray meets. A point inside the material: the wall that contains it, from the face behind it "
+        "to the face ahead of it along the axis (never the gap after it). A point on a face: the wall that starts there, "
+        "ahead of it, or behind it when the ray leaves the part. The query says which (start) and where the wall begins "
+        "and ends (entry_mm, exit_mm)"
     ),
 }
 
@@ -392,15 +396,31 @@ def measure(
                     point = refs[0]
                     direction = AXIS_VECTORS[query.axis]
                     entry["axis"], entry["direction"] = query.axis, list(direction)
-                    mm = brep.wall_thickness(solid, point.xyz_mm, direction)
-                    if mm is None:
+                    segment = brep.wall_segment(solid, point.xyz_mm, direction)
+                    if segment is None:
                         entry["found"] = False
                         warnings.append(
                             f"q{n}: the ray from {_list(point.xyz_mm)} mm along {query.axis} meets the part in fewer than "
-                            "two places, so there is no wall thickness; start the ray outside the part, facing the wall"
+                            "two places and crosses no material, so there is no wall thickness; start the ray outside the "
+                            "part, facing the wall, or inside the wall"
                         )
                     else:
+                        mm = segment.thickness_mm
                         values[f"q{n}"], entry["value"], entry["unit"] = length(mm), mm * per_mm, unit
+                        entry["start"] = segment.start
+                        entry["entry_mm"], entry["exit_mm"] = _list(segment.entry_mm), _list(segment.exit_mm)
+                        if segment.start == "inside":
+                            warnings.append(
+                                f"q{n}: the start point {_list(point.xyz_mm)} mm is inside the material, so the thickness "
+                                f"{mm:.6g} mm is the wall that contains it along {query.axis}, from {_list(segment.entry_mm)} "
+                                f"to {_list(segment.exit_mm)} mm, not the distance to the next face"
+                            )
+                        elif segment.behind:
+                            warnings.append(
+                                f"q{n}: the start point {_list(point.xyz_mm)} mm is on a face and the ray along "
+                                f"{query.axis} leaves the part there, so the thickness {mm:.6g} mm is the wall behind the "
+                                f"point, from {_list(segment.entry_mm)} to {_list(segment.exit_mm)} mm"
+                            )
             except ToolFailure as exc:
                 raise ToolFailure(
                     exc.family,
@@ -498,7 +518,11 @@ DFM_CONVENTIONS: dict[str, str] = {
         "The default limits are this toolkit's own rules of thumb; they are not taken from any standard or handbook, and no finding "
         "says a part conforms to one. Set limits to your shop's values"
     ),
-    "severity": "error = an exact rule is violated; warn = a heuristic rule is violated; info = a measured fact, no limit applied",
+    "severity": (
+        "error = an exact rule is violated; warn = a heuristic rule is violated; info = a measured fact, no limit applied. "
+        "Two heuristic findings are errors because every other sheet rule depends on them: sheet.thickness when no sheet "
+        "thickness exists, and sheet.thickness_uniform. Every other heuristic finding is a warn (or info)"
+    ),
 }
 
 CHECK_DFM_DESCRIPTION = (
@@ -509,7 +533,8 @@ CHECK_DFM_DESCRIPTION = (
     "Each finding has a rule id, severity (error, warn, info), the measured value and the limit, face and edge ids, a point "
     "in model coordinates and whether the check is 'exact' or 'heuristic'; the result also counts findings by severity and "
     "lists the checks that were NOT performed. 'limits' is an optional JSON object that overrides the defaults, e.g. "
-    '{"min_wall": "1 mm", "tool_radius": "2 mm"} for cnc_milling (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["cnc_milling"]) + "), or "
+    '{"min_wall": "1 mm", "tool_radius": "1.5 mm"} for cnc_milling, where tool_radius is the end mill RADIUS, half its '
+    "diameter (a 3 mm end mill is '1.5 mm') (keys: " + ", ".join(dfm.LIMIT_DEFAULTS["cnc_milling"]) + "), or "
     '{"min_bend_radius_ratio": 1.5} for sheet_metal (keys: ' + ", ".join(dfm.LIMIT_DEFAULTS["sheet_metal"]) + "). "
     "The defaults are the toolkit's own rules of thumb, not a standard; a bad limit is refused at its own key "
     "(details.param '/limits/<key>'). A file that is not made of closed solids only (a shell, a solid whose shell is open, "
@@ -529,7 +554,9 @@ def check_dfm(
         Field(
             description=(
                 "Optional JSON object of limits overriding the defaults, lengths as strings with a unit: "
-                '{"min_wall": "1 mm", "tool_radius": "2 mm", "max_hole_depth_ratio": 8}. Unknown keys are refused. Empty = defaults'
+                '{"min_wall": "1 mm", "tool_radius": "1.5 mm", "max_hole_depth_ratio": 8}. tool_radius is the end mill '
+                "RADIUS, not its diameter: a 3 mm end mill is \"1.5 mm\". near_tangent_deg (default 5, degrees) is the "
+                "smallest turn between two faces read as a corner. Unknown keys are refused. Empty = defaults"
             )
         ),
     ] = "",
@@ -637,7 +664,7 @@ def check_dfm(
             value = limit_mm[key]
             limit_report[key] = {
                 "value": float(f"{value * per_mm:.12g}") if kind == "length" else value,
-                "unit": unit if kind == "length" else kind,
+                "unit": unit if kind == "length" else "degree" if kind == "angle" else kind,
                 "source": "default" if key in used else "caller",
                 "meaning": description,
             }

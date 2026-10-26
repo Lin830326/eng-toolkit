@@ -43,30 +43,46 @@ AXES: dict[str, tuple[float, float, float]] = {
     "+z": (0.0, 0.0, 1.0),
     "-z": (0.0, 0.0, -1.0),
 }
-TOLERANCE_MM = 1e-6  # lengths closer than this are equal: used for "exactly the sheet thickness" and for limit comparisons
+TOLERANCE_MM = 1e-6  # lengths closer than this are equal: used for limit comparisons
 PARALLEL = 1e-6  # |sin| of the angle below which two directions count as parallel
 FULL_TURN = 2.0 * math.pi - 1e-6
 MAX_FACES = 2500  # kept unchanged; performance verified through 2006 faces (see docs/geometry-dfm/design.md)
 LIMIT_MAX_LENGTH_MM = 1e5  # a limit above 100 m is not a manufacturing limit; refusing it also keeps the arithmetic finite
 LIMIT_MAX_RATIO = 1e6
 LIMIT_MAX_COUNT = 6  # there are six axis directions
+LIMIT_MAX_ANGLE_DEG = 90.0  # near_tangent_deg: a turn of more than 90 degrees is a corner by any reading
 WALL_SEARCH_FACTOR = 5.0  # walls are searched up to this multiple of the minimum-wall limit
+WALL_REFINE_FACTOR = 2.0  # ray-sampled walls up to this multiple of min_wall get an exact closest distance
+SLOT_WALL_SIN = 0.1  # planar faces whose normal is this close to perpendicular to the tool axis are slot walls (6 degrees)
 MAX_FACE_IDS_LISTED = 50  # face ids a finding lists in geometry_check_dfm's output (the full list stays in-process)
 MAX_LIMITS_CHARS = 4096  # the limits JSON text
 
-# key -> (kind, default, description); kind "length" takes a string with a unit, "ratio" and "count" a plain number
+# key -> (kind, default, description); kind "length" takes a string with a unit, "ratio", "count" and "angle" (degrees)
+# a plain number
+NEAR_TANGENT = (
+    "angle",
+    5.0,
+    "degrees: a concave edge whose faces turn by less than this (material angle between 180 and 180 + this) is a "
+    "near-tangent kink, not a corner, and is counted, not reported",
+)
 LIMIT_DEFAULTS: dict[str, dict[str, tuple[str, Any, str]]] = {
     "cnc_milling": {
         "min_wall": ("length", "0.8 mm", "thinnest wall or floor between two faces with material between them"),
-        "tool_radius": ("length", "3 mm", "radius of the smallest end mill that must reach every internal corner"),
+        "tool_radius": (
+            "length",
+            "3 mm",
+            "RADIUS (not the diameter) of the smallest end mill that must reach every internal corner: a 6 mm end mill is '3 mm'",
+        ),
         "max_hole_depth_ratio": ("ratio", 10.0, "hole depth divided by diameter"),
         "min_hole_diameter": ("length", "1 mm", "smallest hole diameter"),
         "min_access_directions": ("count", 1, "planar faces reachable from fewer of the six axis directions are reported (heuristic)"),
+        "near_tangent_deg": NEAR_TANGENT,
     },
     "sheet_metal": {
         "max_thickness": ("length", "10 mm", "largest sheet thickness searched for"),
         "min_bend_radius_ratio": ("ratio", 1.0, "inner bend radius divided by sheet thickness"),
         "min_hole_edge_ratio": ("ratio", 1.5, "distance from a hole's wall to the nearest edge or cutout, divided by sheet thickness"),
+        "near_tangent_deg": NEAR_TANGENT,
     },
 }
 
@@ -74,7 +90,8 @@ NOT_PERFORMED: dict[str, tuple[str, ...]] = {
     "cnc_milling": (
         "corner radius at the bottom of a pocket (floor to wall) and pocket depth against tool diameter",
         "undercuts, T-slots and tool length: only a one-sample-point reach test per planar face is made (cnc.tool_access, heuristic)",
-        "walls between faces that are not parallel planes or coaxial cylinders (cones, tapered or free-form walls)",
+        "a thin spot between the sample points of walls that are not parallel planes or coaxial cylinders (tapered, conical "
+        "or free-form walls, a hole near a face): those are measured along the inward normal from up to 12 points per face",
         "walls thinner than the search range of 5 times min_wall are the only ones looked for",
         "threads, counterbores and countersinks (a counterbore is listed as a separate blind hole), drill-point cones",
         "tolerances, surface finish, fixturing and set-ups, material, tool deflection, cost",
@@ -169,7 +186,7 @@ def _parse_limit(key: str, kind: str, value: Any) -> float:
         if millimetres <= 0.0:
             raise _limit_error("input.invalid", key, f"must be > 0, got {_shown(value)!r}", received=_shown(value))
         return millimetres
-    ceiling = float(LIMIT_MAX_COUNT if kind == "count" else LIMIT_MAX_RATIO)
+    ceiling = float({"count": LIMIT_MAX_COUNT, "angle": LIMIT_MAX_ANGLE_DEG}.get(kind, LIMIT_MAX_RATIO))
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         raise _limit_error("input.invalid", key, "must be a number")
     try:
@@ -281,6 +298,26 @@ def _hole_face_ids(inv: brep.Inventory) -> set[int]:
     return {face for hole in inv.holes for face in hole.face_ids}
 
 
+def near_tangent_edge(edge: brep.EdgeFact, threshold_deg: float) -> bool:
+    """A concave edge whose two faces turn by less than ``threshold_deg``: a near-tangent kink (a tapered fin flank meeting
+    its tip arc at 182 degrees), not a corner.  A round tool leaves only :func:`uncut_depth_mm` there."""
+    return edge.material_angle_deg - 180.0 < threshold_deg
+
+
+def uncut_depth_mm(material_angle_deg: float, tool_radius_mm: float) -> float:
+    """Material a round tool of ``tool_radius_mm`` leaves in a sharp concave corner, from the corner along its bisector:
+    r (1 / sin(a / 2) - 1) with a = 360 - material angle, the angle of the air.  0.414 r in a 90 degree pocket corner,
+    2e-4 mm for a 1.5 mm tool at a 2 degree kink."""
+    half_air = math.radians(min(180.0, max(1e-6, 360.0 - material_angle_deg))) / 2.0  # finite for a 360 degree slit too
+    return float(f"{tool_radius_mm * (1.0 / math.sin(half_air) - 1.0):.9g}")
+
+
+def _geometric_less(measured: float, limit: float, scale: float) -> bool:
+    """``measured`` below ``limit`` by more than the geometric tolerance of ``scale`` (:func:`brep.coaxial_tolerance_mm`):
+    a bend radius drawn through rounded points (2.99993 mm for 3) is not below a 3 mm limit."""
+    return measured < limit - brep.coaxial_tolerance_mm(scale)
+
+
 # --------------------------------------------------------------------------- cnc_milling
 
 
@@ -297,11 +334,14 @@ def check_cnc_milling(
     edges = brep.edge_facts(solid, deadline=deadline)
     cylinders = brep.cylinder_facts(solid, inv, deadline=deadline)
     in_holes = _hole_face_ids(inv)
-    sharp = fillets = 0
+    sharp = fillets = near_tangent = 0
     for edge in edges:
         if deadline is not None:
             deadline("rules")
         if edge.convexity == "concave" and edge.kind == "line" and _parallel(edge.direction, axis):
+            if near_tangent_edge(edge, limits["near_tangent_deg"]):
+                near_tangent += 1
+                continue
             sharp += 1
             findings.append(
                 Finding(
@@ -309,8 +349,9 @@ def check_cnc_milling(
                     severity="error",
                     exact=True,
                     message=(
-                        f"Sharp internal corner along the tool axis (radius 0): an end mill of radius {tool_radius:g} mm "
-                        "cannot cut it square"
+                        f"Sharp internal corner along the tool axis (radius 0, faces turning by "
+                        f"{edge.material_angle_deg - 180.0:.3g} degrees): an end mill of radius {tool_radius:g} mm "
+                        f"cannot cut it square and leaves {uncut_depth_mm(edge.material_angle_deg, tool_radius):.3g} mm of material in it"
                     ),
                     measured=0.0,
                     limit=tool_radius,
@@ -319,7 +360,11 @@ def check_cnc_milling(
                     edge_ids=[edge.id],
                     location_mm=edge.midpoint_mm,
                     basis="concave straight edge between two faces, parallel to the tool axis (exact B-rep topology)",
-                    extra={"material_angle_deg": edge.material_angle_deg, "edge_length_mm": edge.length_mm},
+                    extra={
+                        "material_angle_deg": edge.material_angle_deg,
+                        "edge_length_mm": edge.length_mm,
+                        "uncut_depth_mm": uncut_depth_mm(edge.material_angle_deg, tool_radius),
+                    },
                 )
             )
     for cyl in cylinders:
@@ -418,10 +463,84 @@ def check_cnc_milling(
                 extra={"face_area_mm2": pair.face_area_mm2, "kind": pair.kind},
             )
         )
-    smallest = min((p.gap_mm for p in search_result.pairs), default=None)
+    if near_tangent:
+        warnings.append(
+            f"{near_tangent} concave edges along the tool axis whose faces turn by less than near_tangent_deg "
+            f"({limits['near_tangent_deg']:g} degrees) were not reported as sharp corners: they are near-tangent kinks "
+            "(e.g. a tapered flank meeting a tip arc) where an end mill leaves a negligible cusp "
+            "(measurements.near_tangent_edges_skipped)"
+        )
+
+    # walls that are not parallel planes or coaxial cylinders: rays along the inward normal of every other face
+    paired = frozenset(face for p in search_result.pairs for face in p.face_ids)
+    rays = brep.normal_walls(
+        solid,
+        inv,
+        max_gap_mm=search,
+        refine_below_mm=min(search, WALL_REFINE_FACTOR * limits["min_wall"]),
+        skip_faces=paired,
+        deadline=deadline,
+    )
+    if not rays.complete:
+        warnings.append(f"The wall rays stopped after {rays.rays} rays; thin walls on the faces not reached may be missing")
+    for wall in sorted(rays.walls, key=lambda w: (w.thickness_mm, w.face_ids)):
+        if deadline is not None:
+            deadline("rules")
+        if not _less(wall.thickness_mm, limits["min_wall"]):
+            continue
+        a, b = wall.face_ids
+        between = f"F{a} ({inv.faces[a - 1].kind})" + (f" and F{b} ({inv.faces[b - 1].kind})" if b != a else " across itself")
+        findings.append(
+            Finding(
+                rule="cnc.min_wall",
+                severity="error" if wall.exact else "warn",
+                exact=wall.exact,
+                message=f"Wall {wall.thickness_mm:g} mm thick between {between}, below {limits['min_wall']:g} mm",
+                measured=wall.thickness_mm,
+                limit=limits["min_wall"],
+                test="thickness >= min_wall",
+                face_ids=sorted({a, b}),
+                location_mm=wall.point_mm,
+                basis=(
+                    "exact closest distance between the two faces (BRepExtrema), normal to both and through the material; "
+                    "the pair was found by rays along the inward normal from sample points"
+                    if wall.exact
+                    else "heuristic: the shortest chord through the material along the inward normal of a face's sample "
+                    "points; the wall may be thinner between the points"
+                ),
+                extra={"kind": "normal_ray", "chord_mm": wall.chord_mm},
+            )
+        )
+    walls_found = [p.gap_mm for p in search_result.pairs] + [w.thickness_mm for w in rays.walls]
+    smallest = min(walls_found, default=None)
+    if smallest is None:
+        warnings.append(
+            f"No wall thinner than the search range of {search:g} mm ({WALL_SEARCH_FACTOR:g} x min_wall) was found: "
+            f"{search_result.tested} parallel face pairs tested and {rays.rays} rays cast along the inward normal of "
+            f"{rays.faces_sampled} faces, so measurements.smallest_wall_mm is null; every wall is thicker than {search:g} mm "
+            "where it was measured"
+        )
+    if rays.faces_without_samples:
+        listed = ", ".join(f"F{i}" for i in rays.faces_without_samples[:20])
+        warnings.append(
+            f"{len(rays.faces_without_samples)} faces could not be sampled for the wall rays (the mesher gave them no "
+            f"triangle: {listed}{' ...' if len(rays.faces_without_samples) > 20 else ''}); walls behind them were not measured"
+        )
 
     # tool access
     access = brep.face_access(solid, inv, AXES, deadline=deadline)
+    slot_walls = [
+        a for a in access
+        if a.clearance_mm is not None and a.normal is not None and abs(float(np.dot(a.normal, axis))) < SLOT_WALL_SIN
+    ]
+    narrowest = min(slot_walls, key=lambda a: (a.clearance_mm, a.face_id), default=None)
+    if narrowest is not None and 2.0 * tool_radius > narrowest.clearance_mm + TOLERANCE_MM:
+        warnings.append(
+            f"tool_radius {tool_radius:g} mm is a {2.0 * tool_radius:g} mm diameter end mill, wider than the narrowest gap "
+            f"measured in front of a wall along the tool axis ({narrowest.clearance_mm:g} mm from F{narrowest.face_id}, one "
+            f"ray along the face normal, heuristic). tool_radius is the RADIUS: if {tool_radius:g} mm is the tool's "
+            f"diameter, pass tool_radius '{tool_radius / 2.0:g} mm'"
+        )
     blocked = [a for a in access if len(a.open_directions) < limits["min_access_directions"]]
     for a in blocked:
         if deadline is not None:
@@ -448,16 +567,23 @@ def check_cnc_milling(
 
     measurements = {
         "sharp_internal_corners": sharp,
+        "near_tangent_edges_skipped": near_tangent,
         "internal_fillets_checked": fillets,
         "holes": len(inv.holes),
         "smallest_wall_mm": smallest,
         "wall_search_range_mm": search,
         "face_pairs_tested": search_result.tested,
+        "wall_rays_cast": rays.rays,
+        "wall_faces_sampled": rays.faces_sampled,
         "planar_faces_reach_tested": len(access),
+        "narrowest_slot_mm": None if narrowest is None else narrowest.clearance_mm,
     }
     checked = [
-        "cnc.internal_corner_radius: concave straight edges and concave cylinders parallel to the tool axis",
-        "cnc.min_wall: parallel planar faces and coaxial cylinders with material between them",
+        "cnc.internal_corner_radius: concave straight edges and concave cylinders parallel to the tool axis; concave edges "
+        f"whose faces turn by less than near_tangent_deg ({limits['near_tangent_deg']:g} degrees) are near-tangent and skipped",
+        "cnc.min_wall: parallel planar faces and coaxial cylinders with material between them (exact), and every other face "
+        "by rays along its inward normal from up to 12 sample points, refined to the exact closest distance where it is "
+        "normal to both faces",
         "cnc.hole_depth_ratio and cnc.min_hole_diameter: every detected round hole",
         "cnc.tool_access: planar faces, one sample point, six axis directions (heuristic)",
     ]
@@ -468,16 +594,103 @@ def check_cnc_milling(
 
 
 def _cluster(pairs: list[brep.FacingPair], inv: brep.Inventory) -> list[tuple[float, float, list[brep.FacingPair]]]:
-    """``(thickness, weight, pairs)`` per thickness; weight is the face area the pairs cover."""
+    """``(thickness, weight, pairs)`` per thickness; weight is the face area the pairs cover.  Gaps within the geometric
+    tolerance of the thickness (:func:`brep.coaxial_tolerance_mm`, 1e-3 of it) are one thickness: a bend whose radii come
+    from rounded points is 3.00007 mm thick in a 3 mm sheet."""
     clusters: list[tuple[float, float, list[brep.FacingPair]]] = []
     for pair in sorted(pairs, key=lambda p: p.gap_mm):
         weight = pair.face_area_mm2 if pair.kind == "plane" else inv.faces[pair.face_ids[0] - 1].area_mm2
-        if clusters and abs(pair.gap_mm - clusters[-1][0]) <= TOLERANCE_MM:
+        if clusters and abs(pair.gap_mm - clusters[-1][0]) <= brep.coaxial_tolerance_mm(clusters[-1][0]):
             gap, total, members = clusters[-1]
             clusters[-1] = (gap, total + weight, members + [pair])
         else:
             clusters.append((pair.gap_mm, weight, [pair]))
     return clusters
+
+
+def _merge_bends(
+    pairs: list[brep.FacingPair], cylinders: dict[int, brep.CylinderFact], tolerance_mm: float
+) -> list[list[brep.FacingPair]]:
+    """The bend cylinder pairs grouped into bends: two pairs are one bend when they share a face (ribs split the inner face
+    of a bend into pieces that keep one outer face), or lie on one axis with the same inner and outer radii (to
+    ``tolerance_mm``)."""
+
+    def same_line(p: brep.FacingPair, q: brep.FacingPair) -> bool:
+        first, second = cylinders.get(p.face_ids[0]), cylinders.get(q.face_ids[0])
+        if first is None or second is None:
+            return False
+        axis = np.array(first.axis)
+        if float(np.linalg.norm(np.cross(axis, np.array(second.axis)))) > PARALLEL:
+            return False
+        offset = np.array(second.start_mm) - np.array(first.start_mm)
+        return float(np.linalg.norm(offset - (offset @ axis) * axis)) <= tolerance_mm
+
+    group = list(range(len(pairs)))
+
+    def root(i: int) -> int:
+        while group[i] != i:
+            group[i] = group[group[i]]
+            i = group[i]
+        return i
+
+    for i, p in enumerate(pairs):
+        for j in range(i + 1, len(pairs)):
+            q = pairs[j]
+            shared = bool(set(p.face_ids) & set(q.face_ids))
+            alike = (
+                abs(float(p.inner_radius_mm) - float(q.inner_radius_mm)) <= tolerance_mm
+                and abs(float(p.outer_radius_mm) - float(q.outer_radius_mm)) <= tolerance_mm
+                and same_line(p, q)
+            )
+            if shared or alike:
+                group[root(j)] = root(i)
+    merged: dict[int, list[brep.FacingPair]] = {}
+    for i, p in enumerate(pairs):
+        merged.setdefault(root(i), []).append(p)
+    return sorted(merged.values(), key=lambda members: min(p.face_ids for p in members))
+
+
+def _outer_corner(a: int, b: int, partners: dict[int, set[int]], neighbours: dict[int, set[int]], convex: set) -> bool:
+    """True when the faces across the sheet from ``a`` and from ``b`` meet at a convex edge, directly or through one face
+    with convex edges to both: the outer corner of a bend.  A rib standing on a plate has none (a joint, not a bend)."""
+    for across_a in partners.get(a, ()):
+        for across_b in partners.get(b, ()):
+            if across_a == across_b:
+                continue
+            if frozenset((across_a, across_b)) in convex:
+                return True
+            for middle in neighbours.get(across_a, set()) & neighbours.get(across_b, set()):
+                if frozenset((across_a, middle)) in convex and frozenset((middle, across_b)) in convex:
+                    return True
+    return False
+
+
+def _faces_on_one_side(
+    solid: brep.Solid, inv: brep.Inventory, edges: list[brep.EdgeFact], tolerance_mm: float
+) -> dict[tuple[int, int], bool]:
+    """``(edge id, face id) -> True`` when the planar face lies wholly on one side of the edge's line within its plane.
+    Both faces of a bend end at the bend; a plate under a rib flush with its edge runs on past the rib on both sides."""
+    requests = []
+    keys = []
+    for edge in edges:
+        for face_id in edge.face_ids:
+            normal = inv.faces[face_id - 1].normal
+            if normal is None:
+                continue
+            across = np.cross(np.array(normal, dtype=np.float64), np.array(edge.direction, dtype=np.float64))
+            requests.append((face_id, edge.midpoint_mm, tuple(float(c) for c in across)))
+            keys.append((edge.id, face_id))
+    found = {key: False for edge in edges for key in ((edge.id, edge.face_ids[0]), (edge.id, edge.face_ids[1]))}
+    for key, (low, high) in zip(keys, brep.face_extents(solid, requests) if requests else []):
+        found[key] = low >= -tolerance_mm or high <= tolerance_mm
+    return found
+
+
+def _joins_two_legs(touching: set[int], partners: dict[int, set[int]]) -> bool:
+    """True when two of the sheet faces a face touches are not across the sheet from each other (two legs of a bend, not
+    the two sides of one cut edge)."""
+    ordered = sorted(touching)
+    return any(second not in partners.get(first, set()) for i, first in enumerate(ordered) for second in ordered[i + 1:])
 
 
 def check_sheet_metal(
@@ -495,7 +708,9 @@ def check_sheet_metal(
     clusters = _cluster(list(search.pairs), inv)
     checked = [
         "sheet.thickness and sheet.thickness_uniform: parallel planes and coaxial cylinders with material between them",
-        "sheet.min_bend_radius: coaxial concave/convex cylinder pairs of the sheet thickness, and sharp bends between sheet faces",
+        "sheet.min_bend_radius: coaxial concave/convex cylinder pairs of the sheet thickness (axes within 1e-3 of the "
+        "thickness), the faces of one bend counted once, and sharp bends between sheet faces",
+        "sheet.joint: concave edges where one sheet stands on another (ribs, gussets, T-joints), reported as a fact, not as bends",
         "sheet.hole_to_edge: exact distance from each hole wall to the nearest edge or cutout face",
     ]
     measurements: dict[str, Any] = {"thickness_candidates_mm": [c[0] for c in clusters], "face_pairs_tested": search.tested}
@@ -548,7 +763,7 @@ def check_sheet_metal(
             extra={"pairs": len(dominant), "faces_covered": sorted(covered)},
         )
     )
-    others = [c for c in clusters if abs(c[0] - thickness) > TOLERANCE_MM]
+    others = [c for c in clusters if abs(c[0] - thickness) > brep.coaxial_tolerance_mm(thickness)]
     if off:
         other_pairs = [p for c in others for p in c[2] if set(p.face_ids) & set(off)]
         findings.append(
@@ -581,59 +796,125 @@ def check_sheet_metal(
             )
         )
 
-    # bends: concentric cylinder pairs of the sheet thickness
-    bends = [p for p in dominant if p.kind == "cylinder" and p.span_rad is not None and p.span_rad < FULL_TURN]
+    # bends: concentric cylinder pairs of the sheet thickness, one bend however many faces it is split into
+    by_face = {c.face_id: c for c in cylinders}
+    bend_pairs = [p for p in dominant if p.kind == "cylinder" and p.span_rad is not None and p.span_rad < FULL_TURN]
+    bends = _merge_bends(bend_pairs, by_face, brep.coaxial_tolerance_mm(thickness))
     min_radius = limits["min_bend_radius_ratio"] * thickness
-    for pair in sorted(bends, key=lambda p: p.face_ids):
+    for bend in bends:
         if deadline is not None:
             deadline("rules")
+        pair = min(bend, key=lambda p: (p.inner_radius_mm, p.face_ids))
         radius = float(pair.inner_radius_mm)
-        if _less(radius, min_radius):
+        faces = sorted({face for p in bend for face in p.face_ids})
+        if _geometric_less(radius, min_radius, thickness):
             findings.append(
                 Finding(
                     rule="sheet.min_bend_radius",
                     severity="error",
                     exact=True,
                     message=(
-                        f"Bend inner radius {radius:g} mm is {radius / thickness:.6g} times the thickness {thickness:g} mm, "
+                        f"Bend inner radius {radius:.4g} mm is {radius / thickness:.3g} times the thickness {thickness:.4g} mm, "
                         f"below {limits['min_bend_radius_ratio']:g}"
+                        + (f" (one bend whose faces are split in {len(bend)} by other features)" if len(bend) > 1 else "")
                     ),
                     measured=radius,
                     limit=min_radius,
                     test="inner radius >= min_bend_radius_ratio * thickness",
-                    face_ids=list(pair.face_ids),
+                    face_ids=faces,
                     location_mm=pair.point_mm,
-                    basis="exact inner radius of a concave/convex cylinder pair whose radii differ by the sheet thickness",
-                    extra={"bend_angle_deg": math.degrees(pair.span_rad), "outer_radius_mm": pair.outer_radius_mm},
+                    basis=(
+                        "exact inner radius of a concave/convex cylinder pair whose radii differ by the sheet thickness; "
+                        "radii within 1e-3 of the thickness of the limit count as equal to it"
+                    ),
+                    extra={
+                        "bend_angle_deg": math.degrees(max(p.span_rad for p in bend)),
+                        "outer_radius_mm": pair.outer_radius_mm,
+                        "ratio": radius / thickness,
+                        "face_pairs": len(bend),
+                    },
                 )
             )
     planar_covered = {f for p in dominant if p.kind == "plane" for f in p.face_ids}
+    partners: dict[int, set[int]] = {}
+    for p in dominant:
+        a, b = p.face_ids
+        partners.setdefault(a, set()).add(b)
+        partners.setdefault(b, set()).add(a)
+    convex = {frozenset(edge.face_ids) for edge in edges if edge.convexity == "convex"}
     sharp_bends = 0
-    for edge in edges:
+    joints: list[brep.EdgeFact] = []
+    inside = [
+        edge for edge in edges
+        if edge.convexity == "concave" and edge.kind == "line" and set(edge.face_ids) <= planar_covered
+        and not near_tangent_edge(edge, limits["near_tangent_deg"])
+    ]
+    one_sided = _faces_on_one_side(solid, inv, inside, brep.coaxial_tolerance_mm(thickness))
+    for edge in inside:
         if deadline is not None:
             deadline("rules")
         a, b = edge.face_ids
-        if edge.convexity == "concave" and edge.kind == "line" and a in planar_covered and b in planar_covered:
-            sharp_bends += 1
-            findings.append(
-                Finding(
-                    rule="sheet.min_bend_radius",
-                    severity="error",
-                    exact=False,
-                    message=(
-                        f"Sharp inside corner (radius 0) between two sheet faces, below {min_radius:g} mm "
-                        f"({limits['min_bend_radius_ratio']:g} times the thickness)"
-                    ),
-                    measured=0.0,
-                    limit=min_radius,
-                    test="inner radius >= min_bend_radius_ratio * thickness",
-                    face_ids=[a, b],
-                    edge_ids=[edge.id],
-                    location_mm=edge.midpoint_mm,
-                    basis="heuristic: a concave straight edge between two sheet-thickness planes is read as a bend with no radius",
-                    extra={"material_angle_deg": edge.material_angle_deg},
-                )
+        if not (one_sided[(edge.id, a)] and one_sided[(edge.id, b)] and _outer_corner(a, b, partners, neighbours, convex)):
+            joints.append(edge)
+            continue
+        sharp_bends += 1
+        findings.append(
+            Finding(
+                rule="sheet.min_bend_radius",
+                severity="warn",
+                exact=False,
+                message=(
+                    f"Sharp bend (inside radius 0) between two sheet faces, below {min_radius:g} mm "
+                    f"({limits['min_bend_radius_ratio']:g} times the thickness)"
+                ),
+                measured=0.0,
+                limit=min_radius,
+                test="inner radius >= min_bend_radius_ratio * thickness",
+                face_ids=[a, b],
+                edge_ids=[edge.id],
+                location_mm=edge.midpoint_mm,
+                basis=(
+                    "heuristic: a concave straight edge between two sheet-thickness planes whose faces across the sheet meet "
+                    "at the outer corner is read as a bend with no radius"
+                ),
+                extra={"material_angle_deg": edge.material_angle_deg},
             )
+        )
+    if joints:
+        joint_faces = sorted({face for edge in joints for face in edge.face_ids})
+        findings.append(
+            Finding(
+                rule="sheet.joint",
+                severity="info",
+                exact=False,
+                message=(
+                    f"{len(joints)} concave edges where sheet faces meet without a bend: a rib, gusset or T-joint (welded or "
+                    "otherwise joined), not a bend, so no bend radius applies"
+                ),
+                measured=float(len(joints)),
+                measured_unit="count",
+                face_ids=joint_faces[:MAX_FACE_IDS_LISTED],
+                edge_ids=[edge.id for edge in joints][:MAX_FACE_IDS_LISTED],
+                location_mm=joints[0].midpoint_mm,
+                basis=(
+                    "heuristic: a concave straight edge between two sheet faces is a bend only when the faces across the "
+                    "sheet from them meet at a convex edge, directly or through one convex face (the outer corner); "
+                    "otherwise one sheet stands on the other"
+                ),
+                extra={"joints": len(joints), "edge_ids_total": len(joints)},
+                full_face_ids=joint_faces,
+            )
+        )
+    unrecognised = sorted(
+        f for f in edge_faces
+        if inv.faces[f - 1].kind == "cylinder" and f not in in_holes and _joins_two_legs(neighbours.get(f, set()) & covered, partners)
+    )
+    if unrecognised:
+        warnings.append(
+            f"Cylinder faces {', '.join(f'F{f}' for f in unrecognised[:20])} join two different legs of the sheet but have no "
+            "concentric partner at the sheet thickness, so they were not checked as bends: a bend whose inner and outer "
+            "radii are not concentric, or not a bend (measurements.unrecognised_bend_faces)"
+        )
 
     # holes against edges and cutouts
     hole_faces = in_holes
@@ -675,7 +956,10 @@ def check_sheet_metal(
             "thickness_mm": thickness,
             "other_thicknesses_mm": [c[0] for c in others],
             "bends": len(bends),
+            "bend_face_pairs": len(bend_pairs),
             "sharp_bends": sharp_bends,
+            "joints": len(joints),
+            "unrecognised_bend_faces": unrecognised,
             "holes_checked_against_edges": holes_checked,
             "off_thickness_faces": len(off),
         }

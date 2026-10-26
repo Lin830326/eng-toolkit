@@ -17,10 +17,10 @@ Supported processes: `cnc_milling` and `sheet_metal`. Any other value is refused
 
 | file | contents |
 |---|---|
-| `eng_toolkit/brep/_dfm.py` | measuring only: `edge_facts`, `cylinder_facts`, `facing_pairs`, `face_access` |
+| `eng_toolkit/brep/_dfm.py` | measuring only: `edge_facts`, `cylinder_facts`, `facing_pairs`, `normal_walls`, `face_access`, `face_extents`, `coaxial_tolerance_mm` |
 | `eng_toolkit/domains/geometry/dfm.py` | limits, rules, `Finding`, what was not performed |
 | `eng_toolkit/domains/geometry/tools.py` | the tool wrapper `check_dfm` (contract shaping, artifact `dfm_findings.json`) |
-| `tests/dfm_fixtures.py`, `tests/test_geometry_check_dfm.py`, `tests/test_dfm_ray_index.py` | dimensioned OCP fixtures, rule and contract tests, and differential checks for rays, cylinder grouping, sampling, and distance pruning |
+| `tests/dfm_fixtures.py`, `tests/test_geometry_check_dfm.py`, `tests/test_dfm_ray_index.py`, `tests/test_geometry_dfm_uat_fixes.py` | dimensioned OCP fixtures, rule and contract tests, differential checks for rays, cylinder grouping, sampling, and distance pruning, and the user-acceptance regressions |
 
 ## Facts measured by `brep/_dfm.py`
 
@@ -28,26 +28,29 @@ Supported processes: `cnc_milling` and `sheet_metal`. Any other value is refused
 * **Cylinder facts** (exact). Radius, axis, axial ends, angular span, a point on the face half way round and along, whether the face is concave or convex.
 * **Facing pairs** (gap exact, existence checked by rays). Two faces with material between them:
   * *planes*: opposite outward normals, each on the other's material side (`(origin_b - origin_a) . n_a < 0`; the other sign is air, a slot, and is not a wall). The gap is the exact plane offset. Candidate pairs are pruned by axis-aligned bounding boxes. A pair is kept only if a sample point of one face (centre of one of its 12 largest mesh triangles) lies, projected along the normal, inside the other face (`BRepClass_FaceClassifier`) and a ray from just inside the material at that point meets the second face first, at `gap`, with nothing in between.
-  * *cylinders*: a concave and a convex cylinder face on one axis, same axial extent and span; gap = difference of radii; a radial ray from the axis must meet exactly those two surfaces first. This covers tube walls and sheet-metal bends.
-* **Face access** (heuristic). For each planar face, one sample point (centre of the largest mesh triangle) moved 1e-5 of the part size out along the normal; each of the six axis directions with non-negative dot product with the normal counts as open if the ray from that point leaves the part without meeting any face.
+  * *cylinders*: a concave and a convex cylinder face on one axis, same axial extent and span; gap = difference of radii; a radial ray from the axis must meet exactly those two surfaces first. This covers tube walls and sheet-metal bends. "One axis" allows a perpendicular offset of `brep.coaxial_tolerance_mm(gap)` = 1e-3 x gap (at least 1e-6 mm), and the radial ray the same difference (see the user-acceptance fixes below).
+* **Normal walls** (`normal_walls`; chord sampled, refined distance exact). Every face that is in no facing pair casts rays from up to 12 spread sample points along its inward normal, up to the search range; the shortest chord per face pair is kept, confirmed in the material and, for chords up to 2 x `min_wall`, replaced by the exact `BRepExtrema` closest distance when that segment runs within 1 degree of both normals through the material. Details in `docs/geometry/design.md`, "Thin material".
+* **Face access** (heuristic). For each planar face, one sample point (centre of the largest mesh triangle) moved 1e-5 of the part size out along the normal; each of the six axis directions with non-negative dot product with the normal counts as open if the ray from that point leaves the part without meeting any face. The same point also gives `clearance_mm`, the air along the outward normal to the next face (a slot's width in front of a slot wall).
+* **Face extents** (`face_extents`). The range of a face's boundary (vertices and 16 points per curved edge) along a direction: on which side of a line in its plane a face lies.
 
 ## Rules
 
-Limits are in `LIMIT_DEFAULTS` (`domains/geometry/dfm.py`). Lengths are strings with units in `limits`; ratios and counts are plain numbers. Comparisons: a measured value **equal** to the limit passes (to 1e-9 relative).
+Limits are in `LIMIT_DEFAULTS` (`domains/geometry/dfm.py`). Lengths are strings with units in `limits`; ratios, counts and `near_tangent_deg` (degrees, above 0, at most 90) are plain numbers. Comparisons: a measured value **equal** to the limit passes (to 1e-9 relative; a bend radius to 1e-3 of the thickness). `tool_radius` is the end mill's **radius**, half its diameter: a 3 mm end mill is `"1.5 mm"` (the parameter description, the limit's `meaning` and the tool description say so).
 
 | rule | process | severity | check | what is measured | default limit |
 |---|---|---|---|---|---|
-| `cnc.internal_corner_radius` | cnc_milling | error | exact | concave straight edges parallel to `tool_axis` (radius 0); concave cylinder faces with their axis parallel to `tool_axis`, not part of a hole and not a full circle (their radius) | `tool_radius` 3 mm |
-| `cnc.min_wall` | cnc_milling | error | exact gap, completeness limited (below) | facing pairs closer than `min_wall`, searched up to 5 x `min_wall` | `min_wall` 0.8 mm |
+| `cnc.internal_corner_radius` | cnc_milling | error | exact | concave straight edges parallel to `tool_axis` (radius 0) whose faces turn by at least `near_tangent_deg`, with `details.uncut_depth_mm` = r (1 / sin(a/2) - 1), a = 360 - material angle; concave cylinder faces with their axis parallel to `tool_axis`, not part of a hole and not a full circle (their radius) | `tool_radius` 3 mm, `near_tangent_deg` 5 |
+| `cnc.min_wall` | cnc_milling | error (exact), warn (chord) | exact gap for facing pairs and refined normal walls; heuristic for a chord that could not be refined; completeness limited (below) | facing pairs and normal walls closer than `min_wall`, searched up to 5 x `min_wall` | `min_wall` 0.8 mm |
 | `cnc.hole_depth_ratio` | cnc_milling | error | exact | detected round holes: cylindrical depth / diameter (drill-point cone and counterbore not counted) | `max_hole_depth_ratio` 10 |
 | `cnc.min_hole_diameter` | cnc_milling | error | exact | detected round holes: diameter | `min_hole_diameter` 1 mm |
 | `cnc.tool_access` | cnc_milling | warn | **heuristic** | number of the six axis directions that reach a planar face's sample point | `min_access_directions` 1 |
 | `sheet.thickness` | sheet_metal | info (error if none) | exact gap; the choice of "the" thickness is heuristic | facing pairs up to `max_thickness`, grouped by gap to 1e-6 mm; the group covering the largest face area is the sheet | `max_thickness` 10 mm |
 | `sheet.thickness_uniform` | sheet_metal | error | **heuristic** | faces that are neither in a pair of the sheet thickness nor a cut edge (a face touching two covered faces); lists the first 50 in `face_ids` (the count in `details.faces_total`) and any other pair thicknesses. The complete list stays on the in-process finding (`Finding.full_face_ids`, for `geometry_view`) and is not in the output | none |
-| `sheet.min_bend_radius` | sheet_metal | error | exact for a cylinder pair of the sheet thickness; **heuristic** for a sharp inside corner between two sheet faces (radius 0) | inner radius of the bend | `min_bend_radius_ratio` 1.0 x thickness |
+| `sheet.min_bend_radius` | sheet_metal | error (exact), warn (sharp) | exact for a bend, the cylinder pairs of the sheet thickness that share a face or lie on one axis with equal radii merged into one finding; **heuristic** for a sharp bend: a concave straight edge between two sheet faces that both end at it and whose faces across the sheet meet at a convex edge (directly or through one convex face) | inner radius of the bend | `min_bend_radius_ratio` 1.0 x thickness |
+| `sheet.joint` | sheet_metal | info | **heuristic** | one finding counting the concave straight edges between sheet faces that are not bends: a rib, gusset or T-joint standing on a sheet (no outer corner, or a face running on past the edge) | none |
 | `sheet.hole_to_edge` | sheet_metal | error | exact | `BRepExtrema` distance from a hole's wall to the nearest edge or cutout face (a face of the sheet's edge, excluding hole walls), holes whose axis is parallel to a sheet face normal | `min_hole_edge_ratio` 1.5 x thickness |
 
-Severity policy: `error` = an exact rule is violated, `warn` = a heuristic rule is violated, `info` = a fact with no limit. Exception: `sheet.thickness_uniform` and the "no sheet found" case are heuristic and reported as `error` because the rest of the sheet analysis depends on them; each carries `check: heuristic`.
+Severity policy: `error` = an exact rule is violated, `warn` = a heuristic rule is violated, `info` = a fact with no limit. Exception: `sheet.thickness_uniform` and the "no sheet found" case are heuristic and reported as `error` because the rest of the sheet analysis depends on them; each carries `check: heuristic`. Every other heuristic finding is `warn` or `info`; `data.conventions.severity` names the two exceptions, and `tests/test_geometry_dfm_uat_fixes.py` checks the rule over the fixtures. (Before the user-acceptance fixes the sharp bend was a heuristic `error`, which contradicted the convention.)
 
 Every finding carries: `rule`, `severity`, `check` (`exact`/`heuristic`), `message`, `measured` and `limit` (value and unit; `ratio` and `count` are unitless), `passes_when`, `face_ids`, `edge_ids`, `location_mm`, `basis` (why it is exact or heuristic) and `details`. `data.summary` counts by severity and by rule. `data.findings` lists up to `max_findings` (default 100); `dfm_findings.json` holds all of them.
 
@@ -171,18 +174,36 @@ Before editing production code, `scratch_bench/compare_dfm.py capture` froze inp
 
 STEP import, native meshing, and edge facts still take time. Face access still uses one sample and exact native ray intersections, and its work can grow faster than linearly. These measurements cover constructed fixtures through 2006 faces, not arbitrary vendor files. Rules keep their original exact or heuristic classifications, and outputs remain `review_status: unreviewed`.
 
+## User-acceptance fixes (scenarios C1 and C4)
+
+Each was reproduced with the scenario's own input before the change; `tests/test_geometry_dfm_uat_fixes.py` holds the regression tests (a synthetic heatsink in `dfm_fixtures.heatsink`, the C4 bracket built with `geometry_make_part` from both radius arcs and 4-decimal via arcs, and the real KiCad `Heatsink_125x35x50mm_3xFixationM3.step`, skipped when KiCad is not installed).
+
+| problem | before | after |
+|---|---|---|
+| C1: tapered fin flanks meet the tip arcs at a 2 degree concave kink (material angle 182.01) | 22 "sharp internal corner, radius 0" errors, half of the 47 errors, colouring most fin faces red | an edge whose faces turn by less than `near_tangent_deg` (default 5) is near-tangent, counted in `measurements.near_tangent_edges_skipped` and in a warning, not reported; the cusp a 1.5 mm tool leaves at 2 degrees is 2e-4 mm. A 270 degree pocket corner is still an error (turn 90), and sharp corners now carry `details.uncut_depth_mm` |
+| C1: the 1 mm wall check | `face_pairs_tested` 0 and `smallest_wall_mm` null on the tapered fins, no warning; the 0.94 mm hole-to-bottom ligament not seen | normal walls: three exact `cnc.min_wall` errors of 0.94 mm (hole wall to base bottom), `smallest_wall_mm` 0.94; null only with a warning that says why |
+| C1: `thickness` from a point inside a fin | 8.864 mm (the slot after the fin) and 3.2 mm (the hole) with no warning | the wall that contains the point (3.136 mm fin, 30.853 mm from the hole top to the fin tip), `start: inside`, `entry_mm`/`exit_mm`, and a warning |
+| C4: bend built from 3-point `via` arcs | inner and outer bend cylinders 7e-5 mm off-axis, rejected by the 1e-6 mm coaxiality test: `bends` 0, no radius finding for an R2 bend in 3 mm (0.67 t) | coaxial within 1e-3 of the gap; gaps within 1e-3 of the thickness are one thickness. Radius and via arcs both give `Bend inner radius 2 mm is 0.667 times the thickness 3 mm, below 1`; R3 passes for both |
+| C4: ribs split the bend | the one bend reported three times (its inner face is cut in three by the ribs) | bend pairs that share a face, or lie on one axis with equal radii, are one bend (`bends` 1, `bend_face_pairs` 3) |
+| C4: rib-to-plate junctions | 8 "sharp inside corner (radius 0)" heuristic errors | a concave edge is a sharp bend only when both faces end at it and the faces across the sheet meet at an outer corner; the 8 junctions are one `sheet.joint` info finding (`measurements.joints` 8). Ribs flush with the plate's side faces (the first C4 model) are joints too; its real sharp corner stays a sharp bend |
+| C4: heuristic findings labelled `error` | sharp bends were heuristic errors, against the stated convention | heuristic = `warn` (or `info`) except the two documented sheet exceptions; the convention text names them |
+| C1: `tool_radius` read as a diameter | nothing said it | the parameter and limit descriptions say RADIUS with an example; a warning when `2 x tool_radius` is wider than the narrowest gap in front of a wall parallel to the tool axis (`measurements.narrowest_slot_mm`, one ray per planar face) |
+
+Expected on the KiCad heatsink with `{"min_wall": "1 mm", "tool_radius": "1.5 mm"}`, `tool_axis +z`: 22 `cnc.internal_corner_radius` (all R0.25 root fillets), 3 `cnc.hole_depth_ratio` (10.9375), 3 `cnc.min_wall` (0.94), nothing else. Timing: the 500-fin comb (2006 faces) took the same wall-clock time before and after on the same machine in one session (24.2 s and 24.3 s `cnc_milling`, both under load from other processes): the fin flanks are in exact plane pairs and cast no normal rays; the remaining faces cast 2032.
+
 ## What is not done
 
 The tool lists these in `data.not_performed` for the process.
 
-cnc_milling: corner radius at the bottom of a pocket and pocket depth against tool diameter; undercuts, T-slots and tool length (only the one-sample reach test exists, `cnc.tool_access`); walls between faces that are not parallel planes or coaxial cylinders (cones, tapered or free-form walls); walls thicker than 5 x `min_wall` (not searched); threads, counterbores and countersinks (a counterbore is listed as a separate blind hole), drill-point cones; tolerance, surface finish, set-ups, material, tool deflection, cost.
+cnc_milling: corner radius at the bottom of a pocket and pocket depth against tool diameter; undercuts, T-slots and tool length (only the one-sample reach test exists, `cnc.tool_access`); a thin spot between the sample points of walls that are not parallel planes or coaxial cylinders (they are measured by normal rays from 12 points per face); walls thicker than 5 x `min_wall` (not searched); threads, counterbores and countersinks (a counterbore is listed as a separate blind hole), drill-point cones; tolerance, surface finish, set-ups, material, tool deflection, cost.
 
 sheet_metal: flat pattern and unfolding, bend allowance, K-factor, springback; hole-to-bend and bend-to-bend distance, bend relief, minimum flange length; minimum hole diameter and slot width against thickness; hems, jogs, lances, countersinks and other formed features (they appear as off-thickness faces); material, grain, tooling.
 
 Known limits of what *is* done:
 
 * The wall search samples at most 12 points per face per direction. A wall whose overlap region contains none of those points is missed (false negative); a reported wall is always real at its sample point.
-* A wall found between parallel planes is a wall *at one place*. The finding's `location_mm` is that place; the same pair may be thicker or thinner elsewhere only if the faces are not parallel, and then they would not have been paired.
+* A wall found between parallel planes is a wall *at one place*. The finding's `location_mm` is that place; the same pair may be thicker or thinner elsewhere only if the faces are not parallel, and then the normal rays measure it.
+* `measurements.smallest_wall_mm` is the smallest of the facing-pair gaps and normal walls found. It is null only when nothing thinner than the search range was found, and then a warning says so with the number of pairs tested and rays cast. Faces the mesher gave no triangle are named in a warning.
 * Hole detection is `brep.inventory`'s: concave full cylinders open at one or both ends. Pockets that are round and open are holes by that definition.
 * `cnc.internal_corner_radius` judges only edges and cylinders parallel to `tool_axis`. A pocket cut from the side is a different `tool_axis` call.
 * `cnc.tool_access` counts reachability of one point per planar face with infinitely thin rays; partial shadowing, tool diameter and length are ignored. With the default `min_access_directions` of 1 it only reports faces no axis direction reaches.

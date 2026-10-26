@@ -73,7 +73,8 @@ def deep_hole_block(diameter=2.0, depth=30.0):
 
 
 def clean_part():
-    """Block 50 x 40 x 20; pocket 30 x 20 x 10 with R4 inside corners; Ø6 hole 12 mm deep; every wall at least 5 mm."""
+    """Block 50 x 40 x 20; pocket 30 x 20 x 10 with R4 inside corners; Ø6 hole 12 mm deep at (45, 20); every planar wall
+    at least 5 mm, the hole wall 2 mm from the side x = 50 and from the pocket wall x = 40."""
     pocket = vertical_fillets(cad.box(x=10, y=10, z=10, length=30, width=20, height=11), 4.0)
     return cad.cut(cad.box(length=50, width=40, height=20), pocket, cylinder_along((0, 0, 1), 45, 20, 8, 3.0, 13))
 
@@ -147,6 +148,68 @@ def write_step_inches(shape, path: Path) -> Path:
 
 
 __all__ = [name for name in dir() if not name.startswith("_")]
+
+
+HEATSINK_FINS = (-12.0, 0.0, 12.0)  # fin centre lines x
+HEATSINK_BOTTOM = -2.54  # base bottom y; the holes at y = 0 of radius 1.6 leave 2.54 - 1.6 = 0.94 mm to it
+
+
+def heatsink(*, root_fillet=0.25, depth=35.0):
+    """A heatsink shaped like KiCad's Heatsink_125x35x50mm_3xFixationM3, extruded ``depth`` along z.
+
+    Base x -18..18, y -2.54..3.  Three tapered fins centred on x = -12, 0, 12: 4 mm wide at the root (y = 3), 2 mm at
+    y = 30, closed by a semicircular tip of radius 1 through (x, 31).  The flank leans in by atan(1/27) = 2.12 degrees
+    while the tip arc starts vertical, so flank and tip meet at a concave kink of material angle 182.12 degrees (two per
+    fin): near-tangent, not a corner.  The six root corners carry ``root_fillet`` fillets (concave, along z).  Three
+    diameter-3.2 through holes along z at (x, 0): depth/diameter = 35 / 3.2 = 10.9375, and 0.94 mm of material below each.
+    """
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeWire
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
+    from OCP.GC import GC_MakeArcOfCircle, GC_MakeSegment
+    from OCP.gp import gp_Vec
+
+    def p(x, y):
+        return gp_Pnt(x, y, 0.0)
+
+    corners = [(-18.0, HEATSINK_BOTTOM), (18.0, HEATSINK_BOTTOM), (18.0, 3.0)]
+    wire = BRepBuilderAPI_MakeWire()
+    segments = []
+    for a, b in zip(corners, corners[1:]):
+        segments.append(GC_MakeSegment(p(*a), p(*b)).Value())
+    last = corners[-1]
+    roots = []
+    for xc in sorted(HEATSINK_FINS, reverse=True):
+        right_root, right_tip, left_tip, left_root = (xc + 2.0, 3.0), (xc + 1.0, 30.0), (xc - 1.0, 30.0), (xc - 2.0, 3.0)
+        segments.append(GC_MakeSegment(p(*last), p(*right_root)).Value())
+        segments.append(GC_MakeSegment(p(*right_root), p(*right_tip)).Value())
+        segments.append(GC_MakeArcOfCircle(p(*right_tip), p(xc, 31.0), p(*left_tip)).Value())
+        segments.append(GC_MakeSegment(p(*left_tip), p(*left_root)).Value())
+        last = left_root
+        roots += [right_root, left_root]
+    segments.append(GC_MakeSegment(p(*last), p(-18.0, 3.0)).Value())
+    segments.append(GC_MakeSegment(p(-18.0, 3.0), p(*corners[0])).Value())
+    for curve in segments:
+        wire.Add(BRepBuilderAPI_MakeEdge(curve).Edge())
+    face = BRepBuilderAPI_MakeFace(wire.Wire()).Face()
+    body = BRepPrimAPI_MakePrism(face, gp_Vec(0.0, 0.0, depth)).Shape()
+    if root_fillet > 0:
+        fillets = BRepFilletAPI_MakeFillet(body)
+        explorer = TopExp_Explorer(body, TopAbs_EDGE)
+        seen = []
+        while explorer.More():
+            edge = TopoDS.Edge(explorer.Current())
+            explorer.Next()
+            curve = BRepAdaptor_Curve(edge)
+            a = curve.Value(curve.FirstParameter())
+            b = curve.Value(curve.LastParameter())
+            vertical = abs(a.X() - b.X()) < 1e-9 and abs(a.Y() - b.Y()) < 1e-9 and abs(a.Z() - b.Z()) > 1e-9
+            if vertical and any(abs(a.X() - x) < 1e-9 and abs(a.Y() - y) < 1e-9 for x, y in roots) and not any(edge.IsSame(e) for e in seen):
+                seen.append(edge)
+                fillets.Add(root_fillet, edge)
+        assert len(seen) == 2 * len(HEATSINK_FINS)
+        body = fillets.Shape()
+    holes = [cylinder_along((0, 0, 1), xc, 0.0, -1.0, 1.6, depth + 2.0) for xc in HEATSINK_FINS]
+    return cad.cut(body, cad.compound(*holes))
 
 
 def sharp_l_sheet(thickness=2.0, flat=40.0, width=30.0, flange=25.0):
