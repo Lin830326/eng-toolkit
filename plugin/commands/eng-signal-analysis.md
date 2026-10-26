@@ -7,4 +7,4 @@ Use the `eng-signal-analysis` skill (and `eng-toolkit` for the unit and reportin
 
 $ARGUMENTS
 
-If key inputs are missing (sample rate, file layout (numbers only, no header), units, rpm or line frequency, tooth or pole counts, the band to keep and the attenuation required, any analog filter before the converter), ask for them first; otherwise run the analysis, convert rpm to Hz, name each peak by a rule, check for aliasing, and give the report in the user's language.
+If key inputs are missing (sample rate, file layout (one value column or time,value; one header line of names is fine), units, rpm or line frequency, tooth or pole counts, the band to keep and the attenuation required, any analog filter before the converter), ask for them first; otherwise run the analysis, convert rpm to Hz, name each peak by a rule, check for aliasing, and give the report in the user's language.

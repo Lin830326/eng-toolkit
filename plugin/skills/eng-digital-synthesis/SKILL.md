@@ -1,6 +1,6 @@
 ---
 name: eng-digital-synthesis
-description: Use to lint Verilog, get gate counts and decide whether two Verilog designs are equivalent with Yosys (digital_check, digital_synthesize, digital_equivalent). Covers unit-gate counts versus um2, bounded versus complete proofs, wide counters, long workspace paths.
+description: Use to lint Verilog, get gate counts and decide whether two Verilog designs are equivalent with Yosys (digital_check, digital_synthesize, digital_equivalent). Covers unit-gate counts versus um2, bounded versus complete proofs, wide counters.
 ---
 
 # Digital design workflow (eng-toolkit)
@@ -18,7 +18,7 @@ Which module is the top; reset style and initial values; the exact claim to test
 | Syntax, undriven wires, latches, loops, width mismatches | `digital_check` (call succeeds even with errors: read `data.findings`, `values.errors`) |
 | Cells, wires, levels, unit-gate area | `digital_synthesize` |
 | Same behaviour of two designs | `digital_equivalent` |
-| Bar chart of results | `plot_bar` with inline series (skill `eng-plot-results`); never hand-written charts |
+| Bar chart of results | `plot_bar` with inline series, `format="png"` (skill `eng-plot-results`); never hand-written charts |
 
 ## 3. Inputs that work (verified)
 
@@ -49,7 +49,7 @@ endmodule
 
 ## 5. Failures and limits
 
-- **Long workspace path**: optimised ABC synthesis fails (error naming a temp file `Opening ... for writing failed`, or `yosys could not be started`) when the job folder path is very long on Windows. Set a short `ENG_TOOLKIT_WS` (for example `C:\etk`) for the server and retry; the numbers are unchanged.
+- **Workspace path**: no special `ENG_TOOLKIT_WS` is needed. Yosys and ABC run in a short temporary folder of their own and a relative `ENG_TOOLKIT_WS` is made absolute; optimised synthesis gave the same 24 cells, area 63 with a 200-character workspace path. If a start error (`yosys could not be started`) still appears, report it as it is.
 - Not covered: timing closure, power, technology mapping to a vendor library, formal property proofs (assertions), clock-domain checks, simulation of a testbench, `include`/file I/O in Verilog. Say "outside the toolkit" and suggest the vendor flow.
 
 ## 6. Report

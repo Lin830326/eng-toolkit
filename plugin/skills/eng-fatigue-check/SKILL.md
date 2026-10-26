@@ -5,7 +5,7 @@ description: Use for a fatigue or fracture question with the eng-toolkit fatigue
 
 # Fatigue check workflow (eng-toolkit)
 
-Load `eng-toolkit` first. Results are unreviewed uniaxial estimates. Outside the toolkit (say so, give the standard method labelled "hand method, not tool-checked"): multiaxial fatigue, weld S-N classes, creep-fatigue, crack closure, environment, **preloaded-bolt fatigue**, Kt charts (you supply Kt), design allowables.
+Load `eng-toolkit` first. Unreviewed uniaxial estimates. Outside the toolkit (say so, give the standard method labelled "hand method, not tool-checked"): multiaxial fatigue, weld S-N classes, creep-fatigue, crack closure, environment, **preloaded-bolt fatigue**, Kt charts (you supply Kt), design allowables.
 
 ## 1. Pin down the problem
 
@@ -28,9 +28,9 @@ Ask if missing, and never invent: Su (Sy), load type, finish, diameter, reliabil
 
 - **Counts** are `"1e5 cycle"`, `"cycles"`, `"count"` or `"dimensionless"`; angles and `kilocycle` are refused. `repeats` is a plain number.
 - `estimate`: `surface_finish` polished|ground|machined|hot_rolled|as_forged; `reliability` only 50, 90, 95, 99, 99.9, 99.99 (ke 1 to .702); axial needs no diameter; `temperature_factor` (kd) is yours. `yield_strength` adds a screen `Kt(Sa+|Sm|) <= Sy`.
-- **Mean stress** `mean_method`: goodman, gerber need Su; soderberg Sy; morrow `fatigue_strength_coefficient`; swt, walker (`walker_gamma`, 0.5 = SWT) nothing. Compressive mean is clamped to zero. Equivalent amplitude for Sa=Sm=100, Su 600, Sy 450, sigma_f' 900, gamma .6: none 100, gerber 102.9, morrow 112.5, goodman 120, soderberg 128.6, walker 132.0, swt 141.4. Name the method.
+- **Mean stress** `mean_method`: goodman, gerber need Su; soderberg Sy; morrow `fatigue_strength_coefficient`; swt, walker (`walker_gamma`, 0.5 = SWT) nothing. Equivalent amplitude for Sa=Sm=100, Su 600, Sy 450, sigma_f' 900, gamma .6: none 100, gerber 102.9, morrow 112.5, goodman 120, soderberg 128.6, walker 132.0, swt 141.4. Name the method.
 - **Notch**: `kt`, `notch_radius`, `notch_method` peterson (Su 550..1500) or neuber (345..1500); `notch_material_length` is required for Peterson in torsion. Kf multiplies the amplitude, Kt the mean.
-- `fatigue_rainflow`: `history` flat JSON list `[0,300,-100]` (or `history_file`, numeric CSV with **no header**: if the tool refuses a header line, ask the person to remove it or paste the values, never claim it was processed); **`sample_scale` `"1 MPa"` is mandatory**. Damage needs `basquin_a` + `basquin_b` (-1..-1e-5) or `sn_points` `"400 MPa,1000;200 MPa,1e6"`. Default is an open history (residue = half cycles); `closed=true` for a repeating cycle. With `endurance_limit`, cycles below it do no damage unless `below_knee` is `elementary` or `haibach`. Force histories only count.
+- `fatigue_rainflow`: `history` flat JSON list `[0,300,-100]`, or `history_file` (CSV of numbers, one column or `time,value`; an optional first line of column names is skipped and reported as `data.header_skipped`; any other text is refused with its line number); **`sample_scale` `"1 MPa"` is mandatory**. Damage needs `basquin_a` + `basquin_b` (-1..-1e-5) or `sn_points` `"400 MPa,1000;200 MPa,1e6"`. Default is an open history (residue = half cycles); `closed=true` for a repeating cycle. With `endurance_limit`, cycles below it do no damage unless `below_knee` is `elementary` or `haibach`. Force histories only count.
 - `fatigue_strain_life`: `elastic_modulus` always; `fatigue_strength`, `fatigue_ductility`, `b`, `c` (c < b < 0), or `estimate_method` + `ultimate_strength` + `reduction_of_area`. `strain_amplitude` is total, <= 0.1.
 - `fatigue_fracture`: `stress` is the **maximum** remote stress; growth uses `stress_range` + `load_ratio` R (0..0.95). `width` is the full width; a central crack's `crack_size` is the half-length. Geometries: infinite, center_secant, center_tada, edge_small, edge, double_edge, surface, senb, ct. `critical` and Forman need `toughness`. `growth_c` has composite units whose exponent equals `growth_m`: Paris `"1e-12 m/cycle/(MPa*m^0.5)^3"`, Forman `...^2`.
 
@@ -49,9 +49,9 @@ Read named `values` entries: `endurance_limit`, `equivalent_amplitude`, `safety_
 - **Refusals are results**: explain, never edit inputs to dodge one (Su or diameter out of range, untabulated reliability, mean >= Su, elastic peak above Sy, life under 1000 cycles in `estimate`, strain > 0.1, net-section stress > 0.8 Sy, a/W outside the geometry limits).
 - Strain-life `notch` does not warn about general yielding. `growth_status: arrested_at_initial_threshold` means no failure life.
 - **Preloaded bolt** (outside the toolkit; `fatigue_sn` correction scales mean and amplitude together, which is wrong here). Hand method: the preload stress `si` is a constant mean; the external load adds only `sa = C (Pmax-Pmin)/(2 At)`, `C = kb/(kb+km)` (joint stiffness), `sm = si + sa`; Goodman with preload `n = Se (Su - si)/(Su sa + Se (sm - si))`. A bolt Se from a table already includes the thread Kf: do not apply Kf again. Label all of it "hand method, not tool-checked".
-- The Paris/Forman coefficients are the user's calibrated data. Miner is linear, no sequence effects.
+- Paris/Forman coefficients are the user's calibrated data. Miner is linear, no sequence effects.
 
 ## 6. Plot and report
 
-- S-N: `plot_xy` on `sn_curve.csv`, `x_column="cycles"`, `y_columns="amplitude_MPa"`, `x_scale="log"`, `y_scale="log"`, `hlines="180,endurance limit"`, labelled axes. Crack growth: `crack_growth.csv`, `x_column="cycles"`, `y_columns="crack_m"`. Rainflow: `plot_bar` fails above 200 categories on a real record, so use inline series from `data.range_histogram` (labels from `edges`, counts as y; `y_scale="log"` or `range_bins` 10-20 when the first bin is sensor noise).
-- Report as in `eng-toolkit`: assumptions (Marin factors, reliability, mean method, curve source, Kt, R), checks, limits (unreviewed, uniaxial, empirical, no allowable). Say if the margin is thin.
+- Charts go out as a PNG (`format="png"`, hand over `data.png_path`; skill `eng-plot-results`). S-N: `plot_xy` on `sn_curve.csv`, `x_column="cycles"`, `y_columns="amplitude_MPa"`, `x_scale="log"`, `y_scale="log"`, `hlines="180,endurance limit"`, labelled axes. Crack growth: `crack_growth.csv`, `x_column="cycles"`, `y_columns="crack_m"`. Rainflow: `plot_bar` fails above 200 categories on a real record, so use inline series from `data.range_histogram` (labels from `edges`, counts as y; `y_scale="log"` or `range_bins` 10-20 when the first bin is sensor noise).
+- Report as in `eng-toolkit`: assumptions (Marin factors, reliability, mean method, curve source, Kt, R), checks, limits (unreviewed, uniaxial, empirical, no allowable).

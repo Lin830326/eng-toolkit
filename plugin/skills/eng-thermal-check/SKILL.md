@@ -21,7 +21,7 @@ Heat (W) and whether it is constant; ambient (air at the part, not room air); ev
 | Radiation between plates, cylinders, spheres, body in enclosure | `thermal_radiation` |
 | Exchanger duty, outlet temperatures, UA, area, NTU | `thermal_exchanger` |
 | Lumped or one-term transient, time to a temperature | `thermal_transient` |
-| Warm-up CURVE of a lumped body with a heat source | `control_response` (first-order step) then `plot_xy` |
+| Warm-up CURVE of a lumped body with a heat source | `control_response` (first-order step) then `plot_xy` as PNG |
 | Pump head, flow, pressure drop of the water side | `eng-flow-network` skill |
 
 ## 3. Build the inputs
@@ -39,7 +39,7 @@ Heat (W) and whether it is constant; ambient (air at the part, not room air); ev
 3. `Tj = 45 + 8 (1.15 + 1.4 + 3.8) = 95.8 degC` against the user's 90 degC rule: **fan needed** (truth by channel correlation 102 degC). Say the scaling is an engineering estimate.
 4. **Never conclude "no fan" from the isolated-plate h** (5.7 W/m2K here): the tool has no channel correlation, and fins with gaps under about 10 mm (here 5.25 mm) choke each other, real h about 3. Say "outside the toolkit, closely spaced fins" and derate the catalogue value as in step 2. Fan sizing needs the vendor Rth-vs-airflow curve; ask for it.
 5. `thermal_fin` (`fin_type "rectangular"`, `length "24 mm"`, `thickness "2 mm"`, `width "100 mm"`, `tip "convective"`, `fin_count 9`, `base_unfinned_area "0.0042 m^2"`, h 3.1) gives `array_heat_rate` 4.64 W at a 30 K base rise, convection only: a cross-check of the order of magnitude, not a replacement for the catalogue.
-6. **Warm-up curve** (`thermal_transient` has no heat input and returns one time per call): `tau = Rsa x m cp = 3.8 x 0.2 x 900 = 682 s`, final rise `P Rsa = 30.3 K`. `control_response numerator "30.3" denominator "[682, 1]" t_final "3600 s" samples 121` returns `response.csv` (`time_s,output`, output = K above ambient; ignore its "dimensionless" unit); `plot_xy` it with `hlines` at the final rise and label the axis "rise above 45 degC (K)". Check: `thermal_transient` lumped (`initial_temperature "45 degC"`, `ambient_temperature "75.3 degC"`, `volume "7.407e-5 m^3"`, `surface_area "0.1 m^2"`, `h "2.64 W/(m^2*K)"`, `density 2700`, `specific_heat 900`, `conductivity 200`, `time "682 s"`) returns 64.16 degC = 63.2 % of the rise.
+6. **Warm-up curve** (`thermal_transient` has no heat input and returns one time per call): `tau = Rsa x m cp = 3.8 x 0.2 x 900 = 682 s`, final rise `P Rsa = 30.3 K`. `control_response numerator "30.3" denominator "[682, 1]" t_final "3600 s" samples 121` returns `response.csv` (`time_s,output`, output = K above ambient; ignore its "dimensionless" unit); `plot_xy` it (`format="png"`, hand over `data.png_path`) with `hlines` at the final rise and label the axis "rise above 45 degC (K)". Check: `thermal_transient` lumped (`initial_temperature "45 degC"`, `ambient_temperature "75.3 degC"`, `volume "7.407e-5 m^3"`, `surface_area "0.1 m^2"`, `h "2.64 W/(m^2*K)"`, `density 2700`, `specific_heat 900`, `conductivity 200`, `time "682 s"`) returns 64.16 degC = 63.2 % of the rise.
 
 ## 5. Other jobs
 

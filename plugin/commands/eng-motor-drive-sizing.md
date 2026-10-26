@@ -7,4 +7,4 @@ Use the `eng-motor-drive-sizing` skill (and `eng-toolkit` for the unit and repor
 
 $ARGUMENTS
 
-If key inputs are missing (the whole duty cycle including dwell, pulley or load inertia, gear ratio and efficiency, the candidate motor's datasheet, motor parameters, whether a power is kW or kVA, ripple targets, limits), ask for them first and never invent datasheet values; otherwise run the analysis, hand-check one number, explain any refusal as a result, and give the report in the user's language.
+If key inputs are missing (the whole duty cycle including dwell (`cycle_time`), pulley or load inertia, gear ratio and efficiency, the candidate motor's datasheet, motor parameters, whether a power is kW or kVA, ripple targets, limits), ask for them first and never invent datasheet values; otherwise run the analysis, hand-check one number, explain any refusal as a result, and give the report in the user's language.

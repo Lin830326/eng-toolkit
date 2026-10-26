@@ -17,9 +17,9 @@ Supply (range: worst case for a converter), every resistor and capacitor value i
 |---|---|
 | Parse and sanity-check a netlist, no ngspice | `spice_check_netlist` |
 | Bias point `op`, sweep `dc`, small-signal `ac`, `tran` | `spice_simulate` |
-| Number from a result table | `spice_measure` (`value_at`, `steady_state`, `rise_time`, `overshoot`, `settling_time`, `bandwidth_3db`) |
+| Number from a result table | `spice_measure` (`value_at`, `steady_state`, `rise_time`, `overshoot`, `settling_time`, `bandwidth_3db` low-pass, `bandpass_3db`) |
 | Formula sizing of buck / boost / buck-boost (L, C, ripple, stresses, losses) | `electric_converter` |
-| Chart of `result.csv` | `plot_xy` / `plot_panels` (skill `eng-plot-results`) |
+| Chart of `result.csv` | `plot_xy` / `plot_panels` as PNG, `format="png"` (skill `eng-plot-results`) |
 
 ## 3. Write the netlist (you write it from the words; there is no schematic reader)
 
@@ -47,15 +47,15 @@ RL out 0 10k
 ## 4. Pitfalls that change the answer
 
 - **A model with only `bf=` has no capacitances**: gain stays flat to 100 MHz and any upper bandwidth is meaningless. Say so. With the user's datasheet add `cje` (from Cibo), `cjc` (from Cobo) and `tf = 1/(2 pi fT)`: `.model Q2N2222 npn (bf=200 cje=25p cjc=8p tf=0.53n)` gives an upper corner of about 419 kHz; label it a datasheet-based estimate and add a Miller hand check.
-- **`bandwidth_3db` handles low-pass only** (reference = first sample). A band-pass or AC-coupled amplifier has no single bandwidth: take the peak gain (`v(out).max` of the ac result, 20 log10), the level is peak minus 3.0103 dB, then find each crossing with `spice_measure value_at column="v(out).db" at="..."` brackets and interpolate in log f (lower corner about 186 Hz, upper about 419 kHz here). Report both corners.
-- **`value_at` needs the full column name** (`v(out).db`, not `v(out)`), and it labels a dB or degree value with unit `volt`: read the number as dB or degrees.
+- **`bandwidth_3db` is for a low-pass response** (reference = first sample); on an AC-coupled or band-pass amplifier it answers `measure.not_found` that names **`bandpass_3db`**: it takes the peak gain, finds the -3.0103 dB corner on each side and returns the bandwidth `f_upper - f_lower` with `lower_corner_3db`, `upper_corner_3db`, `peak_frequency`, `peak_gain_db` in `values` (with the cje/cjc/tf model above: 186 Hz and 419 kHz, peak 42.25 dB). Report both corners; a corner outside the sweep is `measure.not_found`, so widen `start`/`stop`.
+- **Units follow the column**: `v(out).db` is decibel, `.phase_deg` degree, `v(out)` volt or ampere; on an ac table a bare `v(out)` means `v(out).mag` (a V/V gain for a 1 V source, labelled volt) for every measurement.
 - **Phase is wrapped** to +-180 deg; an inverting stage jumps in mid-band. Say it is 180 deg plus the lag, or unwrap by hand.
 - **Short `tran` runs include start-up** (coupling and bypass capacitors need many time constants). Use `start` to keep only the settled window (`start="100 ms" stop="110 ms" step="20 us"`) and compare the amplitude `(max - min)/2` with the ac gain times the input amplitude (1.264 V against 127 x 10 mV). For a converter use `use_initial_conditions=true` with `ic=` on the inductor and capacitor and a window of whole switching periods.
 - A switch-mode netlist needs a body diode and dead time: `S` switches with `.model sw sw(ron=.. roff=1meg vt=2.5 vh=0)`, PULSE gate drives with a gap, `D` across the low side; without it the switch node spikes.
 
 ## 5. Converter sizing with `electric_converter`
 
-It is **non-synchronous only**. Synchronous buck: give `diode_drop` = Io x Rds(on) of the low side, `gate_charge` = both FETs together with `gate_voltage`; dead-time loss `Vf Io 2 t_dead f` is not included, add it by hand. With no loss inputs it returns about 99.99 % efficiency (only ESR loss): never quote that. Size L and ripple at the **maximum** Vin. Example (28 V to 5 V, 3 A, 500 kHz): `inductance="10 uH" output_capacitance="47 uF" capacitor_esr="5 mohm" target_output_ripple="20 mV" switch_resistance="12 mohm" inductor_resistance="20 mohm" diode_drop="0.018 V" rise_time="10 ns" fall_time="10 ns" gate_charge="16 nC" gate_voltage="5 V"` gives duty 0.181, ripple 0.831 A pp. Hand check: `dI = (Vin - Vo) D / (f L)` with `D = Vo/Vin`, `C = dI / (8 f dV)`. A simulated 24 V synchronous buck (10 uH, 500 kHz, ripple window at 1.4 ms) gives 0.794 A pp against 0.792 A by formula.
+The default stage has a freewheel diode. For a synchronous buck or boost give `synchronous=true`, `low_side_resistance` (Rds(on) of the low-side FET), `dead_time` per edge (the body diode, `diode_drop`, conducts: loss `Vf Io 2 t f`, in the result as `dead_time_loss`) and `gate_charge` for both FETs with `gate_voltage`; below the CCM boundary it acts as diode emulation. With no loss input the result warns "Ideal" (`data.losses_given` false, efficiency 100 %): never quote that. Size L and ripple at the **maximum** Vin. Example (28 V to 5 V, 3 A, 500 kHz): `synchronous=true inductance="10 uH" output_capacitance="47 uF" capacitor_esr="5 mohm" target_output_ripple="20 mV" switch_resistance="12 mohm" low_side_resistance="6 mohm" inductor_resistance="20 mohm" diode_drop="0.7 V" dead_time="30 ns" rise_time="10 ns" fall_time="10 ns" gate_charge="16 nC" gate_voltage="5 V"` gives duty 0.181, ripple 0.831 A pp, dead-time loss 63 mW, efficiency 95.1 %. Hand check: `dI = (Vin - Vo) D / (f L)` with `D = Vo/Vin`, `C = dI / (8 f dV)`. A simulated 24 V synchronous buck (10 uH, 500 kHz, ripple window at 1.4 ms) gives 0.794 A pp against 0.792 A by formula.
 
 ## 6. Coverage limits and report
 

@@ -45,4 +45,4 @@ Saturation and anti-windup simulation, sampled-data simulation with delay, noise
 
 ## 6. Report
 
-As in `eng-toolkit`: gains with units and the form (`C = Kp + Ki/s`), spec versus result (rise 10-90 %, overshoot, phase margin from `control_frequency`, delay margin), the valid step size and current check, the difference equation, assumptions (J, b, Ke source), limits (linear, no saturation, unreviewed).
+A step or Bode picture: `plot_xy` / `plot_panels` on `response.csv` / `bode.csv` with `format="png"` (hand over `data.png_path`; skill `eng-plot-results`). As in `eng-toolkit`: gains with units and the form (`C = Kp + Ki/s`), spec versus result (rise 10-90 %, overshoot, phase margin from `control_frequency`, delay margin), the valid step size and current check, the difference equation, assumptions (J, b, Ke source), limits (linear, no saturation, unreviewed).

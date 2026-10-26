@@ -7,4 +7,4 @@ Use the `eng-pcb-review` skill (and `eng-toolkit` for the unit and reporting rul
 
 $ARGUMENTS
 
-Say which file is the board, the schematic and the project; ask for the fab's capability sheet if there is none; separate real findings from library-visibility noise, treat a count of 499 as at least 499, and end with a checklist verdict, never a flat yes.
+Say which file is the board, the schematic and the project; ask for the fab's capability sheet if there is none; separate real findings from library-visibility noise (`library_warnings`), read a count flagged `at_kicad_limit` as "at least", and end with a checklist verdict, never a flat yes.

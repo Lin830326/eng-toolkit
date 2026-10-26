@@ -18,16 +18,16 @@ artifacts preserve nonfinite inputs as quoted text. See the
 | skill `eng-structural-check` + `/eng-structural-check` | beam, frame, truss, column, plate, vibration checks: model choice, inputs, hand check, convergence, utilization |
 | skill `eng-dfm-review` + `/eng-dfm-review` | CNC milling and sheet-metal review of a STEP/IGES/BREP file |
 | skill `eng-fatigue-check` + `/eng-fatigue-check` | infinite-life check with Marin factors and mean stress, rainflow + Miner damage, notches, strain-life, crack growth |
-| skill `eng-motor-drive-sizing` + `/eng-motor-drive-sizing` | motor and gearbox sizing for a motion profile, induction and PM motor operating points, converters, transformers, faults |
+| skill `eng-motor-drive-sizing` + `/eng-motor-drive-sizing` | motor and gearbox sizing for a motion profile or move plus dwell, induction and PM motor operating points, converters, transformers, faults |
 | skill `eng-optimize` + `/eng-optimize` | minimise, linear programs, root finding, curve fitting with intervals, uncertainty propagation, design of experiments |
 | skill `eng-plot-results` + `/eng-plot-results` | charts (PNG or SVG) from other tools' CSV artifacts or inline series: Bode, S-N, histograms, station diagrams |
 | skill `eng-3d-view` + `/eng-3d-view` | a PNG picture (to paste into a mail) and a coloured GLB of a part, DFM findings, named face groups or an FEM stress/displacement result |
 | skill `eng-thermal-check` + `/eng-thermal-check` | heatsink and junction temperature (catalogue Rth is valid only at its quoted temperature rise), insulation, fins, radiation, exchanger duty, warm-up curve |
 | skill `eng-control-tuning` + `/eng-control-tuning` | PI/PID from datasheet plant numbers (V/krpm trap), exact-plant check, phase and delay margin, current-limit check, Tustin difference equation |
-| skill `eng-signal-analysis` + `/eng-signal-analysis` | spectrum and peak naming (rpm to Hz, gear mesh), alias check, anti-alias filter and decimation by specification, header-less sample files |
+| skill `eng-signal-analysis` + `/eng-signal-analysis` | spectrum and peak naming (rpm to Hz, gear mesh), alias check, anti-alias filter and decimation by specification, sample files with or without a header line |
 | skill `eng-flow-network` + `/eng-flow-network` | pump and system curve, branch flow split, DN to bore, Kv and datasheet dp to K, open channel, nozzle, drag, water hammer |
 | skill `eng-drawing` + `/eng-drawing` | dimensioned A4-A0 drawing (PDF, PNG, DXF) of a STEP part with hole callouts and hole list; read and convert DXF and PDF drawings |
-| skill `eng-pcb-review` + `/eng-pcb-review` | KiCad board and schematic review before fabrication: board facts, DRC and ERC (real findings versus library noise, capped counts), checklist against the fab's rules, gerber and drill export |
+| skill `eng-pcb-review` + `/eng-pcb-review` | KiCad board and schematic review before fabrication: board facts, DRC and ERC (real findings versus library warnings, counts at kicad-cli's listing limit), checklist against the fab's rules, gerber and drill export |
 | skill `eng-circuit-sim` + `/eng-circuit-sim` | ngspice from a verbal circuit description: bias, Bode, transient windows, band-pass corners, converter sizing and its limits |
 | skill `eng-digital-synthesis` + `/eng-digital-synthesis` | Verilog lint, unit-gate counts, equivalence proofs versus bounded checks, wide counters |
 | skill `eng-machine-design` + `/eng-machine-design` | shafts with keys and bearings (helical gear loads), gears, bolts, springs, welds, belts, pressure vessels: what to ask and what the tools cannot do |

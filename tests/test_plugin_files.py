@@ -72,16 +72,24 @@ GUIDANCE = {
     ],
     "eng-structural-check": [
         "both Fx and Fy", "principal_I2", "no catalogue", "roller_x", "c,spring,", "not `maximum_nodal_displacement`",
-        "data.modes", "ask before the first calculation",
+        "data.modes", "ask before the first calculation", "values.max_member_deflection", "frequency_mode_<k>",
     ],
     "eng-fatigue-check": [
-        "no header", "never claim it was processed", "data.range_histogram", "Preloaded bolt", "do not apply Kf again",
+        "data.header_skipped", "data.range_histogram", "Preloaded bolt", "do not apply Kf again",
         "Fa*d/2", "outside the toolkit",
     ],
-    "eng-dfm-review": ["material_angle_deg", "bends: 0", "`caller`", 'color_by="highlight"'],
+    "eng-dfm-review": ["near_tangent_deg", "RADIUS", "bends: 0", "`caller`", 'color_by="highlight"', "sheet.joint"],
     "eng-optimize": ["spreading", "outside the toolkit", "n - 1 gaps"],
     "eng-3d-view": ["ONE colour", "HALF the previous", "singularity", "gravity along -z"],
-    "eng-plot-results": ["kN*m", "operating point", "t10"],
+    "eng-plot-results": ["kN*m", "operating point", "t10", "data.png_path"],
+    # behaviour added by the tool fixes of the same round
+    "eng-signal-analysis": ["data.header_skipped", "column_used", 'unit="g"'],
+    "eng-pcb-review": ["at_kicad_limit", "library_warnings", "design_warnings"],
+    "eng-circuit-sim": ["bandpass_3db", "synchronous=true", "low_side_resistance", "dead_time"],
+    "eng-flow-network": ["Q = 0 shut-off"],
+    "eng-machine-design": ["joint_efficiency", "corrosion_allowance"],
+    "eng-digital-synthesis": ["200-character"],
+    "eng-drawing": ["geometry_view"],
 }
 
 
@@ -90,6 +98,27 @@ def test_skill_carries_the_acceptance_round_guidance(skill):
     text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
     missing = [phrase for phrase in GUIDANCE[skill] if phrase not in text]
     assert not missing, f"{skill} lost: {missing}"
+
+
+# Statements the tool fixes made false: a skill that repeats one sends the assistant round a problem that no longer exists.
+STALE = (
+    "header-less", "SVG only", "write 0.01", "never claim it was processed", "full column name", "non-synchronous only",
+    "conservative screen", "material_angle_deg",
+)
+
+
+@pytest.mark.parametrize("path", SKILLS + COMMANDS, ids=lambda p: f"{p.parent.name}/{p.name}")
+def test_plugin_text_does_not_describe_behaviour_the_tools_no_longer_have(path):
+    text = path.read_text(encoding="utf-8")
+    found = [phrase for phrase in STALE if phrase in text]
+    assert not found, f"{path.name} still says {found}"
+
+
+@pytest.mark.parametrize("path", SKILLS, ids=lambda p: p.parent.name)
+def test_a_skill_that_hands_over_a_chart_asks_for_a_png(path):
+    text = path.read_text(encoding="utf-8")
+    if any(tool in text for tool in ("plot_xy", "plot_panels", "plot_bar")):
+        assert 'format="png"' in text or 'format "png"' in text, f"{path.parent.name} names a plot tool but never asks for a PNG"
 
 
 def test_prompt_hook_no_longer_forbids_all_arithmetic_and_is_valid_json():

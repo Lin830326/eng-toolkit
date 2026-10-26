@@ -21,7 +21,7 @@ Nominal size and what mates with what; which part rotates and where the load sit
 | True position of holes with MMC or LMC bonus | `metrology_position_tolerance` |
 | Flatness, straightness, roundness, cylindricity from points | `metrology_form_error` |
 | Scan versus STEP deviation | `metrology_check_scan` (needs the `scan` extra: if `engine.unavailable`, say what to install) |
-| Bar chart of fits (min and max clearance) | `plot_bar` (bars do not float: two bars per fit) |
+| Bar chart of fits (min and max clearance) | `plot_bar`, `format="png"` (bars do not float: two bars per fit) |
 
 ## 3. Verified calls
 

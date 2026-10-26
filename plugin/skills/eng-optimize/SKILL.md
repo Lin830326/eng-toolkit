@@ -21,7 +21,7 @@ Objective and direction; design variables with bounds; every constraint; the dat
 | Fit parameters to data, with intervals | `optimize_fit` |
 | Output uncertainty from input uncertainties, ranking of inputs | `optimize_sensitivity` |
 | Experiment plan and response surface | `optimize_doe` |
-| Data vs fit picture | `plot_xy` with `data_file` = the `fit.csv` artifact (columns `<x>,<y>,fitted,residual`), `y_columns="T,fitted"`, `kind="scatter,line"`, labels with units |
+| Data vs fit picture | `plot_xy` with `data_file` = the `fit.csv` artifact (columns `<x>,<y>,fitted,residual`), `y_columns="T,fitted"`, `kind="scatter,line"`, `format="png"` (hand over `data.png_path`), labels with units |
 
 ## 3. Build the inputs
 
