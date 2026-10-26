@@ -10,7 +10,7 @@ profiles, rainflow cycles). `plot` draws them so an assistant can show the chart
 at most 150 kB, so a chat client can render it as an artifact) and an engineer can paste it into a report.
 
 Ground rules: clean-room; **numpy only at run time** (`DOMAIN.engines = ("numpy",)`; no matplotlib, no plotting or SVG library — the
-SVG is written by `_svg.py`); tools never call an LLM; **nothing the caller sends is executed or written unescaped** (numbers go through
+SVG is written by `_svg.py`; the optional PNG adds only `pypdfium2` from the `png` extra, see "PNG output"); tools never call an LLM; **nothing the caller sends is executed or written unescaped** (numbers go through
 one anchored regular expression and `float`, JSON through `json.loads`, every caller string through control-character replacement and
 XML escaping); every result says `review_status: "unreviewed"`; no NaN or infinity can reach a result or the SVG (`clean()` refuses
 them; coordinates are clamped); every refusal has a family and a `details.param` JSON pointer.
@@ -25,7 +25,42 @@ them; coordinates are clamped); every refusal has a family and a `details.param`
 
 Every tool writes `plot.svg` and `plot_data.json` (series statistics, axis ranges, every tick and label actually used, the
 data-to-pixel mapping, decimation, truncated texts, warnings) and returns the same summary in `data` (plus `svg_inline`, or
-`svg_inline_omitted` with the reason when the SVG is larger than 150 000 bytes).
+`svg_inline_omitted` with the reason when the SVG is larger than 150 000 bytes).  `format="png"` or `"both"` also writes `plot.png`
+(next section); the default `format="svg"` changes nothing.
+
+## PNG output (`format`)
+
+Most people who asked for a chart could not open an SVG path (a chat shows text, slides want a bitmap), so every tool takes
+`format`: `svg` (default: `plot.svg` and the inline SVG), `png` (`plot.png` and `plot_data.json`, no SVG) or `both`.  The result has
+`data.png_path` (the absolute path, also in `artifacts[]` with `format: "png"`), `data.png_width`, `data.png_height`,
+`data.format` (what was written) and `data.png` (size, bytes, SHA-256, `pixels_per_svg_px`).
+
+* How: `_svgpdf.py` redraws the finished SVG as a one-page PDF (1 px = 1 pt) and PDFium (`drawing/raster.py`, the one module that
+  imports `pypdfium2`; it keeps the lock and `require_engine`) rasterises it at 1600 px wide (the SVG's own width when that is
+  larger, never more than 4000 px on the long side, aspect kept); `_png.py` writes the RGB PNG with the standard library and numpy
+  (signature, IHDR, one IDAT with filter Up, IEND, no ancillary chunks).  No new dependency: `pypdfium2` is the `png` extra's
+  (`uv sync --extra png`), its entry in `licenses.py` now also lists the `plot` domain.  The converter understands exactly the
+  elements and attributes `_svg.Canvas` writes (`svg g defs clipPath rect path polyline line circle text`; paths `M L H V C A Z`,
+  arcs become Beziers; clipping, dash arrays, fill-opacity, caps and joins) and raises on anything else, so a new element cannot be
+  left out of the picture silently (a test converts every chart of the plot test files).
+* Why a PDF and not an SVG renderer or a bitmap library: resvg and cairosvg are MPL and LGPL, matplotlib is out by rule, and
+  Pillow's ImageDraw has no vector clipping, dash or round-cap strokes and needs a font file for text.  PDFium draws strokes,
+  dashes, clips and fills with anti-aliasing, and the PDF standard fonts need no font file.  Compared by eye with resvg on the same
+  SVG (Bode panels, log-log S-N, histogram, dual axis, stems, grouped bars) the pictures agree in geometry, colours, dashes and
+  clipping; only the typeface differs (Helvetica or its system stand-in instead of the viewer's UI font).
+* Text: Helvetica and Helvetica-Bold (WinAnsi, so Latin-1 and the usual punctuation), the standard Symbol font for Greek letters,
+  minus, <=, >=, ~=, infinity, the ohm sign and arrows, and a CJK font (`MSung-Light`, Adobe-CNS1, substituted by PDFium from the
+  system fonts) for wide characters.  Anything else is drawn as `?` and counted in a warning; the SVG keeps it.  Text is placed
+  with the Helvetica advance widths of the AFM files (`text-anchor` middle and end are exact); the layout itself still uses the
+  generous 0.6 em estimate, so there is always room.
+* Colours are the SVG's fallback colours: `theme="auto"` is the light theme in a PNG (there is no dark-mode switch in a bitmap);
+  `dark` and `print` are drawn as chosen.
+* Reproducibility: the same input gives the same PNG bytes on one machine and one PDFium build in any process; across machines the
+  anti-aliasing (PDFium build), the substituted fonts and the zlib stream may differ (the same promise as `drawing_make_views`).
+* Without `pypdfium2` (`ImportError`, or the library cannot load) the tool does **not** refuse: it returns the chart as SVG (it
+  writes `plot.svg` even for `format="png"`), `data.png_path` is null, `data.png.error` holds `{code: "engine.unavailable", message,
+  install: "uv sync --extra png", module}` and the first warning after the standing one says that no PNG was written and how to
+  install the extra.  The provenance still names `pypdfium2` as a requested engine.
 
 ## Data input
 
@@ -134,9 +169,17 @@ Bars are axis-aligned rectangles and are cut at the plot area grown by 4 px.
   returns `input.out_of_range` at the relevant data pointer, before tick generation or mapping. Representable subnormal bounds,
   including fixed ranges, remain usable; tick generation excludes zero and labels subnormal ticks without dividing by an underflowed decade.
 * Markers need room: when markers are drawn (scatter, stem, `markers=true`), automatic ranges get a 3 % margin (on a log axis out to
-  the next 1, 2 or 5 x 10^n instead of a whole decade).
+  the next 1, 2 or 5 x 10^n instead of a whole decade).  The margin never carries a linear axis across zero: data with a minimum of
+  at least 0 start at their minimum or at 0 (0..100 is not padded to -20..120, a time axis from 0 does not run from -500 s, the
+  zero baseline of stems is the frame), data with a maximum of at most 0 end at their maximum or at 0.
 * Fixed ranges (`x_range`, `y_range`, `"min,max"`): kept exactly; ticks are the step multiples inside; points outside are clipped by
-  the clip path and counted (`points_outside_axes`, warning).
+  the clip path and counted (`points_outside_axes`, warning).  The two numbers are plain decimals (or `1e3` exponents) in the unit of
+  the axis; unit text is refused (`'0,10 s'`) with a message that says so and that the unit belongs in the axis label (the axis
+  unit is not known to the tool, so a suffix could not be converted).  The same applies to `hlines`, `vlines`, `band` and `marker`.
+* `plot_xy` `marker="x,y,label"` rings one point (an operating point): a 7 px ring and a dot in the foreground colour, the label
+  placed by the reference-line label placer (never over another label).  The point takes part in the automatic ranges (and is refused
+  on a log axis when not positive); outside a fixed range it is not drawn and a warning says so; `data.marked_point` has its data and
+  pixel position.  First panel and left axis only; `plot_panels` and `plot_bar` have no marker.
 * Tick labels never overlap: every k-th label is kept, the smallest k for which estimated label boxes are at least 8 px (x) or 2 px
   (y) apart; tick marks and grid lines stay at every tick.
 
@@ -194,10 +237,12 @@ A line with `markers=true` uses the envelope for the line and the cells for the 
 
 * Grouped bars side by side, stacked bars with positive values upwards from 0 and negative values downwards; the y axis always
   includes 0; error bars (`err`, half widths, must be >= 0) with caps on grouped bars only (stacked + error bars is refused);
-  value labels above the bar or error bar (stacked: the total), left out (and counted) where the bar is narrower than the label; with
-  value labels and an automatic range 8 % headroom is added. Value labels use the same formatter family as the ticks: exact integers
-  below 1e9 (`12345`, `123456`), plain decimals with 4 significant digits for 1e-4 <= |v| < 1e9 (`0.0001235`, `-3.142`), otherwise
-  `1.5e9` / `2.5e-5` (never `e+04`).
+  value labels above the bar or error bar (stacked: the total); with value labels and an automatic range 8 % headroom is added.
+  Value labels use the same formatter family as the ticks: exact integers below 1e9 (`12345`, `123456`), plain decimals with
+  significant digits for 1e-4 <= |v| < 1e9, otherwise `1.5e9` / `2.5e-5` (never `e+04`).  The chart uses one precision for all
+  labels: 4 significant digits (`0.0001235`, `-3.142`) when every label fits its bar, else 3, else 2 (13 categories x 2 series at
+  800 px: `-25`, `6.3`); a label that still does not fit is written vertically above (below) its bar when the room there allows,
+  and only then left out and counted.  A note in the warnings states the digits used and the number written vertically.
 * A bar that extends beyond a fixed `y_range` is cut at the frame, marked with a small triangle pointing the way it continues,
   listed with `clipped: true` in `data.bars`, counted in `data.clipped_bars`, and a warning gives the count and the values.
 * `bars_drawn` (the primary value) counts the rectangles actually drawn; zero-height bars are reported separately
@@ -244,6 +289,10 @@ A line with `markers=true` uses the envelope for the line and the cells for the 
   numbers, strict JSON of every response, and a source grep (no eval/exec/compile/import tricks, subprocess, pickle, `open(`,
   plotting libraries, `<script`, `<foreignObject`, `xlink:`, `href=`).
 * Every SVG produced in the tests is parsed with `xml.etree.ElementTree` and checked against the element and attribute whitelist.
+* PNG output: `tests/test_plot_png.py` (signature, IHDR size, determinism, `both`, the missing-extra path, every chart converted
+  to a PDF, the text and path converters, the zero-anchored axes, the value labels, the marked point).  The PNGs of a Bode panels
+  chart, a log-log S-N curve, a histogram, a dual-axis chart, stems and grouped bars were looked at and compared with resvg's
+  rendering of the same SVG (resvg-py is not a dependency).
 * Visual check (by hand, not in the test suite): the demo SVGs (Bode panels from `dsp_filter_design`, shear and moment from
   `structures_frame`, an S-N curve with scatter points and a band, a histogram, grouped and stacked bars, 200 000 decimated points,
   hostile labels) were rendered to PNG with headless Chrome and inspected. The repository's PNG facility (`pypdfium2`) renders PDF,
@@ -298,7 +347,7 @@ All eight findings reproduced through the gateway before the fixes. No finding w
 
 ## Not done (this version)
 
-No 3D, maps, polar, contour or heatmap plots; no interactivity (tooltips, zoom, hover); no PNG or PDF output; no date/time axes
+No 3D, maps, polar, contour or heatmap plots; no interactivity (tooltips, zoom, hover); no PDF output (the PNG exists, see above); no date/time axes
 (x is a number; convert times to seconds); no second x axis; no per-panel y ranges in `plot_panels`; no log right axis; no
 horizontal bars; no hatch patterns (they would need `<pattern>`); no curve fitting, smoothing or interpolation of the data; no
 automatic unit handling (labels are plain text and the caller writes the unit); no text measurement from real font metrics (widths

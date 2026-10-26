@@ -27,7 +27,7 @@ from eng_toolkit.domains.plot._common import (
     whole,
 )
 from eng_toolkit.domains.plot._data import check_one_source, csv_series, inline_series
-from eng_toolkit.domains.plot._output import finish
+from eng_toolkit.domains.plot._output import FORMAT_TEXT, FORMATS, finish, wants_png
 from eng_toolkit.domains.plot._server import server
 from eng_toolkit.domains.plot.xy import KINDS, LEGENDS, SCALES, THEME_NAMES
 
@@ -62,8 +62,9 @@ def parse_panels(raw: object, notes: list[str]) -> list[tuple[str, list[str], st
     name="panels",
     description=(
         "Draw 2-6 vertically stacked panels that share one x axis (Bode magnitude + phase, waveform + spectrum, S-N curve + "
-        "residual) as one deterministic SVG plus plot_data.json. 'panels' lists 'title|y_columns|y_label|y_scale' records; each "
-        "panel gets its own y axis. Data: a CSV with a header row or inline JSON series; the same kinds, themes and decimation as plot_xy."
+        "residual) as one deterministic SVG plus plot_data.json; format=png (or both) also writes plot.png, a 1600 px wide picture "
+        "to paste into slides and reports (data.png_path; needs the png extra). 'panels' lists 'title|y_columns|y_label|y_scale' "
+        "records; each panel gets its own y axis. Data: a CSV with a header row or inline JSON series; the same kinds, themes and decimation as plot_xy."
     ),
 )
 def panels(
@@ -74,7 +75,7 @@ def panels(
     kind: Annotated[str, Field(description="line, scatter, step or stem for every panel; default line.")] = "line",
     markers: Annotated[bool, Field(description="true adds a marker on every drawn point of line/step series in all panels.")] = False,
     x_scale: Annotated[str, Field(description="linear or log for the shared x axis; log refuses zero or negative x (e.g. a 0 Hz row).")] = "linear",
-    x_range: Annotated[str, Field(description="Fixed shared x range 'min,max', e.g. '10,4000'; blank = automatic nice ticks.")] = "",
+    x_range: Annotated[str, Field(description="Fixed shared x range 'min,max': plain numbers in the axis unit, no unit text, e.g. '10,4000' (not '10 Hz,4 kHz'); blank = automatic.")] = "",
     x_label: Annotated[str, Field(description="Title of the shared x axis with its unit, e.g. 'Frequency (Hz)'; plain text <= 120 characters.")] = "",
     title: Annotated[str, Field(description="Title above all panels, plain text <= 120 characters, e.g. 'Butterworth low pass'; blank = none.")] = "",
     legend: Annotated[str, Field(description="auto (panels with 2+ series), off, top_right, top_left, bottom_right, bottom_left or right (outside).")] = "auto",
@@ -82,11 +83,12 @@ def panels(
     width: Annotated[int, Field(description="SVG width in px, 200..2400, e.g. 900.")] = 800,
     height: Annotated[int, Field(description="SVG height in px, 200..2400, e.g. 700; split equally between the panels.")] = 700,
     theme: Annotated[str, Field(description="auto (follows light/dark), light, dark, or print (black and grey with dash patterns).")] = "auto",
+    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = "svg",
 ) -> ToolResult:
     inputs = {
         "panels": record_text(panels), "data_file": data_file, "series": record_text(series), "x_column": x_column, "kind": kind, "markers": markers,
         "x_scale": x_scale, "x_range": x_range, "x_label": record_text(x_label), "title": record_text(title), "legend": legend, "grid": grid,
-        "width": width, "height": height, "theme": theme,
+        "width": width, "height": height, "theme": theme, "format": format,
     }
 
     def compute(handle: JobHandle) -> Computed:
@@ -95,6 +97,7 @@ def panels(
         chart_markers, chart_grid = flag(markers, "markers"), flag(grid, "grid")
         leg = choice(legend, "legend", LEGENDS)
         th = choice(theme, "theme", THEME_NAMES)
+        fmt = choice(format, "format", FORMATS)
         xs = choice(x_scale, "x_scale", SCALES)
         w, h = whole(width, "width", *SIZE_RANGE), whole(height, "height", *SIZE_RANGE)
         chart_title = text_param(title, "title", notes=notes)
@@ -136,9 +139,9 @@ def panels(
         )
         out = render_xy(chart)
         return finish(handle, out.svg, out.data, notes + out.warnings,
-                      {"points_drawn": out.points_drawn, "points_in": out.points_in, "panels": len(chart_panels)}, "points_drawn")
+                      {"points_drawn": out.points_drawn, "points_in": out.points_in, "panels": len(chart_panels)}, "points_drawn", fmt)
 
-    return run("plot_panels", inputs, compute)
+    return run("plot_panels", inputs, compute, engines=("pypdfium2",) if wants_png(format) else ())
 
 
 __all__ = ["panels"]

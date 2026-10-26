@@ -4,7 +4,9 @@ Linear, automatic: step = the smallest of 1, 2, 5, 10 x 10^e that is at least sp
 step at or below the data minimum to the multiple at or above the maximum (padded to nice ticks, so the ticks cover the data).
 Given a range: the axis is exactly that range and the ticks are the multiples of the step inside it.  Ticks are computed as
 ``k*m*10^e`` from integers, so 0.1 + 0.2 never appears as 0.30000000000000004.  Equal (or relatively closer than 1e-9) minimum
-and maximum are padded by 10 % of the value (to -1..1 for zero) and said so.
+and maximum are padded by 10 % of the value (to -1..1 for zero) and said so.  The 3 % margin that keeps markers and stems off the
+frame never carries the axis across zero: data with a minimum of at least 0 start at their minimum (or at 0 when the margin would
+go below it), data with a maximum of at most 0 end at their maximum (or at 0).
 
 Log: the axis runs between whole decades around the data (one decade more on each side when the data sit on a single power of
 ten); decades are equally spaced because the mapping is linear in log10.  Every ``stride``-th decade is labelled, stride from
@@ -182,7 +184,11 @@ def linear_axis(lo: float, hi: float, target: int, fixed: tuple[float, float] | 
             lo, hi = centre - pad, centre + pad
         elif margin:
             span = hi - lo
-            lo, hi = lo - margin * span, hi + margin * span
+            new_lo, new_hi = lo - margin * span, hi + margin * span
+            # data that never go below zero (above zero) keep the axis from going there: 0..100 is not padded to -20..120, a time axis
+            # starting at 0 does not run from -500 s
+            lo = 0.0 if lo >= 0.0 > new_lo else new_lo
+            hi = 0.0 if hi <= 0.0 < new_hi else new_hi
     else:
         lo, hi = fixed
         if _equalish(lo, hi) or 0.0 < max(abs(lo), abs(hi)) < VALUE_ABS_MIN:
