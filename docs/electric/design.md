@@ -391,12 +391,26 @@ signed load effort stays constant within a row. Alternatively give signed
 distance and total time for a rest-to-rest move, with acceleration time <=half
 the duration. Omitted acceleration time creates a triangle; otherwise the middle
 segment is constant speed. Peak load speed is `distance/(time-acceleration_time)`.
-`cycle_time` (at least `move_time`) appends a zero-speed dwell of `cycle_time - move_time`
-holding `dwell_load` (default zero; linear gravity always acts), so the RMS torque
-covers the repeating cycle that a continuous rating refers to; without it the RMS
-covers the move only and, when `rated_torque` or candidates are given, a warning says
-the RMS is too high for a cycle with rests. With an explicit `profile`, add a
-zero-speed row instead.
+`cycle_time` (at least `strokes_per_cycle * move_time`) appends a zero-speed dwell after each stroke,
+`(cycle_time - strokes_per_cycle*move_time)/strokes_per_cycle` long, holding `dwell_load` (default zero; linear
+gravity always acts), so the RMS torque covers the repeating cycle that a continuous rating refers to; without
+it the RMS covers the move only and, when `rated_torque` or candidates are given, a warning says the RMS is too
+high for a cycle with rests. With an explicit `profile`, add a zero-speed row instead.
+
+`strokes_per_cycle` (integer 1..4, default 1) states how many strokes one `cycle_time` holds. The shortcut
+models ONE stroke per `cycle_time` by default; an axis that goes out and back makes two strokes per cycle, and
+the one-stroke result then understates the RMS torque by `sqrt(2)` (M4 gantry: 1 m in 0.8 s, 0.4 s dwell, period
+2.4 s: one stroke gives 1.83 N*m, a pass with 23 % margin, the true out-and-back RMS is 2.59 N*m, 1.09 x the
+2.39 N*m rating). With `strokes_per_cycle > 1` the strokes alternate direction (return stroke "mirror"): speed
+and `load_force`/`load_torque` (a load that resists travel) change sign; gravity and `dwell_load` do not. The
+alternative of several strokes in the same direction equals one stroke in a shorter cycle. Existing callers keep
+the one-stroke behaviour, so every shortcut result states the assumption instead: `data.assumptions` gives the
+stroke count, period and moving fraction, `data.cycle` holds `strokes_per_cycle`, `move_time_s`,
+`active_time_s`, `dwell_per_stroke_s`, `period_s`, `active_fraction` (also the value `cycle_active_fraction`),
+and `warnings` carries "RMS covers N stroke(s) per cycle_time of X s; if the axis returns, set
+strokes_per_cycle=2 or give an explicit profile". When `rated_torque` or a candidate passes with an RMS margin
+below 30 %, a further warning says the margin depends on the stroke assumption. An explicit `profile` makes
+no stroke assumption and gets none of these entries.
 
 Load effort includes inertia, Coulomb friction, viscous friction and optional
 gravity `m*9.80665*sin(angle)`. Standard gravity is the defined conventional

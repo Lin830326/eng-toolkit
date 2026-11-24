@@ -126,15 +126,35 @@ class ArgumentRefusals(Middleware):
             return MCPToolResult(structured_content=result.model_dump(mode="json"))
 
 
+# Read by every client at connect time; assistants that never open a skill still see these rules.
+# Keep it under MAX_INSTRUCTIONS_BYTES (tests/test_gateway_instructions.py enforces the cap and the seven rules).
+MAX_INSTRUCTIONS_BYTES = 2500
+INSTRUCTIONS = (
+    "AI-callable open-source engineering toolkit. Tools are named <domain>_<tool>. Results are NOT engineering-approved: "
+    "every result has review_status='unreviewed'.\n"
+    "Hard rules:\n"
+    "1. Every physical input needs a unit string ('100 mm', '210 bar'); bare numbers are refused.\n"
+    "2. ASK before computing when an input that decides the verdict is missing: limit temperature, safety factor, loads, "
+    "service factor, reliability, material grade, datasheet values. Never invent them. Label any value you recall "
+    "'from memory, not a tool result'.\n"
+    "3. Every number that decides a result comes from a tool call. Your own unit scaling or sums are allowed but must be "
+    "labelled 'my arithmetic'.\n"
+    "4. Before the first call, if you have a Skill tool, load the `eng-toolkit` skill and the domain skill that matches the job: "
+    "eng-structural-check, eng-dfm-review, eng-fatigue-check, eng-motor-drive-sizing, eng-optimize, eng-plot-results, "
+    "eng-3d-view, eng-thermal-check, eng-control-tuning, eng-signal-analysis, eng-flow-network, eng-drawing, eng-pcb-review, "
+    "eng-circuit-sim, eng-digital-synthesis, eng-machine-design, eng-tolerancing.\n"
+    "5. Charts and 3D pictures: pass format=\"png\" (or \"both\"), or keep the default preview. Give the person the exact PNG path "
+    "and describe the picture in words. Never hand-write SVG, HTML or ASCII charts.\n"
+    "6. Read the result's own fields before you say 'passed': warnings, data.assumptions, not_performed, counts that sit at a cap "
+    "(such as at_kicad_limit), and measurements that are 0 or null, which mean 'not checked'.\n"
+    "7. A refusal (ok=false) is a result: explain it, fix the model or the input, never bypass it.\n"
+    "Result contract: {ok, value, values, artifacts, provenance, warnings, error, review_status}."
+)
+
 gateway = FastMCP(
     "eng-toolkit",
     version=__version__,
-    instructions=(
-        "AI-callable open-source engineering toolkit. Tools are namespaced <domain>_<tool>. "
-        "Every physical input must carry a unit ('100 mm', '210 bar'); bare numbers are rejected. "
-        "Every result follows one contract {ok, value, values, artifacts, provenance, warnings, "
-        "error, review_status='unreviewed'}. Results are NOT engineering-approved."
-    ),
+    instructions=INSTRUCTIONS,
 )
 gateway.add_middleware(ArgumentRefusals())
 
