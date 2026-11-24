@@ -24,7 +24,7 @@ import math
 import re
 import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 
 from eng_toolkit import external
@@ -325,6 +325,7 @@ def prepare(
     overrides: dict[str, float] | None = None,
     param: str = "board_path",
     validate: Callable[[Path], Any] | None = None,
+    stage_as: str | None = None,
 ) -> Prepared:
     """Copy the caller's file and, if wanted, the allow-listed parts of its project files into ``<job>/work`` and describe the rule set.
 
@@ -333,6 +334,10 @@ def prepare(
     """
     schematic = kind == "sch"
     suffix, name = (".kicad_sch", SCHEMATIC_NAME) if schematic else (".kicad_pcb", BOARD_NAME)
+    if stage_as is not None and not schematic:
+        # the staged copy carries the board's own (sanitised) name, so kicad-cli names its outputs after the board; the name is a
+        # fixed-alphabet string made by safe_stem, never the caller's text
+        name = f"{stage_as}.kicad_pcb"
     copy = handle.input_file(raw_path, param=param, extensions=(suffix,), max_bytes=MAX_BOARD_BYTES)
     checked = validate(copy) if validate is not None else None  # our reader first: a file that is not a board never reaches KiCad
     located = find_kicad()
@@ -390,6 +395,26 @@ def prepare(
     return Prepared(work=work, file=staged, located=located, version=version, rule_set=rule_set, warnings=warnings, checked=checked)
 
 
+_WINDOWS_DEVICES = frozenset({"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))})
+
+
+def safe_stem(raw_path: Any) -> str:
+    """The file stem of the caller's board for output names: ASCII letters, digits, ``_`` ``.`` and a ``-`` between two alphanumerics.
+
+    Anything else (spaces, shell characters, non-ASCII, a leading ``-``) becomes ``_`` (runs collapse), the result is at most 48 characters, and
+    it is never a Windows device name; an empty or all-underscore result is ``board``.
+    """
+    stem = PureWindowsPath(str(raw_path)).stem if isinstance(raw_path, str) else ""
+    stem = re.sub(r"[^A-Za-z0-9_.-]", "_", stem)
+    stem = re.sub(r"(?<![A-Za-z0-9])-|-(?![A-Za-z0-9])", "_", stem)
+    stem = re.sub(r"_{2,}", "_", stem).strip("._")[:48].strip("._")
+    if not stem or not re.search(r"[A-Za-z0-9]", stem):
+        return "board"
+    if stem.split(".")[0].upper() in _WINDOWS_DEVICES:
+        stem = "board_" + stem
+    return stem
+
+
 def _reject_constant(token: str) -> Any:
     raise ValueError(f"the project file holds {token}, which is not JSON")
 
@@ -434,6 +459,7 @@ def short(text: Any, limit: int = 300) -> str:
 
 __all__ = [
     "BOARD_NAME",
+    "safe_stem",
     "Prepared",
     "SCHEMATIC_NAME",
     "check_rules_text",

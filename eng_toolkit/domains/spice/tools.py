@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 from typing import Annotated, Any
 
+import numpy as np
 from pydantic import Field
 
 from eng_toolkit import __version__
@@ -265,7 +266,7 @@ def _csv(header: list[str], columns: list[list[float]]) -> str:
 
 
 def ac_columns(table: ng.Table, outputs: list[str]) -> dict[str, list[float]]:
-    """Real, imaginary, magnitude, dB (floored at -400 dB) and phase in degrees (wrapped to -180..180) of every complex output."""
+    """Real, imaginary, magnitude, dB (floored at -400 dB), phase in degrees (wrapped to -180..180) and the same phase unwrapped along frequency."""
     out: dict[str, list[float]] = {}
     for name in outputs:
         re_, im_ = table.columns[f"{name}.re"], table.columns[f"{name}.im"]
@@ -275,6 +276,8 @@ def ac_columns(table: ng.Table, outputs: list[str]) -> dict[str, list[float]]:
         out[f"{name}.mag"] = mag
         out[f"{name}.db"] = [20.0 * math.log10(m) if m > 1e-20 else LOW_DB for m in mag]
         out[f"{name}.phase_deg"] = [math.degrees(math.atan2(b, a)) for a, b in zip(re_, im_)]
+        # numpy.unwrap along the sweep (a step of more than 180 degrees between two neighbours is taken as a wrap); the first point keeps its wrapped value
+        out[f"{name}.phase_unwrapped_deg"] = [float(x) for x in np.degrees(np.unwrap(np.arctan2(np.asarray(im_, dtype=float), np.asarray(re_, dtype=float))))]
     return out
 
 
@@ -289,6 +292,7 @@ def build_result(handle: JobHandle, table: ng.Table, outputs: list[str], describ
     values: dict[str, QuantityOut] = {}
     data: dict[str, Any] = {"analysis": described, "outputs": outputs}
     artifacts: list[Artifact] = []
+    warnings: list[str] = []
     if analysis == "op":
         for name in outputs:
             values[name] = QuantityOut(quantity=table.columns[name][0], unit=_unit_of(name))
@@ -311,11 +315,21 @@ def build_result(handle: JobHandle, table: ng.Table, outputs: list[str], describ
                 "db_final": cols[f"{name}.db"][-1],
                 "phase_deg_first": cols[f"{name}.phase_deg"][0],
                 "phase_deg_final": cols[f"{name}.phase_deg"][-1],
+                "phase_unwrapped_deg_first": cols[f"{name}.phase_unwrapped_deg"][0],
+                "phase_unwrapped_deg_final": cols[f"{name}.phase_unwrapped_deg"][-1],
+                "phase_unwrapped_deg_min": min(cols[f"{name}.phase_unwrapped_deg"]),
+                "phase_unwrapped_deg_max": max(cols[f"{name}.phase_unwrapped_deg"]),
             }
             unit = _unit_of(name)
             values[f"{name}.min"] = QuantityOut(quantity=mag["min"], unit=unit)
             values[f"{name}.max"] = QuantityOut(quantity=mag["max"], unit=unit)
             values[f"{name}.final"] = QuantityOut(quantity=mag["final"], unit=unit)
+            steps = [abs(b - a) for a, b in zip(cols[f"{name}.phase_unwrapped_deg"], cols[f"{name}.phase_unwrapped_deg"][1:])]
+            if steps and max(steps) > 120.0:
+                warnings.append(
+                    f"{name}: the phase moves {max(steps):.0f} degrees between two neighbouring frequencies; phase_unwrapped_deg assumes less than 180 "
+                    "degrees per step, so it may be off by a multiple of 360 degrees here: use more points per decade"
+                )
     else:
         cols = dict(table.columns)
         header = [x_name, *cols]
@@ -333,10 +347,13 @@ def build_result(handle: JobHandle, table: ng.Table, outputs: list[str], describ
     data["summary"] = summary
     data["table"] = {"artifact": "result.csv", "columns": header, "rows": len(xs)}
     if analysis == "ac":
-        data["table"]["note"] = "magnitude in volt or ampere per unit source; phase in degrees wrapped to (-180, 180]; dB floored at -400"
+        data["table"]["note"] = (
+            "magnitude in volt or ampere per unit source; phase_deg in degrees wrapped to (-180, 180]; phase_unwrapped_deg is the same phase unwrapped "
+            "along frequency (numpy.unwrap, so a lag past -180 degrees continues to -270, -360 ...; its first point is the wrapped value); dB floored at -400"
+        )
     if analysis == "tran":
         data["table"]["note"] = "rows are ngspice's own time points (not a uniform grid); the step limits the largest interval"
-    return Computed(values=values, primary=f"{outputs[0]}.final" if analysis != "ac" else f"{outputs[0]}.max", data=data, artifacts=artifacts)
+    return Computed(values=values, primary=f"{outputs[0]}.final" if analysis != "ac" else f"{outputs[0]}.max", warnings=warnings, data=data, artifacts=artifacts)
 
 
 def netlist_summary(nl: nlmod.Netlist) -> dict[str, Any]:

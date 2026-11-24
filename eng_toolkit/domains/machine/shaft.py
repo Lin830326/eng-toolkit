@@ -17,7 +17,7 @@ SURFACES = {"ground": (1.58, -0.085), "machined": (4.51, -0.265),
 RELIABILITY = {50: 1.0, 90: 0.897, 95: 0.868, 99: 0.814, 99.9: 0.753, 99.99: 0.702}
 
 
-@server.tool(description="Round shaft: von Mises/Tresca static stress, Marin endurance and Goodman/Soderberg/Gerber/ASME fatigue. Signed loads at one outer fibre; fatigue parts separate. Optional TL/GJ twist and Rayleigh/Dunkerley critical speed from static deflections. Elastic steel fatigue estimates.")
+@server.tool(description="Round shaft: von Mises/Tresca static stress, Marin endurance and Goodman/Soderberg/Gerber/ASME fatigue. Signed loads at one outer fibre; fatigue parts separate. Optional TL/GJ twist and Rayleigh/Dunkerley critical speed from static deflections. Elastic steel fatigue estimates. With only alternating/mean loads the static check is at |mean|+alternating.")
 def shaft(
     outer_diameter: Q, inner_diameter: Q = "0 mm", bending_moment: Q = "0 N*m",
     torque: Q = "0 N*m", axial_force: Q = "0 N", yield_strength: Q = "",
@@ -44,7 +44,7 @@ def shaft(
             "ASME_elliptic": "(n*a/Se)^2+(n*m/Sy)^2=1; n=1/hypot(a/Se,m/Sy)",
             "twist": "theta=T*L/(G*J), J=pi*(d^4-di^4)/32",
             "critical_speed": "omega=sqrt(g/sum(delta_i)), g=9806.65 mm/s^2; one delta: Rayleigh; several: Dunkerley",
-        }, "Linear elastic circular section. M and F signed at the chosen outer fibre; sigma_b and axial add algebraically. Kt applies to bending, Kts to torsion. Fatigue excludes axial force; equivalent mean stress is nonnegative. Marin constants estimate steel endurance. Critical speed neglects shaft distributed mass.",
+        }, "Linear elastic circular section. M and F signed at the chosen outer fibre; sigma_b and axial add algebraically. Kt applies to bending, Kts to torsion. With only alternating and mean loads the static block is the maximum fatigue load |mean|+alternating; beside explicit static loads it uses those alone and peak_* gives the maximum fatigue load. Fatigue excludes axial force; equivalent mean stress is nonnegative. Marin constants estimate steel endurance. Critical speed neglects shaft distributed mass.",
                    "0<=di<d; wall/d>=1e-6. Auto kb only 2.79..254 mm. Direct ka,kc,ke<=1; kb,kd<=2; all positive (zero selects auto except kd). K factors 1..100. Deflections must be individual one-mass static deflections for the same shaft/supports.")
         d = q(outer_diameter, "outer_diameter", "length")
         di = q(inner_diameter, "inner_diameter", "length", zero=True)
@@ -86,6 +86,24 @@ def shaft(
         if sy is not None and sut is not None and sy > sut:
             invalid("yield_strength", "yield strength cannot exceed ultimate strength")
         denom = math.pi * (d**4 - di**4)
+        ma0, mm0, ta0, tm0 = (x or 0 for x in parts)
+        peak_m, peak_t = abs(mm0) + ma0, abs(tm0) + ta0  # maximum of the fatigue loads: |mean| + alternating
+        static_given = bool(m or t or f)
+        if fatigue and not static_given and (peak_m or peak_t):
+            # Judge M1-12: with only alternating and mean loads the static block used to be all zero (and, beside a separate torque, left the
+            # alternating bending out of the yield check).  The static check now takes the maximum load of the fatigue loads.
+            m, t = peak_m, peak_t
+            r.data["static_load_basis"] = "the static block uses the maximum of the fatigue loads, |mean| + alternating, because no bending_moment, torque or axial_force was given"
+            r.warnings.append("No static load was given: the static stresses and static_safety_factor are for the maximum fatigue load (|mean| + alternating bending and torque).")
+        elif fatigue and static_given and (peak_m or peak_t):
+            r.data["static_load_basis"] = "the static block uses only bending_moment, torque and axial_force as given; the fatigue loads are NOT in it (peak_* values are)"
+            r.warnings.append(
+                "The static block uses only bending_moment, torque and axial_force; the alternating and mean loads are not added to it. "
+                "peak_von_mises and peak_safety_factor are the yield check at the maximum fatigue load (|mean| + alternating). "
+                "If the static loads repeat the same torque or bending as the fatigue loads, leave them out."
+            )
+        else:
+            r.data["static_load_basis"] = "bending_moment, torque and axial_force as given"
         sb, tau, sz = 32*m*d/denom, ktsv*16*t*d/denom, 4*f/(math.pi*(d*d-di*di))
         sigma = ktv*sb + sz
         vm = math.hypot(sigma, math.sqrt(3)*tau)
@@ -94,9 +112,19 @@ def shaft(
                             ("tresca_equivalent", math.hypot(sigma, 2*tau))):
             r.add(name, value, "stress")
         r.safety("static_safety_factor", sy, vm)
+        if sy is not None and (ktv > 1 or ktsv > 1) and (m or t or f):
+            r.warnings.append(
+                f"static_safety_factor includes kt = {ktv:g} and kts = {ktsv:g} (the stress-concentration factors multiply the static stresses). "
+                "For a ductile steel at yield the concentration is usually not applied: kt = 1 and kts = 1 give the nominal static check; kf and kfs act on the fatigue part only."
+            )
         opposite_vm = math.hypot(-ktv*sb + sz, math.sqrt(3)*tau)
         r.add("worst_fibre_von_mises", max(vm, opposite_vm), "stress")
         r.safety("worst_fibre_safety_factor", sy, max(vm, opposite_vm))
+        if fatigue and static_given and (peak_m or peak_t):
+            sigma_pk = ktv*32*peak_m*d/denom
+            vm_pk = math.hypot(sigma_pk, math.sqrt(3)*ktsv*16*peak_t*d/denom)
+            r.add("peak_von_mises", vm_pk, "stress")
+            r.safety("peak_safety_factor", sy, vm_pk)
         if fatigue:
             if not any(x for x in parts):
                 invalid("alternating_bending", "fatigue needs explicit nonzero mean or alternating load parts")

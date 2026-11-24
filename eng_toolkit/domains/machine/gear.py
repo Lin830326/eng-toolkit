@@ -28,7 +28,7 @@ def lewis(n: int) -> float:
     return y0 + (y1-y0)*(n-x0)/(x1-x0)
 
 
-@server.tool(description="External spur pair: full-depth involute geometry, contact ratio/interference, Wt/velocity, basic Lewis bending and pitch-point Hertz stress. Give module OR diametral_pitch; torque OR power+speed. Empirical Lewis table only at 20 deg. This is not an AGMA/ISO 6336 rating.")
+@server.tool(description="External spur pair: full-depth involute geometry, contact ratio/interference, Wt/velocity, basic Lewis bending and pitch-point Hertz stress. Give module OR diametral_pitch; torque OR power+speed. Empirical Lewis table only at 20 deg. Spur only (no helix angle): d = module*teeth, so for a helical gear pass the transverse module m_n/cos(beta). Not an AGMA/ISO 6336 rating.")
 def gear(
     teeth_1: Count, teeth_2: Count, face_width: Q, module: Q = "", diametral_pitch: Q = "",
     pressure_angle: Q = "20 deg", torque: Q = "", power: Q = "", speed: Q = "",
