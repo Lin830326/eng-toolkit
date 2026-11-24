@@ -25,6 +25,25 @@ around fields is accepted. IDs are 1..32 ASCII letters, digits, underscores or h
 starting with a letter, digit or underscore. IDs are case-sensitive. Duplicate node,
 member, support, thermal or mass definitions are refused; separate load records add.
 
+**Record refusals show the grammar.** Every refusal that points into a record (a wrong field count, an empty field, a unit
+error, an unknown member or node id, a bad `uniform`/`point` keyword) names the record kind (the parameter), the
+number of the record (and its line when the text has several lines), what was received (clipped to 80 characters, control
+characters shown as `?`), the expected fields in order, and an example. Example for the record that cost round 2
+(S1) three tries, a point load with the optional moment field a 2D member load does not have:
+
+```text
+input.invalid /member_loads/0: expected 6 comma-separated fields but got 7 [member_loads record 1: received
+'e,point,global,2 m,0 N,-11772 N,0 N*m'; expected member,uniform,local|global,qx,qy | member,linear,local|global,qx0,qy0,qx1,qy1 |
+member,point,local|global,a,Fx,Fy (a is the distance from the start node); e.g. 'e,uniform,local,0 N/m,-1 kN/m' or 'e,point,global,2 m,0 N,-5 kN']
+```
+
+The grammar table is `GRAMMAR` in `_common.py` (one per tool: truss, 3D foundation and plate have their own `nodes`, `members`,
+`supports`, `loads`, `thermal`, `point_loads` rows, everything else falls back to the frame row). `records` remembers the rows of the
+call in a context variable; `invalid` finds the row from the JSON pointer, so every parser (nodes, members, supports, loads,
+member loads, shear properties, thermal, releases, orientations, masses, section polygons) gets the note without its own code.
+`tests/test_structures_record_errors.py` fires every record kind, checks the note, and parses every example of every grammar
+row through the tools so an example cannot rot.
+
 Each text parameter is limited to 60000 characters, each record to 1000, each
 quantity to 120 and its unit expression to 64. Unit expressions permit named units,
 products, quotients and integer powers -99..99. They do not permit numeric
@@ -217,6 +236,29 @@ The caller supplies I about the relevant buckling axis. This is not a frame-colu
 or code capacity check. Elongation/length or elastic strain above .05 generates a
 small-displacement warning.
 
+### Loads on a sloped member: pressure normal to the surface
+
+`structures_truss` takes joint loads only; a pressure `p` (wind, snow normal to the roof) on a sloped chord is resolved by hand into
+joint forces. There is no `member_pressure` record: a pressure needs a tributary width and a sign convention for the normal, which
+the frame `member_loads` already give for beams (`uniform,local`) and which a pin-jointed chord cannot carry between joints
+without bending, so the half-and-half joint split is the model. Recipe:
+
+1. For each loaded chord from joint i to j: `dx = xj - xi`, `dy = yj - yi`, `L = hypot(dx, dy)`. The resultant is `R = p * w * L`, with `w` the tributary width (truss spacing) and `p` positive pointing away from the surface.
+2. The outward normal of a chord that runs left to right (dx > 0) over a roof is `n = (-dy, dx) / L`. Then `R n = p w (-dy, dx)`: half goes to each end joint, `Fx = p w (-dy) / 2` and `Fy = p w dx / 2`.
+3. Add the halves of the chords that meet at a joint; `loads` records for the same joint add. The eave joints (the ends of the first and last chord) carry half a panel each. They sit on supports, but their vertical share goes straight to the support and their horizontal share can load the bottom chord through a roller, so leaving them out changes member forces (round 2, S2: the bottom chord end panel was -14.6 kN instead of -13.5 kN).
+4. Compare `data.applied_total_fx` and `data.applied_total_fy` (and `data.loaded_nodes`) with your hand total `sum(p w (-dy))` and `sum(p w dx)` over all loaded chords. A joint left out of `loads` shows as a shortfall there. The reactions cannot show it: they always equal minus what was applied.
+
+Example, a symmetric roof with ridge b at (2 m, 1 m), eaves a (0, 0) and c (4 m, 0), `p w = 3 kN/m` (p = 1 kN/m2, w = 3 m):
+
+```text
+chord ab: dx = 2 m, dy = 1 m   half = ( -1.5 kN, 3.0 kN) at a and at b
+chord bc: dx = 2 m, dy = -1 m  half = (  1.5 kN, 3.0 kN) at b and at c
+loads = a,-1.5 kN,3 kN;b,0 N,6 kN;c,1.5 kN,3 kN        applied_total = (0 kN, 12 kN)
+```
+
+`structures_truss` returns `data.applied_total_fx/fy[/fz]` (the sum of the joint loads given, supports included, thermal initial strains
+not included), `data.reaction_total_fx/fy[/fz]`, `data.loaded_nodes` (joint ids with a nonzero load) and a `data.load_check` sentence.
+
 ## `structures_frame`
 
 The frame and modal tools share `_model.py`. SI model records, transformations,
@@ -242,6 +284,8 @@ node,roller_x[,ux]
 node,roller_y[,uy]
 node,spring,kx,ky,kr[,rest_x,rest_y,rest_rotation]
 ```
+
+Spring record, with units (round 1 S4: a finite-stiffness brace; the example is in the parameter description too): `c,spring,5 kN/m,0 N/m,0 N*m/rad` is kx, ky, krot, and a spring that acts in one direction only has `0 N/m` for the others. The `structures3d_*` form `c,spring,ux,1000 kN/m,0 m` (axis, stiffness, rest position) is a different grammar and is refused here with the 2D grammar in the message.
 
 `roller_x` restrains ux only (a reaction in x; the joint slides in y, rotates freely); `roller_y` restrains uy only (a vertical reaction; the joint slides in x: the usual beam roller). Neither restrains rotation. Spring
 stiffnesses are nonnegative, in N/m, N/m and N m/rad. All optional prescribed/rest

@@ -84,7 +84,7 @@ async def test_the_fem_tools_are_listed_with_basic_parameter_types_and_the_contr
     assert {"fem_mesh", "fem_static"} <= set(tools)
     assert len([n for n in tools if n.startswith("fem_")]) <= 6
     # UAT S3: the headline is a magnitude and the per-axis maxima are values
-    assert "magnitude" in tools["fem_static"].description and "max_displacement_ux/uy/uz" in tools["fem_static"].description
+    assert "magnitude; see values.max_displacement_ux/uy/uz" in tools["fem_static"].description and "data.displacement_note" in tools["fem_static"].description
     for name in ("fem_mesh", "fem_static"):
         tool = tools[name]
         assert tool.output_schema is not None and "review_status" in tool.output_schema.get("properties", {})

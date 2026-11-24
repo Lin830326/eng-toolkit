@@ -23,7 +23,13 @@ from eng_toolkit import external as ext
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.external_catalog import GMSH
 
-TET_PER_UNIT_VOLUME = 6.0 * math.sqrt(2.0)  # elements of edge h per h^3 of volume: a regular tetrahedron has V = h^3 / (6 sqrt 2)
+# Element-count estimate before meshing: ELEMENTS_PER_VOLUME * V / h^3 + ELEMENTS_PER_AREA * A / h^2.  Fitted to real Gmsh counts (docs/fem/design.md,
+# "Element estimate calibration"): 43 meshes of 9 shapes at element sizes up to 1.3 times the mean thickness 2 V / A, estimate / real = 0.87 .. 1.26
+# (median 1.01).  The old regular-tetrahedron figure 6 sqrt(2) = 8.49 per h^3 was 1.6 times the real count of compact parts.
+ELEMENTS_PER_VOLUME = 4.0
+ELEMENTS_PER_AREA = 1.7
+CALIBRATION_RATIO_MIN, CALIBRATION_RATIO_MEDIAN, CALIBRATION_RATIO_MAX = 0.87, 1.01, 1.26  # estimate / real over the calibration meshes
+CALIBRATION_MESHES = 43
 MAX_ELEMENTS = 60_000  # tetrahedra; the estimate before meshing and the count after it are both held to this
 MAX_NODES = 120_000  # 10-node elements share corner and mid-edge nodes: about 1.4 nodes per element at this size
 MIN_SIZE_FRACTION = 1.0 / 1000.0  # element size is at least this fraction of the bounding-box diagonal
@@ -71,15 +77,41 @@ class Facets:
 # --------------------------------------------------------------------------- limits before meshing
 
 
-def estimate_elements(volume_mm3: float, size_mm: float) -> float:
-    """Tetrahedra of edge ``size_mm`` that fill ``volume_mm3``: ``6 sqrt(2) V / h^3``.  An estimate: a part with thin walls needs more."""
-    return TET_PER_UNIT_VOLUME * volume_mm3 / size_mm**3
+def estimate_elements(volume_mm3: float, size_mm: float, area_mm2: float = 0.0) -> float:
+    """Tetrahedra Gmsh makes for a part of volume ``volume_mm3`` and surface area ``area_mm2`` at ``-clmax size_mm``:
+    ``4.0 V / h^3 + 1.7 A / h^2`` (the surface term is the extra density Gmsh puts at the boundary).  Calibrated, not derived: it holds
+    for element sizes up to about the mean thickness ``2 V / A``; above that Gmsh refines through the thickness and makes more."""
+    return ELEMENTS_PER_VOLUME * volume_mm3 / size_mm**3 + ELEMENTS_PER_AREA * area_mm2 / size_mm**2
 
 
-def check_before_meshing(volume_mm3: float, bbox_min: tuple[float, float, float], bbox_max: tuple[float, float, float], size_mm: float) -> float:
-    """Refuse a model or an element size that cannot be meshed within the limits; return the estimated element count."""
+def finest_size_within_cap(volume_mm3: float, area_mm2: float, max_elements: float = MAX_ELEMENTS) -> float:
+    """The smallest element size (mm) whose estimate is at most ``max_elements``; the estimate falls with the size, so bisect."""
+    low, high = 1e-9, 1.0
+    while estimate_elements(volume_mm3, high, area_mm2) > max_elements:
+        high *= 2.0
+    for _ in range(100):
+        mid = 0.5 * (low + high)
+        if estimate_elements(volume_mm3, mid, area_mm2) > max_elements:
+            low = mid
+        else:
+            high = mid
+    return high
+
+
+def check_before_meshing(
+    volume_mm3: float,
+    bbox_min: tuple[float, float, float],
+    bbox_max: tuple[float, float, float],
+    size_mm: float,
+    area_mm2: float | None = None,
+) -> float:
+    """Refuse a model or an element size that cannot be meshed within the limits; return the estimated element count.
+
+    ``area_mm2`` is the part's surface area; if it is not given, the surface of the bounding box stands in for it."""
     extent = [hi - lo for lo, hi in zip(bbox_min, bbox_max)]
     diagonal = math.hypot(*extent)
+    if area_mm2 is None:
+        area_mm2 = 2.0 * (extent[0] * extent[1] + extent[1] * extent[2] + extent[2] * extent[0])
     if not (MIN_PART_MM <= max(extent) and diagonal <= MAX_PART_MM):
         raise ToolFailure(
             "input.out_of_range",
@@ -99,13 +131,34 @@ def check_before_meshing(volume_mm3: float, bbox_min: tuple[float, float, float]
             f"element size {size_mm:.6g} mm is larger than the part's diagonal ({diagonal:.6g} mm)",
             {"param": "/element_size", "diagonal_mm": diagonal},
         )
-    estimate = estimate_elements(volume_mm3, size_mm)
+    estimate = estimate_elements(volume_mm3, size_mm, area_mm2)
     if estimate > MAX_ELEMENTS:
+        finest = max(finest_size_within_cap(volume_mm3, area_mm2), smallest)
+        finest = float(f"{finest * (1.0 + 1e-4):.4g}")  # rounded up to 4 digits, so that the size named in the message passes
         raise ToolFailure(
             "input.too_large",
-            f"element size {size_mm:.6g} mm on a part of {volume_mm3:.6g} mm3 would need about {estimate:.3g} elements; the limit is {MAX_ELEMENTS} "
-            f"(use a size of at least {(TET_PER_UNIT_VOLUME * volume_mm3 / MAX_ELEMENTS) ** (1 / 3):.4g} mm)",
-            {"param": "/element_size", "estimated_elements": float(f"{estimate:.6g}"), "max_elements": MAX_ELEMENTS, "size_mm": size_mm, "volume_mm3": volume_mm3},
+            f"element size {size_mm:.6g} mm on a part of {volume_mm3:.6g} mm3 (surface {area_mm2:.6g} mm2) would need about {estimate:.3g} elements; "
+            f"the limit is {MAX_ELEMENTS}. The estimate {ELEMENTS_PER_VOLUME:g} V/h^3 + {ELEMENTS_PER_AREA:g} A/h^2 was measured against real Gmsh meshes: "
+            f"estimate / real = {CALIBRATION_RATIO_MIN:g} to {CALIBRATION_RATIO_MAX:g} (median {CALIBRATION_RATIO_MEDIAN:g}), so the real count is probably "
+            f"{estimate / CALIBRATION_RATIO_MAX:.3g} to {estimate / CALIBRATION_RATIO_MIN:.3g}. "
+            f"The finest size that passes is {finest:.4g} mm (use that or a larger one)",
+            {
+                "param": "/element_size",
+                "estimated_elements": float(f"{estimate:.6g}"),
+                "max_elements": MAX_ELEMENTS,
+                "size_mm": size_mm,
+                "volume_mm3": volume_mm3,
+                "area_mm2": area_mm2,
+                "finest_passing_size_mm": finest,
+                "calibration": {
+                    "elements_per_volume": ELEMENTS_PER_VOLUME,
+                    "elements_per_area": ELEMENTS_PER_AREA,
+                    "estimate_over_real_min": CALIBRATION_RATIO_MIN,
+                    "estimate_over_real_median": CALIBRATION_RATIO_MEDIAN,
+                    "estimate_over_real_max": CALIBRATION_RATIO_MAX,
+                    "meshes": CALIBRATION_MESHES,
+                },
+            },
         )
     return estimate
 

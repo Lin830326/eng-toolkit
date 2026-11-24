@@ -55,6 +55,8 @@ The original model is capped at 200 nodes and 400 members. Every node must belon
 | `shear_properties` | `e,Asy,Asz`: `e,800 mm^2,600 mm^2`; at most 400, static only |
 | `thermal` | `e,alpha,dT`: `e,12e-6 1/K,50 K`; at most 400, static only |
 
+Every refusal inside a record (field count, empty field, unit, unknown id, keyword) names the record kind, the record number (and the line when the text has several), the received text (clipped to 80 characters) and the grammar with an example, exactly as in `docs/structures/design.md`; the grammar table is `GRAMMAR` in `structures3d/_common.py` (the foundation beam and the plate have their own `point_loads` rows). `tests/test_structures_record_errors.py` parses every example.
+
 Optional record parameters default to `""`, meaning omitted. A member may instead append one roll angle or three dimensionless reference-vector components to its nine required fields. Supplying that orientation again in `orientations` is an error. Reference components must be finite, with nonzero magnitudes 1e-12..1e6. Zero-length members and collinear or nearly collinear reference vectors are refused.
 
 The local axis convention is defined without a picture:

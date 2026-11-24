@@ -25,7 +25,7 @@ Files a program wrote are copied to the job directory's top level (`mesh.msh`, `
 
 `fem_static(model_path, element_size, youngs_modulus, poisson_ratio, supports, loads, output_length_unit="mm", output_stress_unit="MPa")` -> primary `max_displacement`; `values`: `max_displacement` (a magnitude), `max_displacement_ux`, `max_displacement_uy`, `max_displacement_uz` (largest |ux|, |uy|, |uz| over the nodes, in the output length unit), `max_von_mises`, `applied_force_x/y/z`, `reaction_force_x/y/z` (newton), `equilibrium_residual` (dimensionless, relative), `element_count`, `node_count`; `data`: `max_displacement_at_mm`, `max_displacement_vector_mm`, `max_displacement_components_mm` (largest |ux|, |uy|, |uz| over nodes), `max_von_mises_at_mm`, `equilibrium` (applied, reaction, residual, both relative residuals and limits), `supports` and `loads` (what each clause selected: facets, nodes, area, resultant, snapped node and distance for points), `material`, `mesh`, `solver` (versions, times, files), `conventions`; artifacts `model.inp`, `result.frd`, `result.dat`, `results.csv` (node, x, y, z, ux, uy, uz, |u|, six stresses, von Mises), `mesh.msh`. Every result says `review_status: unreviewed`.
 
-`max_displacement` is the largest displacement **magnitude** over nodes. In bending that is a tip corner, which also moves along the axis by the end rotation, so it is larger than the deflection; read the deflection from `max_displacement_ux/uy/uz` (or `max_displacement_components_mm`, or `results.csv`).
+`max_displacement` is the largest displacement **magnitude** over nodes. In bending that is a tip corner, which also moves along the axis by the end rotation, so it is larger than the deflection; read the deflection from `max_displacement_ux/uy/uz` (or `max_displacement_components_mm`, or `results.csv`). The tool description says "magnitude; see values.max_displacement_ux/uy/uz" and `data.displacement_note` repeats it for the actual run with the numbers (headline magnitude and the three per-axis maxima in the output length unit) and tells the reader to report sideways motion, the axes other than the loaded one (round 2, S3 r2-3: the L-bracket tip also moves 1.7 mm sideways, which nobody reported). `fem_mesh` and `fem_static` also return `estimated_elements` next to the real `element_count`.
 
 ## The selector language (`selectors.py`)
 
@@ -91,7 +91,7 @@ The fully clamped root is not a bug and not the textbook beam: beam theory lets 
 
 | Limit | Value | Error |
 |---|---|---|
-| Element estimate `6 sqrt(2) V / h^3` before meshing | 60000 | `input.too_large`, the estimate and the size that would pass |
+| Element estimate `4.0 V / h^3 + 1.7 A / h^2` before meshing (V volume, A surface area; [calibration](#element-estimate-calibration)) | 60000 | `input.too_large`: the message and `details` give the estimate, the calibration ratio (estimate / real 0.87 to 1.26, median 1.01) and `finest_passing_size_mm` |
 | Elements and nodes after meshing | 60000 and 120000 | `input.too_large` (thin walls need more elements than the estimate; a 100 x 100 x 0.5 mm plate at 2 mm is estimated at 5300 and meshed as 17900 elements) |
 | Element size, lower | 1/1000 of the bounding-box diagonal | `input.too_large` |
 | Element size, upper | the diagonal | `input.out_of_range` |
@@ -111,6 +111,30 @@ The fully clamped root is not a bug and not the textbook beam: beam theory lets 
 
 Measured: 33482 elements (the bar at 1.13 mm) take 2.3 s to mesh and about 22 s to solve; 3563 elements about 1 s. The largest run tried is that one. A mesh at the 60000 cap was not solved (memory and time there are the limits of Windows' per-process cap, not tested).
 
+## Element estimate calibration
+
+Round 2 of the user-acceptance run (S3, problem r2-2) found the old estimate `6 sqrt(2) V / h^3` (the number of regular tetrahedra of edge h that fill V) 1.6 times the real count: the S3 L-bracket at 2.2 mm was estimated at 57400 and meshed as 35266, a 2.0 mm run was refused as needing 76000 elements when Gmsh makes 48584, so a mesh-convergence study stopped at 2.17 mm. Measured on the shapes below, Gmsh makes about 4 elements per h^3 of volume plus a denser layer at the boundary (about 1.7 per h^2 of surface), not 8.5 per h^3.
+
+The estimate is now `ELEMENTS_PER_VOLUME * V / h^3 + ELEMENTS_PER_AREA * A / h^2` with 4.0 and 1.7 (`mesh.estimate_elements`, area from `brep.mass_properties`). The coefficients are a least-squares fit of the relative error to real Gmsh 4.15.2 counts (second order, `-clmax h`, the toolkit's own call) on 43 meshes of 9 shapes, using element sizes up to 1.3 times the mean thickness `2 V / A` and counts of 900 or more (below that Gmsh keeps its own floors). Rounded up slightly from the fit (4.01, 1.54) so that the estimate is not low on thick parts. estimate / real over the 43: minimum 0.87, median 1.01, maximum 1.26. Each cell is `h in mm: real count (estimate / real)`:
+
+| shape | V mm3 | A mm2 | measured |
+|---|---:|---:|---|
+| S3 L-bracket (no plate) | 72066 | 26784 | 6: 2876 (0.90); 4: 5910 (1.24); 3: 15818 (0.99); 2.5: 23757 (1.08); 2.2: 35266 (1.03); 2: 48584 (0.98) |
+| block 60x40x30 | 72000 | 10800 | 8: 981 (0.87); 6: 1798 (1.03); 5: 2991 (1.02); 4: 5588 (1.01); 3: 12977 (0.98); 2.5: 21975 (0.97) |
+| plate 100x50x6, hole R8 | 28794 | 11699 | 5: 1816 (0.95); 4: 2629 (1.16); 3: 6286 (1.03); 2.5: 9765 (1.08); 2: 20143 (0.96); 1.5: 42259 (1.02) |
+| cylinder R15 h60 | 42412 | 7069 | 6: 1065 (1.05); 5: 1810 (1.02); 4: 3390 (1.00); 3: 7806 (0.98); 2.5: 13167 (0.97) |
+| bar 100x10x10 | 10000 | 4200 | 4: 944 (1.13); 3: 2364 (0.96); 2.5: 3563 (1.04); 2: 6439 (1.05); 1.5: 14726 (1.02); 1.2: 28916 (0.97) |
+| plate 120x80x3 | 28800 | 20400 | 3.5: 6079 (0.91); 3: 8332 (0.97); 2.5: 11759 (1.10) |
+| plate 100x60x6 | 36000 | 13920 | 6: 1446 (0.92); 5: 1993 (1.05); 4: 2955 (1.26); 3: 7851 (1.01) |
+| cube 20 | 8000 | 2400 | 3: 1575 (1.04); 2.5: 2704 (1.00); 2: 4962 (1.01) |
+| slab 100x100x10 | 100000 | 24000 | 8: 1414 (1.00); 6: 2959 (1.01); 5: 4677 (1.03); 4: 7732 (1.14) |
+
+The S3 L-bracket: 2.2 mm is now estimated at 36500 (real 35266) and 2.0 mm at 47400 (real 48584), so a convergence study can go down to about 1.85 mm (the 60000 cap is at 1.84 mm for this part). The largest overshoots in the table (1.14 to 1.26) are at 4 mm on four of the shapes; the cause is not known (unverified: how Gmsh rounds the number of divisions of edges of that length). `tests/test_fem_estimate.py` meshes four shapes at two sizes each and asserts 0.9 <= estimate / real <= 1.3.
+
+The cap (60000 elements, 120000 nodes) is unchanged and is still checked twice: on the estimate before Gmsh starts, and on the real count after it. The refusal message names the estimate, the calibration ratio, the likely real count (estimate divided by 1.26 to 0.87) and the finest size that passes (`mesh.finest_size_within_cap`, rounded up to 4 digits so that the named size passes); `details` carries `estimated_elements`, `finest_passing_size_mm`, `volume_mm3`, `area_mm2` and the `calibration` coefficients.
+
+Refit: run Gmsh on the shapes above, solve `[V/h^3, A/h^2] c = n` in the relative-error sense, update `ELEMENTS_PER_VOLUME`, `ELEMENTS_PER_AREA` and the `CALIBRATION_*` constants in `mesh.py` and this table.
+
 ## Security
 
 * **The caller cannot produce a Gmsh script.** There is no `.geo`; Gmsh gets a fixed argument list and a BREP the toolkit wrote. `Merge`, `Include`, `Exec`, `SystemCall` cannot occur. A test spies on `external.run` and asserts the argument list (`part.brep -3 -order 2 -clmax <float> ...`), that no `*.geo` exists in the job, and that a hostile file name (`bar & calc $(x).step`) reaches no program (the copy under `input/` is never an argument).
@@ -125,7 +149,7 @@ Measured: 33482 elements (the bar at 1.13 mm) take 2.3 s to mesh and about 22 s 
 * No plate-with-hole or thick-walled-cylinder acceptance case (optional in the brief). The hydrostatic block tests the pressure load and the roller supports against a closed form.
 * Not run: Linux and macOS (the layer's paths there are untested, as its note says); Gmsh and CalculiX versions other than 4.15.2 and 2.23; a solve at the element cap.
 * Gmsh's own quality measure (SICN) is not reported: the toolkit computes the mean ratio of the corner nodes, which is a different number (1 for a regular tetrahedron, 0 for a flat one).
-* The estimate `6 sqrt(2) V / h^3` over-estimates compact parts (bar: 679 estimated, 434 made at 5 mm; 25100 against 14700 at 1.5 mm) and under-estimates thin ones, so the after-meshing count is the real limit.
+* The estimate is calibrated, not derived (next section): about +-25 % on the 43 meshes measured, and it under-estimates parts whose thickness is below the element size (a 120 x 80 x 3 mm plate at 6 mm is estimated at 1500 and meshed as 2238 elements) and parts so small that Gmsh's default size cap of about a tenth of the diagonal makes it refine (a 20 mm cube asked for 5 mm gets 1159 elements, the same as for 10 mm). The count after meshing is the real limit.
 * Nodal stresses are the extrapolated and averaged values CalculiX writes; stresses at integration points exist in `.dat` only if a future version asks for them.
 
 ## fem_view: a static result as a colour-mapped GLB and a PNG picture

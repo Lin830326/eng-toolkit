@@ -95,7 +95,7 @@ def global_coordinates(mesh, vector):
 
 def reference(raw, names, path):
     if raw not in names:
-        invalid(path, f"unknown reference {raw!r}")
+        invalid(path, f"unknown reference {raw!r}; known ids: {', '.join(names[:12])}" + (", ..." if len(names) > 12 else ""))
     return names.index(raw)
 
 
