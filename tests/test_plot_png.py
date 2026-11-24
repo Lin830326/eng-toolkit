@@ -104,15 +104,40 @@ def test_the_same_chart_gives_the_same_bytes_in_any_call_and_from_four_threads()
     assert other != first
 
 
+def _names(r):
+    return [a.path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1] for a in r.artifacts]
+
+
 @needs_pdfium
-def test_both_writes_the_svg_and_the_png_and_the_default_still_writes_only_the_svg():
+def test_both_writes_the_svg_and_the_png_and_is_the_default():
     both = call(xy, series=LINE, format="both")
     assert both.ok and artifact(both, "plot.svg").exists() and artifact(both, "plot.png").exists()
     assert both.data["svg_inline"].startswith("<svg") and both.data["files"] == {"svg": "plot.svg", "png": "plot.png", "data": "plot_data.json"}
     default = ok(xy, series=LINE)
-    assert [a.path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1] for a in default.artifacts] == ["inputs.json", "plot.svg", "plot_data.json"]
-    assert "png_path" not in default.data and default.data["format"] == "svg" and "pypdfium2" not in default.provenance.engine_versions
+    assert _names(default) == ["inputs.json", "plot.svg", "plot.png", "plot_data.json"]
+    assert default.data["format"] == "both" and default.data["png_path"].endswith("plot.png") and "pypdfium2" in default.provenance.engine_versions
     assert svg_text(both) == svg_text(default)  # the SVG is the same bytes whatever else is asked for
+    assert artifact(both, "plot.png").read_bytes() == artifact(default, "plot.png").read_bytes()
+
+
+@needs_pdfium
+def test_every_plot_tool_defaults_to_both_and_format_svg_still_means_svg_only():
+    bar_series = json.dumps([{"name": "a", "x": ["p", "q"], "y": [1, 2]}])
+    two = json.dumps([{"name": "a", "x": [1, 2], "y": [1, 2]}, {"name": "b", "x": [1, 2], "y": [2, 1]}])
+    for tool, kwargs in ((xy, {"series": LINE}), (panels, {"panels": "A|a;B|b", "series": two}), (bar, {"series": bar_series})):
+        default = ok(tool, **kwargs)
+        assert default.data["format"] == "both" and _names(default) == ["inputs.json", "plot.svg", "plot.png", "plot_data.json"], tool
+        svg_only = ok(tool, format="svg", **kwargs)
+        assert svg_only.data["format"] == "svg" and _names(svg_only) == ["inputs.json", "plot.svg", "plot_data.json"], tool
+        assert "png_path" not in svg_only.data and "pypdfium2" not in svg_only.provenance.engine_versions
+        assert svg_text(svg_only) == svg_text(default)
+
+
+@needs_pdfium
+def test_plot_data_json_is_reproducible_with_the_png_and_holds_no_job_path():
+    one, two = ok(xy, series=LINE), ok(xy, series=LINE)
+    assert artifact(one, "plot_data.json").read_bytes() == artifact(two, "plot_data.json").read_bytes()
+    assert "path" not in plot_data(one)["png"] and one.data["png"]["path"] == one.data["png_path"]
 
 
 @needs_pdfium
@@ -161,10 +186,17 @@ def test_without_pypdfium2_the_svg_comes_back_with_a_warning_that_names_the_inst
         assert plot_data(r)["png"]["error"]["install"] == "uv sync --extra png"
 
 
-def test_the_default_format_never_touches_pypdfium2(monkeypatch):
+def test_format_svg_never_touches_pypdfium2(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pypdfium2", None)
+    r = ok(xy, series=LINE, format="svg")
+    assert "png" not in r.data and "NO PNG" not in " ".join(r.warnings)
+
+
+def test_the_default_without_pypdfium2_still_returns_the_svg_and_says_the_png_is_missing(monkeypatch):
     monkeypatch.setitem(sys.modules, "pypdfium2", None)
     r = ok(xy, series=LINE)
-    assert "png" not in r.data and "NO PNG" not in " ".join(r.warnings)
+    assert artifact(r, "plot.svg").exists() and r.data["png_path"] is None and r.data["format"] == "svg"
+    assert "NO PNG WAS WRITTEN" in " ".join(r.warnings) and "uv sync --extra png" in " ".join(r.warnings)
 
 
 def test_an_unknown_format_is_refused_at_the_format_pointer():

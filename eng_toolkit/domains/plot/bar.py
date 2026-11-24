@@ -19,10 +19,11 @@ import numpy as np
 from pydantic import Field
 
 from eng_toolkit.contract import ToolResult
+from eng_toolkit.inline_image import INLINE_IMAGE_DESCRIPTION
 from eng_toolkit.domains.plot._axes import label_widths, linear_axis, thin
 from eng_toolkit.domains.plot._chart import (
     LABEL_BAND, LABEL_GAP_X, LABEL_GAP_Y, LABEL_SIZE, LEGEND_INSET, MIN_PLOT, PAD, TICK_GAP, TICK_LEN, TICK_SIZE, TITLE_BAND, TITLE_SIZE, X_TICK_BAND,
-    X_TICK_PX, Y_TICK_PX, Texts, chart_id, draw_legend, legend_box,
+    X_TICK_PX, Y_TICK_PX, Texts, chart_id, draw_legend, legend_box, legend_text_budget, place_label,
 )
 from eng_toolkit.domains.plot._common import (
     BINS_RANGE,
@@ -40,6 +41,7 @@ from eng_toolkit.domains.plot._common import (
     number_token,
     range_param,
     record_text,
+    ref_lines,
     run,
     split_records,
     text_param,
@@ -47,7 +49,7 @@ from eng_toolkit.domains.plot._common import (
 )
 from eng_toolkit.domains.plot._axes import format_value
 from eng_toolkit.domains.plot._data import CsvTable, Series, cell_pointer, check_one_source, csv_series, display, inline_series, numeric_cells
-from eng_toolkit.domains.plot._output import FORMAT_TEXT, FORMATS, finish, wants_png
+from eng_toolkit.domains.plot._output import DEFAULT_FORMAT, FORMAT_TEXT, FORMATS, finish, wants_png
 from eng_toolkit.domains.plot._server import server
 from eng_toolkit.domains.plot._svg import DASHES, Canvas, num, series_style, text_width
 from eng_toolkit.domains.plot.xy import THEME_NAMES
@@ -96,8 +98,8 @@ def _fmt(v: float) -> str:
     description=(
         "Draw a bar chart (categories x up to 6 series, grouped or stacked, optional error bars and value labels) or a histogram "
         "of one column (2..200 bins or explicit edges; counts, density or cumulative) as a deterministic SVG plus plot_data.json "
-        "with the bin edges and counts; format=png (or both) also writes plot.png, a 1600 px wide picture to paste into slides and "
-        "reports (data.png_path; needs the png extra). Data: a CSV with a header row or inline JSON series."
+        "with the bin edges and counts (hlines mark limits), and by default plot.png, a 1600 px wide picture (format=both; data.png_path; needs the png "
+        "extra) that also comes back as an image in the reply (inline_image): hand over the PNG, not the SVG path. Data: a CSV with a header row or inline JSON series."
     ),
 )
 def bar(
@@ -116,17 +118,19 @@ def bar(
     x_label: Annotated[str, Field(description="x axis title with unit, plain text <= 120 characters, e.g. 'Stress range (MPa)'.")] = "",
     y_label: Annotated[str, Field(description="y axis title with unit, plain text <= 120 characters, e.g. 'Cycles'.")] = "",
     y_range: Annotated[str, Field(description="Fixed y axis 'min,max': plain numbers in the axis unit, no unit text, e.g. '0,50' (not '0,50 kN'); blank = automatic from 0.")] = "",
+    hlines: Annotated[str, Field(description="Horizontal limit lines 'value,label;...' in y units, e.g. '250,yield;-250,'; at most 10; the y axis grows to show them.")] = "",
     legend: Annotated[str, Field(description="auto (2+ series), off, top_right, top_left, bottom_right, bottom_left or right (outside the plot).")] = "auto",
     grid: Annotated[bool, Field(description="true draws horizontal grid lines at the y ticks; false draws none.")] = True,
     width: Annotated[int, Field(description="SVG width in px, 200..2400, e.g. 800.")] = 800,
     height: Annotated[int, Field(description="SVG height in px, 200..2400, e.g. 450.")] = 450,
     theme: Annotated[str, Field(description="auto (follows the viewer's light/dark), light, dark, or print (black and grey).")] = "auto",
-    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = "svg",
+    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = DEFAULT_FORMAT,
+    inline_image: Annotated[bool, Field(description=INLINE_IMAGE_DESCRIPTION)] = True,
 ) -> ToolResult:
     inputs = {
         "mode": mode, "data_file": data_file, "series": record_text(series), "x_column": x_column, "y_columns": y_columns, "err_columns": err_columns,
         "stacking": stacking, "value_labels": value_labels, "bins": bins, "bin_edges": record_text(bin_edges), "histogram": histogram,
-        "title": record_text(title), "x_label": record_text(x_label), "y_label": record_text(y_label), "y_range": y_range, "legend": legend,
+        "title": record_text(title), "x_label": record_text(x_label), "y_label": record_text(y_label), "y_range": y_range, "hlines": record_text(hlines), "legend": legend,
         "grid": grid, "width": width, "height": height, "theme": theme, "format": format,
     }
 
@@ -146,6 +150,7 @@ def bar(
         edges_in = _bin_edges(bin_edges)
         labels = {name: text_param(raw, name, notes=notes) for name, raw in (("title", title), ("x_label", x_label), ("y_label", y_label))}
         yr = range_param(y_range, "y_range")
+        h_lines = ref_lines(hlines, "hlines", notes)
         xcol = column_param(x_column, "x_column")
         ycols, ecols = name_list(y_columns, "y_columns"), name_list(err_columns, "err_columns")
         source = check_one_source(data_file, series)
@@ -164,7 +169,7 @@ def bar(
             if stack == "stacked" and any(s.err is not None for s in spec["series"]):
                 fail("err_columns" if source == "csv" else "series", "error bars cannot be drawn on stacked bars; use stacking grouped")
         spec["source_param"] = "data_file" if source == "csv" else "series"
-        svg, data, drawn, zero_height = _render(spec, m, stack, vlabels, chart_grid, leg, th, w, h, labels, yr, notes)
+        svg, data, drawn, zero_height = _render(spec, m, stack, vlabels, chart_grid, leg, th, w, h, labels, yr, h_lines, notes)
         return finish(handle, svg, data, notes, {"bars_drawn": drawn, "zero_height_bars": zero_height}, "bars_drawn", fmt)
 
     return run("plot_bar", inputs, compute, engines=("pypdfium2",) if wants_png(format) else ())
@@ -262,7 +267,7 @@ def _bars(handle: JobHandle, source: str, data_file, series, xcol: str, ycols: l
 # ----------------------------------------------------------------------------------------------- drawing
 
 
-def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: str, theme: str, W: int, H: int, labels: dict, yr, notes: list[str]):
+def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: str, theme: str, W: int, H: int, labels: dict, yr, h_lines: list[tuple[float, str]], notes: list[str]):
     texts = Texts()
     hist = mode == "histogram"
     top = PAD + (TITLE_BAND if labels["title"] else 0)
@@ -289,6 +294,8 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
             highs = [y + (s.err if s.err is not None else 0.0) for s, y in zip(series_list, heights)]
             lo_v = min(0.0, min(float(np.min(v)) for v in lows))
             hi_v = max(0.0, max(float(np.max(v)) for v in highs))
+    if yr is None:  # a limit line outside the bars is still shown: the axis grows to it
+        lo_v, hi_v = min([lo_v] + [v for v, _ in h_lines]), max([hi_v] + [v for v, _ in h_lines])
     if vlabels and yr is None:  # room for the value labels above (and below) the bars
         span = hi_v - lo_v
         hi_v, lo_v = (hi_v + 0.08 * span if hi_v > 0 else hi_v), (lo_v - 0.08 * span if lo_v < 0 else lo_v)
@@ -317,7 +324,7 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
     legend = None
     outside = False
     if show_legend:
-        names, lw, lh = legend_box(entries, texts, "chart")
+        names, lw, lh = legend_box(entries, texts, "chart", legend_text_budget(W - left - right))
         outside = leg == "right" or lh > ph - 2 * LEGEND_INSET or lw > 0.5 * (W - left - right)
         if outside:
             right += lw + 10
@@ -455,6 +462,17 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
         if skipped:
             notes.append(f"{skipped} value label(s) were left out because they do not fit the bar or the room above or below it; the values are in data.series")
     cv.end("g")
+    placed: list[tuple[float, float, float, float]] = []
+    for i, (v, label) in enumerate(h_lines):
+        if not ya.contains(v):
+            notes.append(f"hline {v:g} is outside the y range and is not visible")
+            continue
+        yv = ya.px(v)
+        cv.el("line", [("x1", num(left)), ("y1", num(yv)), ("x2", num(plot_right)), ("y2", num(yv)), ("stroke-width", "1.25"), ("stroke-dasharray", "6 4")], stroke="ref")
+        if label:
+            shown_label = texts.fit(label, pw * 0.6, 11, f"hline {i + 1} label")
+            spots = [(plot_right - 4, yv - 4, "end"), (plot_right - 4, yv + 13, "end"), (left + 4, yv - 4, "start"), (left + 4, yv + 13, "start")]
+            place_label(cv, shown_label, spots, (left, top, plot_right, bottom), placed, notes, f"hline {v:g}")
     cv.el("rect", [("x", num(left)), ("y", num(top)), ("width", num(pw)), ("height", num(ph)), ("stroke-width", "1")], fill="none", stroke="frame")
     ticks = [f"M{num(left)} {num(ya.px(t))}h{-TICK_LEN}" for t in ya.ticks]
     if hist:
@@ -512,6 +530,7 @@ def _render(spec: dict, mode: str, stack: str, vlabels: bool, grid: bool, leg: s
         "plot_area": {"x0": left, "y0": top, "width": pw, "height": ph},
         "axes": {"y": {**ya.describe(), "mapping": ya.mapping("y")}, **({"x": {**xa.describe(), "mapping": xa.mapping("x")}} if hist else {})},
         "legend": None if legend is None else {"position": spot, "entries": legend[0]},
+        "reference_lines": {"hlines": [{"value": v, "label": lab} for v, lab in h_lines]},
         "truncated_text": texts.truncated, "element_id_prefix": pid,
         "bars": [{"x": x0, "y": y0, "width": bw_, "height": bh, "series": j, "value": v, "clipped": b in clipped_set, "zero_height": bh <= 0}
                  for b, (x0, y0, bw_, bh, j, v) in enumerate(rects)][:2000],

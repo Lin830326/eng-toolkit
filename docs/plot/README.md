@@ -1,8 +1,10 @@
 # Plot tools
 
-`plot_xy`, `plot_panels`, and `plot_bar` write a self-contained `plot.svg` and a `plot_data.json` file with the chart data and
-axis mappings. `format="png"` (or `"both"`) writes `plot.png` as well, 1600 px wide, with its path in `data.png_path`; it needs the
-`png` extra (`uv sync --extra png`) and returns the SVG with a warning when that is missing. The default stays SVG. Results carry `review_status: "unreviewed"`. See [the design notes](design.md) for input formats, limits, and layout rules.
+`plot_xy`, `plot_panels`, and `plot_bar` write a self-contained `plot.svg`, a 1600 px `plot.png` (default `format="both"`; `"svg"` or
+`"png"` write one of them) and a `plot_data.json` file with the chart data and axis mappings. The PNG path is `data.png_path`; the PNG
+needs the `png` extra (`uv sync --extra png`), and without it the tool returns the SVG with a warning. The PNG also comes back as an MCP
+image block in the reply (`inline_image`, default true, at most 600 kB; also on `geometry_view` and `fem_view`). `unwrap_phase=true`
+draws a Bode phase without the +-180 jump; ticks of a seconds axis below 1 s use ms, us or ns. Results carry `review_status: "unreviewed"`. See [the design notes](design.md) for input formats, limits, and layout rules.
 
 Fixed ranges clip lines, fills, and stems to the visible frame. A stem starts at zero on a linear axis, even when zero is outside
 the selected range. Its line can remain visible when the marker lies outside the frame. On a log axis, stems start at the bottom.

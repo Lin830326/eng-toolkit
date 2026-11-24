@@ -97,7 +97,7 @@ def test_log_axis_many_decades_labels_every_other_or_fifth_decade():
     ax = log_axis(1e-12, 1e12, 6, None, param="p", what="x")
     # 24 decades, target 6: stride 5 (24/5 = 4.8 <= 6), labels at 1e-10, 1e-5, 1, 1e5, 1e10
     assert ax.ticks == [1e-10, 1e-5, 1.0, 1e5, 1e10]
-    assert ax.labels == ["1e-10", "1e-5", "1", "100000", "1e10"]  # plain decimals for 1e-4 .. 1e5 only
+    assert ax.labels == ["1e-10", "1e-5", "1e0", "1e5", "1e10"]  # one style for all ticks (plain and exponent labels are not mixed)
     assert ax.minor == []
 
 

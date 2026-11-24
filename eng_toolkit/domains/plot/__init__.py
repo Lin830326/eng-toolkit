@@ -12,7 +12,7 @@ DOMAIN = DomainInfo(
     description=(
         "Turns tables (the CSV artifacts of the other tools, or inline JSON series) into clean, deterministic, self-contained SVG "
         "charts: line/scatter/step/stem plots with log axes, a right axis, reference lines and bands; stacked panels sharing x; "
-        "bar charts and histograms. Escaped text, no scripts, colour-blind-safe palette, light/dark/print themes. format=png also writes a 1600 px PNG (optional png extra). numpy only otherwise."
+        "bar charts and histograms. Escaped text, no scripts, colour-blind-safe palette, light/dark/print themes. the default format=both also writes a 1600 px PNG (optional png extra), returned as an image in the reply. numpy only otherwise."
     ),
     engines=("numpy",),
     server=server,

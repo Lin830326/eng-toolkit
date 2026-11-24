@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import Field
 
 from eng_toolkit.contract import ToolResult
+from eng_toolkit.inline_image import INLINE_IMAGE_DESCRIPTION
 from eng_toolkit.domains.plot._chart import Chart, Panel, render_xy
 from eng_toolkit.domains.plot._common import (
     MAX_SERIES,
@@ -28,7 +29,8 @@ from eng_toolkit.domains.plot._common import (
     whole,
 )
 from eng_toolkit.domains.plot._data import check_one_source, csv_series, inline_series
-from eng_toolkit.domains.plot._output import FORMAT_TEXT, FORMATS, finish, wants_png
+from eng_toolkit.domains.plot._data import unwrap_phase as unwrap_series
+from eng_toolkit.domains.plot._output import DEFAULT_FORMAT, FORMAT_TEXT, FORMATS, finish, wants_png
 from eng_toolkit.domains.plot._server import server
 
 KINDS = ("line", "scatter", "step", "stem")
@@ -52,11 +54,11 @@ def parse_kinds(raw: object) -> list[str]:
 @server.tool(
     name="xy",
     description=(
-        "Draw a line, scatter, step or stem chart of up to 20 series as a deterministic, self-contained SVG (plot.svg; also inline "
-        "in data.svg_inline when <= 150 kB) plus plot_data.json (axes, ticks, data-to-pixel mapping, decimation). format=png (or "
-        "both) also writes plot.png, 1600 px wide, to paste into slides and reports (data.png_path; needs the png extra). Data: a "
-        "CSV with a header row (e.g. another tool's CSV artifact) or inline JSON series. Log axes, fixed ranges, a right axis, "
-        "reference lines, a shaded band, one marked point, fill to zero, light/dark/print themes. Dense series are min/max decimated."
+        "Draw a line, scatter, step or stem chart of up to 20 series as a deterministic SVG (plot.svg; inline in data.svg_inline when "
+        "<= 150 kB) and, by default, plot.png 1600 px wide (data.png_path; needs the png extra). The PNG also comes back as an image "
+        "in the reply (inline_image): hand over the PNG, not the SVG path. Also plot_data.json. Data: a CSV with a header row (e.g. "
+        "another tool's CSV artifact) or inline JSON series. Log axes, fixed ranges, a right axis, reference lines, a band, one marked "
+        "point, fill to zero, themes, unwrap_phase for a Bode phase. Dense series are min/max decimated."
     ),
 )
 def xy(
@@ -85,14 +87,16 @@ def xy(
     width: Annotated[int, Field(description="SVG width in px, 200..2400, e.g. 800.")] = 800,
     height: Annotated[int, Field(description="SVG height in px, 200..2400, e.g. 500.")] = 500,
     theme: Annotated[str, Field(description="auto (follows the viewer's light/dark setting), light, dark, or print (black and grey with dash patterns).")] = "auto",
-    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = "svg",
+    unwrap_phase: Annotated[bool, Field(description="true unwraps every series whose name contains 'phase' (degrees; 'rad' in the name: radians): no +-180 jumps in a Bode phase.")] = False,
+    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = DEFAULT_FORMAT,
+    inline_image: Annotated[bool, Field(description=INLINE_IMAGE_DESCRIPTION)] = True,
 ) -> ToolResult:
     inputs = {
         "data_file": data_file, "series": record_text(series), "x_column": x_column, "y_columns": y_columns, "y2_columns": y2_columns, "kind": kind,
         "markers": markers, "fill": fill, "title": record_text(title), "x_label": record_text(x_label), "y_label": record_text(y_label),
         "y2_label": record_text(y2_label), "x_scale": x_scale, "y_scale": y_scale, "x_range": x_range, "y_range": y_range, "hlines": record_text(hlines),
         "vlines": record_text(vlines), "band": record_text(band), "marker": record_text(marker), "legend": legend, "grid": grid, "width": width, "height": height,
-        "theme": theme, "format": format,
+        "theme": theme, "unwrap_phase": unwrap_phase, "format": format,
     }
 
     def compute(handle: JobHandle) -> Computed:
@@ -103,6 +107,7 @@ def xy(
         chart_grid = flag(grid, "grid")
         leg = choice(legend, "legend", LEGENDS)
         th = choice(theme, "theme", THEME_NAMES)
+        unwrap = flag(unwrap_phase, "unwrap_phase")
         xs, ys = choice(x_scale, "x_scale", SCALES), choice(y_scale, "y_scale", SCALES)
         w, h = whole(width, "width", *SIZE_RANGE), whole(height, "height", *SIZE_RANGE)
         labels = {name: text_param(raw, name, notes=notes) for name, raw in (("title", title), ("x_label", x_label), ("y_label", y_label), ("y2_label", y2_label))}
@@ -129,6 +134,8 @@ def xy(
             for c in y2cols:
                 if c not in known:
                     fail("y2_columns", f"'y2_columns' names {c[:40]!r}, which is not the name of an inline series")
+        if unwrap:
+            unwrap_series(loaded, notes)
         for s in loaded:
             s.axis = "y2" if s.column in y2cols else "y"
         if len(kinds) > 1:
