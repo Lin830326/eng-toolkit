@@ -1,0 +1,31 @@
+{
+  "id": "H2_irfp4568_diecast_box",
+  "set": "holdout",
+  "domains": [
+    "thermal",
+    "plot"
+  ],
+  "persona": "Hsiu-Ying, 31, hardware engineer at an e-scooter controller start-up in Hsinchu. Writes Traditional Chinese with English part numbers and units glued on ('48W', '40C'). Practical, trusts datasheets, has no heat-transfer course memory beyond 'h is about 10 for air'. Wants a verdict and a chart for the design review.",
+  "goal": "Whether the IRFP4568 stays under her company's Tj rule of 125 degC when its only heatsink is the wall of a bare die-cast aluminium box, what the box wall temperature is, and a cheap change if it does not work; a bar chart of junction temperature for the options against the 125 degC limit.",
+  "opening": "我的馬達驅動板用一顆 IRFP4568 (TO-247),導通加切換損耗大概連續 48W。沒有另外的散熱片,直接用螺絲鎖在鑄鋁盒子的內壁,中間夾一片 0.3mm 矽膠絕緣墊。盒子 220x160x60mm,放在工作台上自然對流,室溫 40C。我們公司規定 Tj 不能超過 125C。我用 h = 10 W/m2K 粗算盒子的溫升好像沒問題,你幫我確認一下?有問題的話最便宜的改法是什麼?",
+  "facts": {
+    "mosfet": "IRFP4568 datasheet: RthJC 0.29 K/W, maximum junction temperature 175 degC. The datasheet also says RthCS 0.24 K/W typical for a flat greased surface, but with the insulating pad you use the supplier's figure instead.",
+    "pad": "silicone insulating pad 0.3 mm thick, supplier thermal conductivity 2.5 W/(m*K); the TO-247 tab footprint is about 16 x 20 mm.",
+    "box": "die-cast aluminium, wall 3 mm, natural bare cast surface (grey, unpainted, unanodised); 220 x 160 x 60 mm, sits flat on a wooden bench, lid on top, no fan, no wall or object within 20 cm. The other parts in the box dissipate very little, ignore them.",
+    "power": "48 W continuous, all of it in the one MOSFET.",
+    "limit": "Tj at most 125 degC at an ambient of 40 degC (company derating rule; the datasheet 175 is not the rule).",
+    "wrong belief": "she uses h = 10 W/m2K for the whole box 'as a rule of thumb' and has never thought about the surface finish or emissivity",
+    "if asked about colour or finish": "bare cast aluminium, not painted; she is willing to paint it black or white if that helps (cheap), or add a fan (not wanted: sealed enclosure)",
+    "wants": "box wall temperature, Tj, a yes/no, the cheap fix with its numbers, and a bar chart (Tj for the as-built box and the fix against the 125 degC limit)"
+  },
+  "files": {},
+  "max_turns": 5,
+  "truth": "uat/truth/H2_irfp4568_diecast_box.py",
+  "expect_picture": true,
+  "tool_check": "In-process: thermal_convection natural_vertical_plate with L 60 mm, Ts 81 degC, Tinf 40 degC, air k 0.029, rho 1.0, mu 2.0e-5, cp 1007 gives h 6.48 W/m2K (truth Churchill-Chu with Sutherland properties 6.0); thermal_radiation small_body_in_enclosure, 81 degC to 40 degC, e 0.9, A 0.0808 m2 gives 25.2 W (h_r 7.6). The tools have no horizontal-plate correlation (top face), so the assistant must approximate; and no tool iterates the wall temperature, so it has to bracket by hand. plot_bar for the Tj comparison.",
+  "leak_tokens": [
+    "IRFP4568",
+    "die-cast box",
+    "diecast box"
+  ]
+}

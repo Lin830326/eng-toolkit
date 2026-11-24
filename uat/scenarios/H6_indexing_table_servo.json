@@ -1,0 +1,31 @@
+{
+  "id": "H6_indexing_table_servo",
+  "set": "holdout",
+  "domains": [
+    "electric",
+    "plot"
+  ],
+  "persona": "Pei-Ling, 33, mechanical engineer at a packaging-machine builder in Taoyuan. Writes Traditional Chinese with English motor model numbers, short, likes tables. Strong on mechanics, has sized motors from the motor maker's spreadsheet only; does not think in 'duty cycle' terms. Wants a yes/no per motor and a torque-speed picture for her manager.",
+  "goal": "To know whether a 750 W servo (or the 1 kW alternative) can drive her 6-station indexing table through a 20:1 gearbox: peak torque, RMS torque over the real cycle, speed, inertia ratio, against the catalogue limits, what to change if it fails, and a torque against time or torque-speed picture.",
+  "opening": "我們在做一台 6 工位的轉盤分度機,每分鐘 50 次。轉盤是鋼板,直徑 500mm、厚 30mm,上面 6 個治具連工件各約 3kg,在半徑 220mm 的位置。馬達想用台達 ECMA-C20807 (750W),前面接 20:1 的行星減速機,效率大概 92%。這顆夠不夠用?幫我算一下扭矩,畫個圖。",
+  "facts": {
+    "motion": "each index moves the table 60 degrees; the three equal phases are 0.12 s acceleration, 0.12 s constant speed, 0.12 s deceleration (move time 0.36 s); then the table stands still for the rest of the cycle. 'Every minute 50' means 50 index moves per minute (one per 1.2 s), not 50 table revolutions per minute; she has not worked out the table speed.",
+    "dwell load": "at one station a press pushes on the workpiece off-centre: 200 N tangential force at the 0.22 m radius, for the whole stand-still time, and there is no mechanical lock or brake pin: the servo has to hold the table. She did not think of this as a load and tells it only when asked about forces during the dwell.",
+    "friction": "table bearing friction about 1.5 N*m at the table, constant.",
+    "gearbox": "20:1 planetary, efficiency 92 %, gearbox input inertia 0.05e-4 kg*m^2 (catalogue); backlash is not a concern.",
+    "motors": "candidate A: Delta ECMA-C20807, 750 W, rated torque 2.39 N*m, peak torque 7.16 N*m, rated speed 3000 rpm, maximum speed 5000 rpm, rotor inertia 1.33e-4 kg*m^2; candidate B: a 1 kW servo from the same catalogue, rated torque 3.18 N*m, peak 9.54 N*m, 3000 rpm / 5000 rpm, rotor inertia 2.65e-4 kg*m^2 (she mentions B only if A does not work or when asked what alternatives she has).",
+    "rule": "company rule: the motor RMS torque over the cycle must stay below the rated torque, the peak below the peak rating; she knows the usual inertia ratio guidance is 'under 10' but has no specific limit for this machine.",
+    "picture": "a torque against time over one cycle, or a torque-speed curve with the motor limits; she would accept either.",
+    "language": "writes Traditional Chinese; if the assistant answers in English she asks for the main numbers in Chinese."
+  },
+  "files": {},
+  "max_turns": 6,
+  "truth": "uat/truth/H6_indexing_table_servo.py",
+  "expect_picture": true,
+  "tool_check": "In-process: electric_drive_sizing(rotary, profile '0.12 s,0 rad/s,4.3633 rad/s,0 N*m;0.12 s,4.3633,4.3633,0 N*m;0.12 s,4.3633,0,0 N*m;0.84 s,0,0,44 N*m', load_inertia 2.316 kg*m^2, rotor_inertia 1.38e-4, gear_ratio 20, efficiency 0.92, coulomb_friction 1.5 N*m, two candidate rows with rad/s limits) -> peak torque 4.76 N*m (truth 4.76), RMS with rotor 2.79 N*m (truth 2.68 with no efficiency in the dwell, 2.80 with it), inertia ratio 41.96, candidate A status 'fail' (RMS margin -0.40 N*m), candidate B 'pass'. The assistant must compute the load inertia itself (no disc/point-mass inertia tool), convert rpm to rad/s, put the dwell into the profile as an explicit row (the generated-move shortcut with cycle_time and dwell_load also works) and build the plot from drive_profile.csv or inline series.",
+  "leak_tokens": [
+    "indexing table",
+    "2.316",
+    "ECMA-C20807 750"
+  ]
+}

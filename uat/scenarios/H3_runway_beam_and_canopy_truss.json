@@ -1,0 +1,34 @@
+{
+  "id": "H3_runway_beam_and_canopy_truss",
+  "set": "holdout",
+  "domains": [
+    "structures",
+    "plot"
+  ],
+  "persona": "Chun-Hao, 38, workshop engineer at a small steel-structure firm in Tainan, fits out factory halls. Writes Traditional Chinese with English steel terms (HEB, S355, kN), short messages, often leaves units out. Knows 'put the load at midspan for the worst moment' from school. Wants yes/no answers and one diagram for his calculation sheet.",
+  "goal": "(1) Whether the HEB 240 crane runway beam passes his stress rule and his deflection limit, the worst wheel position, and if it fails what size works, with a bending-moment diagram for the worst position. (2) After that, for a monopitch canopy truss over the loading door: the member forces, the support reactions, and whether the diagonals are safe against buckling with his safety factor 2.",
+  "opening": "我們廠房要裝一台 5 噸天車,軌道樑用 HEB240,S355,跨度 7.5 m,兩端簡支。天車這邊有兩個輪子,間距 2.6 m,廠商給的輪壓每個 48 kN。我想說兩個輪子放在樑正中間最危險,幫我檢查 HEB240 夠不夠?",
+  "facts": {
+    "section and material": "HEB 240 from the catalogue (h 240 mm, Iy about 11,260 cm4, Wel,y about 938 cm3, 83.2 kg/m); S355, fy 355 MPa, E 210 GPa. He does not remember the section values and would accept the assistant's catalogue values if stated.",
+    "loads": "the 48 kN per wheel is the static wheel load; the crane supplier says to use a dynamic factor 1.25 on the wheel loads for the stress check only; rail is a 0.30 kN/m extra line load; beam weight comes from the catalogue (he did not think of it).",
+    "rules": "the company allowable stress is 0.6 fy (working stress); the deflection limit is span/600 under the static wheel loads without dynamic factor (reveal only if asked about the deflection limit or after the assistant reports deflection).",
+    "restraint": "compression flange is held laterally by the rail clips and a horizontal bracing frame, so he does not worry about lateral-torsional buckling.",
+    "wrong belief": "he thinks the worst case is the wheel pair centred on the beam; he has not heard of a worst position shifted from the centre.",
+    "wants": "worst position, stress, deflection, yes/no on HEB 240, the smallest HEB that works, a bending-moment diagram for the worst position in kN*m",
+    "truss (second question, bring it up only after the beam is settled)": "canopy over the loading door: a pin-jointed Warren truss, span 12 m; bottom chord horizontal with joints every 2 m at x = 0, 2, ... 12 m; top-chord joints at x = 1, 3, ... 11 m; the top chord line rises from 1.2 m high at x = 0 to 4.0 m at x = 12 m (a monopitch roof, slope about 13 degrees); members: diagonals between each top joint and the two adjacent bottom joints, chords between consecutive joints of the same chord (13 joints, 23 bars). Supports: pin at the low end (x = 0 bottom joint), roller (vertical reaction only) at the other end.",
+    "truss sections and loads": "chords SHS 80x80x4 (catalogue A 11.7 cm2, I 108 cm4), diagonals SHS 60x60x3 (A 6.8 cm2, I 34.2 cm4); S355, E 210 GPa; trusses 4 m apart; purlins at the top joints; wind pressure 0.8 kN/m2 acting on the roof surface perpendicular to the roof (pressure case), dead load 0.35 kN/m2 on plan area (self-weight included); each top joint takes 2 m of plan width. He asks for no load factors. Required Euler safety factor 2 with pinned ends (K = 1).",
+    "second wrong belief": "he plans to put the wind on the truss as vertical forces 'because wind is on the roof'",
+    "language": "writes Traditional Chinese; if the assistant answers in English he says it is fine but asks for the main numbers in Chinese"
+  },
+  "files": {},
+  "max_turns": 7,
+  "truth": "uat/truth/H3_runway_beam_and_canopy_truss.py",
+  "expect_picture": true,
+  "tool_check": "Truss, in-process structures_truss: 13 nodes, 23 members with A and I as above, supports 'B0,xy;B6,y', 6 joint loads (1.493 kN, -9.2 kN) resolved normal to the roof: reaction B0 (-8.96, 25.66 kN), B6 29.54 kN, maximum displacement 4.26 mm: identical to the independent numpy solver. The tool has no inclined or distributed load input, so the assistant must resolve the pressure normal to the roof by hand. Beam: structures_frame as in S1 (two point loads plus UDL) is the route; there is no moving-load tool, so the assistant must try several wheel positions or apply Barre's rule.",
+  "leak_tokens": [
+    "HEB 320",
+    "HEB320",
+    "canopy truss",
+    "runway beam"
+  ]
+}

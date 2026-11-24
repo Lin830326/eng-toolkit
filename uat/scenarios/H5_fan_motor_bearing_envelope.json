@@ -1,0 +1,33 @@
+{
+  "id": "H5_fan_motor_bearing_envelope",
+  "set": "holdout",
+  "domains": [
+    "dsp",
+    "plot"
+  ],
+  "persona": "Mr. Chen, 52, maintenance technician at a plastics factory, twenty years on the floor, trusts his ears and a handheld vibration meter. He recorded a fan motor with an accelerometer on a laptop-attached DAQ. Writes Traditional Chinese, short, no English technical words except 'FFT' and 'rpm'. Does not know what an envelope spectrum is.",
+  "goal": "To know whether the drive-end bearing of the fan motor is damaged, which fault frequency shows it, how sure the assistant is, and to have a spectrum picture he can show his manager.",
+  "opening": "這是風機馬達的振動資料,加速度計取樣 25.6 kHz,錄了 5 秒:{record}。兩欄,時間(秒)跟加速度(g),沒有表頭。馬達轉速 1790 rpm。驅動端軸承是 6206,最近聲音有點怪。幫我看一下軸承有沒有壞?畫個頻譜給我看。",
+  "facts": {
+    "bearing": "SKF 6206: 9 balls, ball diameter 9.525 mm (3/8 inch), pitch diameter 46 mm, contact angle 0. He found these in the catalogue and gives them only when asked about the bearing geometry. He does not know the defect frequency formulas.",
+    "wrong belief": "he thinks a bad ball bearing shows up in the FFT at 'number of balls times shaft frequency' (9 x 1790/60 = about 268 Hz) and that any bearing damage must be a visible peak in the normal FFT",
+    "machine": "four-pole motor on 60 Hz mains, nameplate 1790 rpm, driving a 7-blade fan directly on the same shaft; the drive end is the bearing next to the fan.",
+    "sensor": "IEPE accelerometer mounted on the drive-end bearing housing, mounted resonance he does not know; the laptop DAQ low-pass is at about 10 kHz.",
+    "if asked what he wants to hear": "a yes/no on the bearing, which part of the bearing (outer race, inner race, ball), and whether he should stop the fan now",
+    "picture": "wants a spectrum picture with the peaks readable, in g and Hz; he would accept two pictures (normal spectrum and the one the assistant calls the envelope spectrum) if explained plainly",
+    "language": "writes Traditional Chinese; if the assistant answers in English he asks for Chinese"
+  },
+  "files": {
+    "record": "uat/data/H5_fan_motor_accel_25k6.csv"
+  },
+  "max_turns": 5,
+  "truth": "uat/truth/H5_fan_motor_bearing_envelope.py",
+  "expect_picture": true,
+  "tool_check": "In-process chain: dsp_filter_apply (butterworth bandpass order 4, '2000 Hz, 6000 Hz', zero_phase) on the CSV gives filtered.csv (columns index,time_s,input,output); dsp_correlate on that file with envelope=true silently uses the last column 'output' and writes envelope.csv (columns index,time_s,x,envelope); dsp_spectrum on envelope.csv needs column='envelope' (4 columns refused otherwise), remove_mean true, peaks 6: about 106.4, 212.9, 319.3, 425.7 Hz with amplitudes near 0.055, 0.054, 0.049, 0.045 g (the first run on the earlier 50 Hz-mains version of the data; truth on the final data 106.4 / 212.8 / 319.2 Hz). dsp_spectrum on the raw record shows 29.8 (1x), 59.6 (2x beside the 60 Hz mains), 208.8 (blade pass), no clear BPFO line. Rough edges to watch: the chain needs the intermediate CSV paths; dsp_correlate and dsp_spectrum disagree on whether a multi-column file needs 'column'; no tool computes bearing defect frequencies (n, d, D formulas by hand).",
+  "leak_tokens": [
+    "106.45",
+    "3.568",
+    "6206",
+    "fan motor"
+  ]
+}
