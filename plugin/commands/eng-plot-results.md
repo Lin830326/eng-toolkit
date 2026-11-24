@@ -3,6 +3,8 @@ description: Plot results of eng-toolkit tools (or your own numbers) as a PNG or
 argument-hint: <what to plot, source tool or data, axes, scales, ranges>
 ---
 
+First load the `eng-plot-results` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-plot-results` skill (and `eng-toolkit` for the unit and reporting rules) to draw this chart with the eng-toolkit plot tools:
 
 $ARGUMENTS

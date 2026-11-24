@@ -3,6 +3,8 @@ description: Simulate an analog circuit or size a converter with ngspice and ele
 argument-hint: <circuit description with values, analysis wanted, supply range>
 ---
 
+First load the `eng-circuit-sim` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-circuit-sim` skill (and `eng-toolkit` for the unit and reporting rules) to simulate this circuit with the eng-toolkit MCP tools:
 
 $ARGUMENTS

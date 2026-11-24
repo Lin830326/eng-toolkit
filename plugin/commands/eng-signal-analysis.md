@@ -3,6 +3,8 @@ description: Spectrum, peak identification, aliasing, filter design and decimati
 argument-hint: <describe the record (file, sample rate, units), the machine and what to find>
 ---
 
+First load the `eng-signal-analysis` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-signal-analysis` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this signal-processing problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS

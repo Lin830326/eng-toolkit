@@ -3,7 +3,9 @@ description: Heat-transfer check (heatsink and junction temperature, insulation,
 argument-hint: <describe the part, heat load, ambient, datasheet thermal data and the limit to meet>
 ---
 
-Use the `eng-thermal-check` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this thermal problem problem with the eng-toolkit MCP tools:
+First load the `eng-thermal-check` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
+Use the `eng-thermal-check` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this thermal problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS
 

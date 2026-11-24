@@ -3,6 +3,8 @@ description: Size or check shafts, keys, bearings, gears, bolts, springs, welds,
 argument-hint: <element, loads, material, factors, what to find>
 ---
 
+First load the `eng-machine-design` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-machine-design` skill (and `eng-toolkit` for the unit and reporting rules) to check this machine element with the eng-toolkit MCP tools:
 
 $ARGUMENTS

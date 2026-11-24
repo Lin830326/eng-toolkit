@@ -3,6 +3,8 @@ description: Motor and drive sizing, induction/PMSM/DC motor points, converter a
 argument-hint: <describe the motion profile, motor, converter or network and what to find>
 ---
 
+First load the `eng-motor-drive-sizing` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-motor-drive-sizing` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this electrical drive, motor, converter or power problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS

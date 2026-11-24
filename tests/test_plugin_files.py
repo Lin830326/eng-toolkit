@@ -71,12 +71,13 @@ GUIDANCE = {
         "not peak power vs rated power", "load_to_rotor_inertia_ratio", "minimum_output_capacitance",
     ],
     "eng-structural-check": [
+        "safety factor against Euler", "half a panel",
         "both Fx and Fy", "principal_I2", "no catalogue", "roller_x", "c,spring,", "not `maximum_nodal_displacement`",
         "data.modes", "ask before the first calculation", "values.max_member_deflection", "frequency_mode_<k>",
     ],
     "eng-fatigue-check": [
         "data.header_skipped", "data.range_histogram", "Preloaded bolt", "do not apply Kf again",
-        "Fa*d/2", "outside the toolkit",
+        "Fa*d/2", "outside the toolkit", "no cut-off", "wrong scale",
     ],
     "eng-dfm-review": ["near_tangent_deg", "RADIUS", "bends: 0", "`caller`", 'color_by="highlight"', "sheet.joint"],
     "eng-optimize": ["spreading", "outside the toolkit", "n - 1 gaps"],
@@ -90,6 +91,16 @@ GUIDANCE = {
     "eng-machine-design": ["joint_efficiency", "corrosion_allowance"],
     "eng-digital-synthesis": ["200-character"],
     "eng-drawing": ["geometry_view"],
+    # round 3: guidance derived from the judges' skill_gap and model_error problems
+    "eng-thermal-check": ["jumps by", "t = 0+", "silicone pad", "junction limit"],
+    "eng-dfm-review": ["spindle axis", "unrecognised_bend_faces", "rule of thumb"],
+    "eng-pcb-review": ["WRITTEN rules", "inclusive"],
+    "eng-machine-design": ["z mn / cos(beta)", "fixed mean", "not even provisional"],
+    "eng-motor-drive-sizing": ["strokes-per-cycle", "ONE stroke", "never call peak power a hard limit"],
+    "eng-signal-analysis": ["matches no 1x", "front end"],
+    "eng-optimize": ["U = k u", "k = 2"],
+    "eng-circuit-sim": ["unwrapped", "assumed"],
+    "eng-tolerancing": ["never assume a temperature"],
 }
 
 
@@ -130,3 +141,42 @@ def test_prompt_hook_no_longer_forbids_all_arithmetic_and_is_valid_json():
     for phrase in ("my arithmetic", "never present a hand number as a tool result", "from memory, not a tool result", "ask first"):
         assert phrase in command
     assert command.count("'") == 2, "the echo text must not contain a quote that ends the shell string early"
+
+
+# Distinctive numbers, parts and names of the user-acceptance scenarios (uat/scenarios) and of the tests that grade them. A skill
+# that quotes one lets a pass mean "the assistant read the skill": worked examples use other parts and numbers.
+SCENARIO_MARKERS = (
+    "IRF540N", "RE 40", "1480", "IPE 240", "IPE240", "StickHub", "6205", "Pico", "RaspberryPi", "cnt8", "add16", "2N2222",
+    "ECMA", "P265GH", "6210", "FAT 63", "L80x80", "B57861", "Grundfos", "851.8", "5794.6", "354.6", "7.63", "6.24", "3700",
+    "986.67", "24.67", "49.33", "0.0560", "1.273", "0.03013", "3.155", "317 rpm", "0.299", "142 gcm", "37.1 kN", "4740",
+    "414.1", "2183", "1553", "94 parts", "47 nets", "43×", "2.15 kohm", "47k", "NTC", "8016", "HTD", "63.66", "manway",
+    "DN200", "1470", "294 mm", "30 kW", "S275", "70 kPa", "350.1", "150.6", "mezzanine", "crane", "45 degC", "90 degC",
+)
+
+
+def test_markers_are_all_distinctive_enough_to_be_a_real_list():
+    assert len(SCENARIO_MARKERS) >= 50 and len(set(SCENARIO_MARKERS)) == len(SCENARIO_MARKERS)
+
+
+@pytest.mark.parametrize(
+    "path", SKILLS + COMMANDS + [PLUGIN / "README.md", PLUGIN / "hooks" / "hooks.json"], ids=lambda p: f"{p.parent.name}/{p.name}"
+)
+def test_plugin_text_quotes_no_number_or_part_of_an_acceptance_scenario(path):
+    text = path.read_text(encoding="utf-8")
+    found = [marker for marker in SCENARIO_MARKERS if marker in text]
+    assert not found, f"{path.parent.name}/{path.name} quotes scenario-specific {found}: use a different example"
+
+
+@pytest.mark.parametrize("path", SKILLS, ids=lambda p: p.parent.name)
+def test_skill_description_starts_with_a_trigger_phrase(path):
+    description = _fields(_frontmatter(path))["description"]
+    if path.parent.name == "eng-toolkit":
+        assert "Load before any eng-toolkit tool" in description
+    else:
+        assert description.startswith("Use FIRST for"), description[:60]
+
+
+@pytest.mark.parametrize("path", [c for c in COMMANDS if c.stem != "eng-toolkit-setup"], ids=lambda p: p.stem)
+def test_command_tells_the_assistant_to_load_its_skill_first(path):
+    text = path.read_text(encoding="utf-8")
+    assert f"First load the `{path.stem}` skill" in text
