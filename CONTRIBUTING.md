@@ -61,8 +61,15 @@ A maintainer reviews every pull request. Reviews check the six rules above first
 
 ## License of contributions
 
-The project is licensed under Apache-2.0. By submitting a contribution you agree that it is licensed under the same
-terms (section 5 of the [LICENSE](LICENSE)), and you confirm that you have the right to submit it.
+The repository has two licenses, split by directory:
+
+| Path | License |
+|---|---|
+| `plugin/` (the Claude Code plugin: skills, commands, hooks) | MIT, see [plugin/LICENSE](plugin/LICENSE) |
+| everything else | Apache-2.0, see [LICENSE](LICENSE) |
+
+By submitting a contribution you agree that it is licensed under the license of the directory it lands in, and you
+confirm that you have the right to submit it.
 
 ## Security
 

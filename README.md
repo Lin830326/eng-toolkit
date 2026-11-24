@@ -633,7 +633,7 @@ only; results are unreviewed. See [layout, caps, escaping and limits](docs/plot/
 
 ## 授權政策
 
-本專案：**Apache-2.0**。依賴分級（`eng_toolkit/licenses.py`，`toolkit_doctor` 會實際核對）：
+本專案：**Apache-2.0**；`plugin/` 目錄（Claude Code plugin 的 skill、指令與 hook）另採 **MIT**，見 [plugin/LICENSE](plugin/LICENSE)。依賴分級（`eng_toolkit/licenses.py`，`toolkit_doctor` 會實際核對）：
 
 | 分級 | 授權 | 規則 |
 |---|---|---|
