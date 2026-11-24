@@ -1,0 +1,215 @@
+{
+ "id": "C2_pico_drawing_a3",
+ "verdict": "PARTIAL",
+ "one_line": "The right skill (eng-drawing) and tool (drawing_make_views) were used on the first call, and an A3 2:1 PDF/PNG/DXF with 4 views, 21/52.3/3.7 and both hole callouts reached Kevin with a correct 47-hole list; but the 11.4 x 47 centre distance never appears as a dimension on any sheet, the final A3 sheet has no hole callouts, the ordinate overlap persists, and Kevin ended with 'ask someone with AutoCAD'.",
+ "goal_met": false,
+ "turns": 4,
+ "answers": [
+  {
+   "item": "overall_size_mm_x_y_z",
+   "truth": "21.0 x 52.3 x 3.7",
+   "assistant_said": "21, 52.3, 3.7 on the sheet; Y -25.5..+26.8",
+   "result": "right"
+  },
+  {
+   "item": "usb_connector_overhang (why 52.3 not 51)",
+   "truth": "USB shell overhangs board by 1.3 mm",
+   "assistant_said": "Only after Kevin asked (turn 2): 'PCB 外框推測是 ±25.5，即 51。多出的 1.3 mm 推測來自上方 USB 連接器 ... 推測，未逐面核對'",
+   "result": "right"
+  },
+  {
+   "item": "mounting_holes count/diameter/centres",
+   "truth": "4 x d2.1 through at (+-5.7, +-23.5)",
+   "assistant_said": "4 x Ø2.1 at X ±5.7, Y ±23.5 (table, turn 1)",
+   "result": "right"
+  },
+  {
+   "item": "mounting hole spacing readable on the drawing",
+   "truth": "11.4 x 47.0 as dimension or ordinates",
+   "assistant_said": "Value right (5.7x2, 23.5x2) but on the sheet only as a text note; no dimension line on any version",
+   "result": "wrong"
+  },
+  {
+   "item": "pin_holes",
+   "truth": "40 x d1.0, pitch 2.54, row spacing 17.78",
+   "assistant_said": "20 per side at X ±8.89, Y -24.13..+24.13, pitch 2.54",
+   "result": "right"
+  },
+  {
+   "item": "debug_pad_holes",
+   "truth": "3 x d1.0",
+   "assistant_said": "3 at Y -23.9, X -2.54/0/+2.54; 'probably debug points; STEP has no plating info, not confirmed'",
+   "result": "right"
+  },
+  {
+   "item": "total_holes",
+   "truth": "47 (43 d1 + 4 d2.1)",
+   "assistant_said": "47 (43 x Ø1, 4 x Ø2.1)",
+   "result": "right"
+  },
+  {
+   "item": "A3 multi-view dimensioned drawing (PDF/PNG)",
+   "truth": "A3, >=3 views, overall dims, 4x D2.1 and 43x D1 callouts, scale, title block, 11.4 x 47 readable",
+   "assistant_said": "First sheet (A3 2:1, top/front/right/iso, 11 dims, both callouts) delivered in turn 1; final sheet (A3 2:1, 3 views, overall dims only) has no hole callouts and no 11.4/47 dimension",
+   "result": "wrong"
+  },
+  {
+   "item": "readability (no overlapping dimension text)",
+   "truth": "legible, no overlap",
+   "assistant_said": "turn 1 sheet: ordinates '0' and '1,61' overlap (the assistant warned about it); final sheet: no ordinates, clean, but text height cannot be changed",
+   "result": "wrong"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "the 43 small 1 mm holes vs the 4 mounting holes: explain which are which",
+   "caught": true
+  },
+  {
+   "trap": "castellated half-holes on the board edge are not holes",
+   "caught": true
+  },
+  {
+   "trap": "explain 52.3 vs datasheet 51 (USB overhang 1.3 mm)",
+   "caught": true
+  },
+  {
+   "trap": "mounting-hole spacing 47 mm must be readable from the drawing (no y ordinates when >16 y values)",
+   "caught": false
+  },
+  {
+   "trap": "overlapping ordinate texts 0 / 1.61 under the top view",
+   "caught": true
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 2: 'X 座標 0 與 1.61 已分開 (目視)' for the A1 5:1 sheet is true for those two labels, but the same sheet has the width dimension '21' printed over the ordinate '10,5' and its dimension line crossing the ordinate texts; the tool's layout_warnings were empty. The assistant looked at the PNG and missed it.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 2 says 'A3 只能 1:1' and in the next lines says the A3 version is 2:1; it delivered an A1 5:1 sheet while proposing 'A2 5:1' (A2 was never run). Confusing for a non-draughtsman.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 3 hands a non-programmer a 90-line ezdxf script that the assistant did not run ('我沒有執行這段腳本，輸出未驗證'). Disclosed, but not a usable answer for this person; turn 4 then proposes LibreCAD.",
+   "severity": "low"
+  },
+  {
+   "issue": "The final sheet shows '52,3' and '3,7' with a decimal comma while its notes use points; the skill says to tell the user, the assistant did not.",
+   "severity": "low"
+  },
+  {
+   "issue": "What it said about tool limits was true (no arbitrary dimension lines, no text-height parameter, A3 5:1 refused). It never claimed a dimension line it did not have.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "ws/20261124T135631Z-6aa16de1-drawing_make_views/drawing.png (A3 2:1, auto dims, with iso)",
+   "score": 2,
+   "notes": "Title block, top/front/right plus iso, 52,3 / 3,7 / 21, callouts 4x Ø2.1 THRU and 43x Ø1 THRU with leaders, eight x ordinates. Readable at full size, values correct (ordinates measured from left edge -10.5). Defects: '0' and '1,61' overlap, no y ordinates so the 47 mm spacing cannot be read, the part uses the left third of the sheet. Reached Kevin (PDF/PNG/DXF paths; the harness shows PDF pages); he reported seeing it and complained about exactly those points."
+  },
+  {
+   "file": "ws/20261124T135751Z-11253717-drawing_make_views/drawing.png (A1 5:1, dimensions=overall)",
+   "score": 1,
+   "notes": "Clean but A1, which he cannot print; the part is a small block on an empty sheet; overall dims only, no callouts."
+  },
+  {
+   "file": "ws/20261124T135758Z-d6bf53d8-drawing_make_views/drawing.png (A1 5:1, auto)",
+   "score": 1,
+   "notes": "A1 sheet. Ordinates and callouts present, but the width dimension '21' sits on top of ordinate '10,5' and its dimension line crosses the ordinate texts; layout_warnings [] did not flag it. Small text relative to the sheet."
+  },
+  {
+   "file": "ws/20261124T140110Z-b3b73785-drawing_make_views/drawing.png (final A3 2:1, dimensions=overall, 6 notes)",
+   "score": 2,
+   "notes": "Clean A3 with title block and notes '1. Mounting holes 4x D2.1 THRU centres 11.4 x 47 ... 4. Overall length 52.3 includes USB connector PCB outline 51 inferred'. No hole callouts and no 11.4/47 dimension lines (callouts [] in result.json); text same size. A usable reference sheet, not what he asked for."
+  }
+ ],
+ "vs_round1": {
+  "verdict_before": "FAIL",
+  "verdict_now": "PARTIAL",
+  "fixed": [
+   "C2_pico_drawing_a3-1",
+   "C2_pico_drawing_a3-2",
+   "C2_pico_drawing_a3-3"
+  ],
+  "still_open": [
+   "C2_pico_drawing_a3-4",
+   "C2_pico_drawing_a3-5"
+  ],
+  "new": [
+   "C2_pico_drawing_a3-6",
+   "C2_pico_drawing_a3-7",
+   "C2_pico_drawing_a3-8",
+   "C2_pico_drawing_a3-9",
+   "C2_pico_drawing_a3-10"
+  ],
+  "regressed": [],
+  "notes": "-1: Skill call 'eng-toolkit:eng-drawing' is the first call of turn 1, then geometry_measure + drawing_make_views; no uvx or shell. -3: 52.3 vs 51 is now explained when asked (hedged as inference); PCB thickness was not asked this time. -4 and -5 unchanged in the tool (MAX_ORDINATES still 16 in eng_toolkit/domains/drawing/callouts.py; comma vs point)."
+ },
+ "problems": [
+  {
+   "id": "C2_pico_drawing_a3-4",
+   "kind": "tool_gap",
+   "severity": "high",
+   "what": "(still open from round 1) drawing_make_views cannot put the mounting-hole centre distance, the one thing Kevin needs, on the sheet: no y ordinates when the holes lie at more than 16 distinct y values, and no argument to dimension chosen holes or to add a given dimension. 'dimensions' is only auto|overall|none.",
+   "evidence": "warnings: 'top view: the holes lie at 23 different y coordinates, more than the 16 that can be dimensioned legibly; no y ordinates are drawn there'. Turn 4: '現有工具只能從 STEP 產生固定格式的圖，不能加任意距離的尺寸線'. Final result data.callouts == [] and 3 dimensions.",
+   "fix": "drawing_make_views: add argument dimension_holes (e.g. 'H44,H45,H46,H47' or 'largest') that draws centre-to-centre linear dimensions (x and y) for just those holes, independent of the 16-ordinate limit."
+  },
+  {
+   "id": "C2_pico_drawing_a3-6",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "The only way to remove the overlapping ordinates on A3 is dimensions='overall', and that also removes the hole callouts (4x Ø2.1 THRU, 43x Ø1 THRU), so hole diameters then exist only as note text. A person wanting overall size, hole size and hole position on one A3 sheet cannot get all three. There is also no text-height parameter (Kevin: '字太小').",
+   "evidence": "result.json of 20261124T140110Z: dimensions 'overall' -> data.callouts []; 20261124T135631Z (auto) -> callouts present plus layout warning 'x ordinates 0 and 1.61 ... overlap'.",
+   "fix": "drawing_make_views: dimensions='overall+callouts' (or separate flags overall/callouts/ordinates) and a 'text_height' or 'dimension_scale' argument. When ordinates would overlap, drop or stagger the colliding ones instead of only warning."
+  },
+  {
+   "id": "C2_pico_drawing_a3-7",
+   "kind": "tool_bug",
+   "severity": "medium",
+   "what": "On A1 5:1 with dimensions=auto the overall width dimension '21' is placed on top of the ordinate text '10,5' and its dimension line crosses the ordinate labels. layout_warnings is empty, so the checker does not test dimension-vs-ordinate collisions; the assistant, relying on it and a quick look, called the sheet fine.",
+   "evidence": "ws/20261124T135758Z-d6bf53d8-drawing_make_views/drawing.png (zoom x 1000-1600, y 1760-1900 of 4001x2826): '10,5' overprinted by '21'; result.json data.layout_warnings [].",
+   "fix": "eng_toolkit/domains/drawing (placement of the width dimension): put it below the lowest ordinate label band, and extend the overlap test behind layout_warnings to every pair of dimension texts and dimension lines."
+  },
+  {
+   "id": "C2_pico_drawing_a3-5",
+   "kind": "tool_bug",
+   "severity": "low",
+   "what": "(still open) Mixed decimal separators on one sheet: dimension texts '52,3', '3,7', '1,61' with a comma, callout 'Ø2.1' and notes with points.",
+   "evidence": "final drawing.png: '52,3' and '3,7' next to note '4. Overall length 52.3'.",
+   "fix": "One separator for all texts, default point. The eng-drawing skill section 4 already lists it, so the assistant should tell the user."
+  },
+  {
+   "id": "C2_pico_drawing_a3-8",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Turn 2 reported an 'A1 5:1 version' as the current result while proposing 'A2 5:1', said 'A3 只能 1:1' although A3 2:1 was the default it had just delivered, and judged the A1 sheet readable. Kevin lost a turn (he answered that only A3 prints).",
+   "evidence": "Turn 2: '目前的 A1 5:1 版' ... '需要你決定：要改用 A2 5:1 嗎？'; tool message 'scale 1:1 fits sheet A3; sheet A2 fits at scale 5:1'",
+   "fix": "eng-drawing section 4: 'Do not offer a sheet size you did not run; say which sheet the delivered file is.'"
+  },
+  {
+   "id": "C2_pico_drawing_a3-9",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Turn 3 answered 'can you edit the DXF' with an untested 90-line ezdxf script for a user who cannot program; turn 4 asks him to install LibreCAD. The honest short answer (the toolkit cannot add this dimension; options: have someone edit the DXF, or accept the note) should have come first.",
+   "evidence": "Turn 4 person: '我不會跑 Python，也不知道 pip 是什麼'",
+   "fix": "eng-drawing section 5 'Coverage limits': add 'No user-specified dimensions (e.g. hole centre distance) and no DXF editing: say so in the first reply and offer the hole table.'"
+  },
+  {
+   "id": "C2_pico_drawing_a3-10",
+   "kind": "harness_artifact",
+   "severity": "low",
+   "what": "Turn 1 answer says '你的截圖沒有附文字，我把它當成要我回報結果', but the person's first message had no screenshot (cause unknown). In turn 3 the assistant also tried a Bash call although the harness lists only Read and Skill, and told the person 'Bash 已停用'.",
+   "evidence": "Turn 1 last bullet; turn 3 tools: drawing_read, Read, Bash",
+   "fix": "uat_run.py: do not pass image paths in the person message; none are needed."
+  }
+ ],
+ "what_worked": [
+  "Skill routing fixed: eng-toolkit:eng-drawing loaded first, then geometry_measure and drawing_make_views; A3 PDF/PNG/DXF in turn 1 with 11 dimensions, 2:1 scale, both callouts, layout warnings repeated honestly.",
+  "The hole list is correct and complete (40 + 3 + 4, positions, pitch, 11.4 x 47 from the coordinates) and it explained that the ordinates start at the left edge (1.61 = X -8.89).",
+  "It answered each of Kevin's five points one by one in turn 2, marked 52.3 vs 51 as inference, and never claimed a dimension line it did not have.",
+  "drawing_read returned DXF handles; the final A3 sheet is clean and its notes carry the numbers Kevin wanted (11.4 x 47, 52.3 incl. USB, PCB 51)."
+ ]
+}

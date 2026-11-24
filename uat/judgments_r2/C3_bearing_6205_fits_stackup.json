@@ -1,0 +1,233 @@
+{
+ "id": "C3_bearing_6205_fits_stackup",
+ "verdict": "PASS",
+ "one_line": "Shaft fit (k5/k6 against the real 0/-10 bore), thermal loosening of the aluminium housing, the stack-up (worst case 0.20-0.68, 8.3 % above 0.5, not OK) and a tool-checked fix (groove 21.4 +-0.05, spacer 0/-0.05 -> 0.15-0.48) are right and labelled tool vs own arithmetic; the housing table uses a recalled OD tolerance 0/-11 (true 0/-13) and the eng-tolerancing skill that says 'never recall' was not loaded. The chart PNG was correct but the person never saw it; a pasted HTML/SVG finally worked.",
+ "goal_met": true,
+ "turns": 6,
+ "answers": [
+  {
+   "item": "shaft k5 vs bearing bore",
+   "truth": "interference 2..21 um (clearance -21..-2)",
+   "assistant_said": "k5 過盈 2~21 μm; k6 2~25 μm",
+   "result": "right"
+  },
+  {
+   "item": "shaft h6 vs bearing bore",
+   "truth": "-10..+13",
+   "assistant_said": "間隙最大 13 μm，過盈最大 10 μm，不合",
+   "result": "right"
+  },
+  {
+   "item": "shaft recommendation",
+   "truth": "k5 or k6; h6 lets the inner ring creep",
+   "assistant_said": "k6 (k5 for higher precision); 'h6 不合，內圈會在軸上打滑'",
+   "result": "right"
+  },
+  {
+   "item": "'H7/k5 table is not the bearing' explanation",
+   "truth": "bearing bore 0/-10, not H7",
+   "assistant_said": "clear: use 24.990-25.000 instead of the H7 hole",
+   "result": "right"
+  },
+  {
+   "item": "housing K7 vs bearing OD",
+   "truth": "clearance -21..+22",
+   "assistant_said": "interference 21 / clearance 20 (OD recalled as 0/-11)",
+   "result": "wrong"
+  },
+  {
+   "item": "housing H7 vs bearing OD",
+   "truth": "0..+43",
+   "assistant_said": "0..+41",
+   "result": "wrong"
+  },
+  {
+   "item": "housing recommendation / is K7 acceptable",
+   "truth": "K7 acceptable; tighter than H7 in Al; steel sleeve is a legitimate alternative",
+   "assistant_said": "Turn 1: 'K7 可以用，但鋁殼建議改 M7'. After heating: K7 and M7 both become clearance at 70 C, so a steel sleeve with K7 bore plus glue/set screw; point load confirmed so K7 sleeve bore is fine. Direction right (tighter, not looser); the sleeve is an extra change labelled as practice",
+   "result": "right"
+  },
+  {
+   "item": "thermal loosening dT 50 K",
+   "truth": "28.6 um",
+   "assistant_said": "about 30 μm (alpha 23.6e-6 vs 12e-6, own arithmetic, 'from memory')",
+   "result": "right"
+  },
+  {
+   "item": "housing fits hot",
+   "truth": "K7 +7.6..+50.6",
+   "assistant_said": "K7 gap 9..50 μm (consequence of OD -11)",
+   "result": "right"
+  },
+  {
+   "item": "stack worst case",
+   "truth": "0.20..0.68",
+   "assistant_said": "0.20~0.68 mm",
+   "result": "right"
+  },
+  {
+   "item": "stack RSS / statistical",
+   "truth": "RSS 0.31..0.57, mean 0.44, 8.4 % above 0.5",
+   "assistant_said": "RSS 0.31~0.57, mean 0.44, Monte Carlo 8.3 %; explained that one-sided tolerances shift the mean away from 0.30",
+   "result": "right"
+  },
+  {
+   "item": "spec verdict 0.1..0.5",
+   "truth": "not OK",
+   "assistant_said": "超出 0.5 mm 上限; 'worst case cannot pass whatever the nominal: 0.48 > 0.40 window'",
+   "result": "right"
+  },
+  {
+   "item": "fix that meets spec",
+   "truth": "21.4 +-0.05 with spacer 0/-0.05 -> 0.15..0.48",
+   "assistant_said": "option B: groove 21.4 +-0.05, spacer 5.0 +0/-0.05 -> 0.15~0.48, MC 0 %",
+   "result": "right"
+  },
+  {
+   "item": "temperature effect on end float",
+   "truth": "all-steel chain: negligible",
+   "assistant_said": "turn 2 assumed the groove is in the aluminium housing (+0.013 mm) and asked; after correction: below 0.001 mm",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "ISO 286 'H7/k5' (-11..+19) is not the bearing seat: use ring tolerance 0/-10",
+   "caught": true
+  },
+  {
+   "trap": "h6 shaft with rotating inner ring allows creep",
+   "caught": true
+  },
+  {
+   "trap": "6061 housing loosens ~29 um at 70 C, so a tighter housing fit, not looser",
+   "caught": true
+  },
+  {
+   "trap": "asymmetric tolerances: mean 0.44 differs from nominal 0.30",
+   "caught": true
+  },
+  {
+   "trap": "ring tolerances must come from the catalogue, not memory (OD 52 mm is 0/-13, not 0/-11)",
+   "caught": false
+  },
+  {
+   "trap": "circlip '1.2 (-0.06)' read as 0/-0.06",
+   "caught": true
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Every ring tolerance carries '來自記憶，未用工具驗證，請對照軸承廠目錄'. Honest, but the recalled OD is wrong (0/-11; the 50-80 mm class is 0/-13), the chart legend repeats it, and the supplier chart would carry it.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 1 invented a hot-housing case ('殼體比軸承高 30 K') Jason had not given and quoted '3 μm / 12 μm left'. Turn 4 says so itself ('這個假設不是你的條件') and redoes the table with 50 K. Good correction.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 2 assumed the circlip groove sits in the aluminium housing, although the data said shoulder-to-groove on the shaft. It flagged the assumption and asked; the person corrected it and the assistant recomputed.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 3 said the PNG path 'is on my computer, you cannot open it'. In a real session the path is on the user's machine; this came from the harness (C3-5). Turn 5 'I rechecked the chart coordinates' was done without a tool by reading its own SVG; I recomputed y = 225 - 5 x value for every bar and they are consistent.",
+   "severity": "low"
+  },
+  {
+   "issue": "Practice statements (steel sleeve, glue, set screw, point load tolerates clearance) are labelled 'general experience, not tool-verified, follow the bearing maker's manual'.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "ws/20261124T135811Z-099a5a1f-plot_bar/plot.png (plot_bar format png, 1600x720)",
+   "score": 2,
+   "notes": "Title with units, y axis '過盈 (μm)' -60..40 with grid, 8 categories, CJK text renders, mid-point bars plus range whiskers, value labels; values match its table. Weaknesses: bars show the midpoint, so a bar from zero is not a range and labels print midpoints rather than min/max; the x-axis label says '上半為軸...下半為座孔' although they are left and right. Not ready for a supplier without edits. The person never saw it: the harness did not rasterise tool PNGs and the assistant gave only a path (C3-5)."
+  },
+  {
+   "file": "hand-written HTML with inline SVG pasted in turn 4 (no file; from the transcript)",
+   "score": 2,
+   "notes": "Floating range bars per fit (h6, j6, k5, k6, m6, H7, K7, M7), zero line, 5 px per μm, midpoint tick, legend, table of ranges. I recomputed every rect and line: all consistent with the table (K7 y 120..325 = +21..-20; M7 75..280 = +30..-11; midpoint 177.5 = 9.5). Better than plot_bar for the purpose, but hand-written (against the skill rule), no provenance, the legend repeats the wrong OD 0/-11, and the person had to save the HTML himself. He reported it opened ('圖有看到')."
+  }
+ ],
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PASS",
+  "fixed": [
+   "C3_bearing_6205_fits_stackup-2",
+   "C3_bearing_6205_fits_stackup-5",
+   "C3_bearing_6205_fits_stackup-6",
+   "C3_bearing_6205_fits_stackup-7"
+  ],
+  "still_open": [
+   "C3_bearing_6205_fits_stackup-1",
+   "C3_bearing_6205_fits_stackup-3",
+   "C3_bearing_6205_fits_stackup-4"
+  ],
+  "new": [
+   "C3_bearing_6205_fits_stackup-8",
+   "C3_bearing_6205_fits_stackup-9",
+   "C3_bearing_6205_fits_stackup-10",
+   "C3_bearing_6205_fits_stackup-11"
+  ],
+  "regressed": [],
+  "notes": "-2: housing direction is now right (K7/M7 tighter than H7, all-gap hot, sleeve). -4: plot_bar format png exists and was used first; hand-written SVG came only after the person could not open the path. -5/-6: the shim side-analysis did not recur and the harness has no Bash/Write. -3: eng-tolerancing section 4 now covers bearing seats, but it was not loaded, so the gap is 'not applied' rather than 'missing'. Note that the id C3-5 is reused in this round for the harness issue (PNG not shown), a different problem from round-1 C3-5."
+ },
+ "problems": [
+  {
+   "id": "C3_bearing_6205_fits_stackup-1",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "(still open) metrology_fit_limits knows only ISO 286 hole/shaft pairs; there is no bearing seat function or ISO 492 ring table, so the model recalls ring tolerances and got the 52 mm OD wrong (0/-11 instead of 0/-13 um). All housing ranges are 2 um off at one end (K7: -21..+20 instead of -21..+22).",
+   "evidence": "Turn 1: '6205 外徑公差 0/-11 μm (ISO 492 Normal，來自記憶，未用工具驗證)'; turn 2 table 'H7 ... 間隙最大 41', 'K7 -20~21'. Truth: H7 0..+43, K7 -21..+22.",
+   "fix": "Add a bearing option to metrology_fit_limits (bearing='6205', class normal|P6|P5, ring bore|outer) using tabulated ISO 492 deviations by nominal size, returning the real seat clearance. Until then the eng-tolerancing section 4 table is the only source; list the 30-50 and 50-80 mm ring classes there explicitly."
+  },
+  {
+   "id": "C3_bearing_6205_fits_stackup-8",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "No Skill tool call in 6 turns: eng-tolerancing (bearing seats, 'confirm in the catalogue, never recall', 0/-13 for 52 mm, stackup recipe, 'quote the mean') and eng-plot-results (PNG hand-over wording) were not loaded although the opening message (6205, H7/K7, 軸向公差累積) matches the description. That is why the OD was recalled, the seats were hand-calculated instead of built with metrology_stackup_1d, and the chart delivery was improvised. Same in C1.",
+   "evidence": "transcript.json C3: tools turn 1 six metrology_fit_limits, turn 2 stackup x3, fit_limits x2, plot_bar; no Skill.",
+   "fix": "eng_toolkit/gateway/server.py instructions and the plugin eng-toolkit skill: 'load the matching eng-* skill before the first tool call'; start the descriptions of eng-tolerancing and eng-dfm-review with 'Use FIRST' as eng-drawing does (it was loaded in C2)."
+  },
+  {
+   "id": "C3_bearing_6205_fits_stackup-9",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "plot_bar has no floating-range mode, so a fit comparison is a midpoint bar with an error bar and the value labels print the midpoints. The x-axis label the assistant wrote ('上半…下半') shows how awkward it is.",
+   "evidence": "plot.png: bars from 0 to midpoint, whiskers for range, labels '-1.5, 7.5, 11.5 ...'",
+   "fix": "plot_bar mode='range': series with y_min/y_max per category drawn as floating bars, labels 'min..max'."
+  },
+  {
+   "id": "C3_bearing_6205_fits_stackup-5",
+   "kind": "harness_artifact",
+   "severity": "medium",
+   "what": "The PNG made by plot_bar was never shown to the simulated person (rasterise() handles only svg/pdf/glb; rendered/ is empty), so he said 'I only got a path, I cannot see it'. The assistant then answered that the file is on its own computer and pasted an HTML page. In a real session the path would be openable, so 'could he open it' is not testable here for plot PNGs.",
+   "evidence": "transcript turn 3 person: '圖我打不開，你只給路徑，我這邊看不到'; ls rendered/ is empty; scripts/uat_run.py rasterise().",
+   "fix": "uat_run.py: copy tool PNGs into rendered/ and show them to the person."
+  },
+  {
+   "id": "C3_bearing_6205_fits_stackup-10",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "The assistant said the file 'is on my computer, you cannot open it' instead of giving the path and how to open it, then wrote chart HTML by hand against the skill rule (never hand-write SVG/HTML). The hand SVG is numerically right (verified) but has no provenance and repeats the wrong OD.",
+   "evidence": "Turn 3: '圖檔路徑在我的電腦上，你那邊無法開啟，請以表格為準'; turn 4 full <svg> block",
+   "fix": "eng-plot-results section 6: add 'the file is on the same machine as the chat unless the user says otherwise; never say it is on your computer'."
+  },
+  {
+   "id": "C3_bearing_6205_fits_stackup-11",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Two avoidable assumptions before the person's data was complete: a hot-housing case at 30 K, and the circlip groove in the aluminium housing. Both flagged and fixed within one turn, but they produced two wrong tables ('K7 剩 3 μm', 'temperature +0.013 mm').",
+   "evidence": "Turn 4: '前面「K7 剩 3 μm、M7 剩 12 μm」是用「殼體比軸承高 30 K」假設算的，這個假設不是你的條件'",
+   "fix": "eng-tolerancing section 1 already says to ask for every part in the load path; the skill was not loaded (see -8)."
+  }
+ ],
+ "what_worked": [
+  "Used metrology_fit_limits for every ISO fit (H7/k5, k6, j6, h6, m6, K7, M7, N7, P7 limits match ISO 286) and did the bearing arithmetic in the open, labelled 'my arithmetic'.",
+  "Explained clearly why 'H7/k5' in the table is not the bearing seat and recomputed against the 0/-10 bore.",
+  "Stack-up: worst case 0.20-0.68, RSS 0.31-0.57, Monte Carlo 8.3 %, mean 0.44 vs nominal 0.30 explained, the observation that worst case cannot meet a 0.40 mm window with 0.48 mm of tolerance bands, and a fix the assistant checked with the tool.",
+  "Recovered in turn 4 ('我前面的計算沒有完整'), reversed its own thermal assumption honestly, and asked the one question that mattered (point or rotating outer-ring load) before closing.",
+  "Housing advice now matches catalogue practice: tighter than H7 in aluminium, thermal check, and a steel sleeve when no interference fit survives 70 C."
+ ]
+}

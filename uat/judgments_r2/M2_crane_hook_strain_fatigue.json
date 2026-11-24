@@ -1,0 +1,252 @@
+{
+ "id": "M2_crane_hook_strain_fatigue",
+ "verdict": "PASS",
+ "one_line": "The final numbers are right and trustworthy (damage 9.58e-6 per record, 58,000 h, 47,000 h = 26.1 years remaining, three EMI spikes with times and values, 5 cycles above 60 MPa), obtained without any file leak and with the raw file's header now accepted; but turn 2 first told the person 'remaining life 0 h' from the spike-contaminated file, and the histogram PNG, which was good, never reached him (harness shows only SVG/PDF/GLB), so the assistant fell back to a text bar chart and hand-written SVG code against the toolkit rule.",
+ "goal_met": true,
+ "turns": 6,
+ "answers": [
+  {
+   "item": "FAT 63 as Basquin amplitude A, b",
+   "truth": "A 3968.8 MPa, b -1/3, no cut-off, no mean-stress correction",
+   "assistant_said": "first call A 7938 (range form) -> own hand check found the factor 8 and corrected; final A 3969, b -1/3, mean_method none; endurance_limit 0.01 MPa with below_knee elementary used as a dummy to get 'no cut-off'",
+   "result": "right"
+  },
+  {
+   "item": "Damage per 2000 s record (despiked)",
+   "truth": "9.58e-06",
+   "assistant_said": "9.578e-06 (tool, no gate); 9.557e-06 / 9.527e-06 with 5 / 15 MPa hysteresis",
+   "result": "right"
+  },
+  {
+   "item": "Hours to failure",
+   "truth": "57,991 h",
+   "assistant_said": "about 58,000 h (104,403 x 2000 s / 3600 = 58,002; about 32 years)",
+   "result": "right"
+  },
+  {
+   "item": "Remaining hours after 11,000 h and years at 1800 h/yr",
+   "truth": "46,991 h, 26.1 years",
+   "assistant_said": "about 47,000 h, about 26.1 years, used 19.0 %",
+   "result": "right"
+  },
+  {
+   "item": "Max stress in the despiked record",
+   "truth": "127.0 MPa",
+   "assistant_said": "605 microstrain = 127 MPa; largest cycle range 115.9 MPa (bin top)",
+   "result": "right"
+  },
+  {
+   "item": "Cycles with range above 60 MPa",
+   "truth": "5",
+   "assistant_said": "histogram bins 60.9:1, 72.5:1, 78.3:2, 113.0:1 = 5 (not stated as a sum)",
+   "result": "right"
+  },
+  {
+   "item": "Spikes in the raw file (time, value)",
+   "truth": "3 single samples at index 4317, 9902, 15561: 3600, -1800, 4100 microstrain (756, -378, 861 MPa)",
+   "assistant_said": "431.7 s +3600, 990.2 s -1800, 1556.1 s +4100 microstrain = about 756 / -378 / 861 MPa, located on a plot and confirmed by reading the raw rows; the despiked file replaces them by 168, 224, 168",
+   "result": "right"
+  },
+  {
+   "item": "Raw-file life is wrong because of the spikes",
+   "truth": "raw run: damage 4.39e-3, 126 h",
+   "assistant_said": "turn 2: D 4.39e-3, 126.5 h, 'remaining 0 h / 0 years, already exceeded design life'; spikes flagged as the cause and 'must be confirmed' in the same answer; turn 3 corrected after the person said noise",
+   "result": "right"
+  },
+  {
+   "item": "Despiked file is clean / 'pointwise identical except 3 samples'",
+   "truth": "only indices 4317, 9902, 15561 differ",
+   "assistant_said": "no pointwise comparison tool; derived from the tool's mean, variance and the lag-0 correlation coefficient: sum(x-y) 5,340 and sum (x-y)^2 31,335,824 equal the three-point prediction exactly (checked by me: both numbers are right and the three indices are the only differences); told the person to write 'statistical identity', gave an Excel check",
+   "result": "right"
+  },
+  {
+   "item": "Histogram of cycle ranges",
+   "truth": "log scale or table acceptable",
+   "assistant_said": "good product PNG (log stem plot) never seen by the person; text table with ASCII bars (turn 4); hand-written SVG code (turn 5)",
+   "result": "right"
+  },
+  {
+   "item": "Effect of the small 'bumps' at 534.8, 1263.2, 1715.9 s",
+   "truth": "(not in the truth; bumps are ordinary load steps)",
+   "assistant_said": "hysteresis gate 5 / 15 MPa changes the life by 0.2-0.6 %: valid upper bound for any bump under 15 MPa (about 70 microstrain), labelled approximate",
+   "result": "unverifiable"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "EMI spikes in the raw file must be recognised and excluded",
+   "caught": true
+  },
+  {
+   "trap": "FAT class is a stress RANGE; Basquin A in the tool is amplitude (7938 vs 3969)",
+   "caught": true
+  },
+  {
+   "trap": "Raw CSV with header line is refused by fatigue_rainflow",
+   "caught": true
+  },
+  {
+   "trap": "Total cycle count dominated by sensor noise (4925 of 4987 cycles under 6 MPa); compare damage, not counts",
+   "caught": true
+  },
+  {
+   "trap": "Hours: record time / D, then subtract the elapsed 11,000 h",
+   "caught": true
+  },
+  {
+   "trap": "Plausibility: 861 MPa on a 6.3 t hook (109 MPa at SWL, yield of any steel far below 861) is impossible",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 2 headline: 'the weld has exceeded its design life, remaining life 0 h / 0 years' from the spike-contaminated raw file, with 'recommend immediate shutdown and inspection' if the spikes are real. The spikes are flagged in the next paragraph, but the answer never says that 861 MPa is above the yield of any structural steel (the tool warned 'Yield strength omitted; per-cycle elastic peak validity was not checked'; with yield_strength 355 MPa the tool refuses the raw record: 'peak stress exceeds yield'). A reliability engineer reads 0 h first.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 2 'unverified rough estimate: small cycles only, life about 18,000 h, remaining about 7,500 h (推測)'. Truth 58,000 / 47,000 h: off by 3x. It was labelled as a guess and retracted in turn 3 ('前一輪我給的約 1.8 萬小時粗估是錯的'), but a guess with a number in an answer about a crane weld is the pattern the skill forbids.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 4 says the three-point squared-difference prediction is 32,903,376 and the measured one 32,903,378 and calls it a match; turn 5 gives 31,335,824 for both (the correct figure, 3432^2 + 2024^2 + 3932^2). The turn-4 numbers were wrong and the change was not mentioned.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 5 'cannot compare point by point here' and the identity argument are honest and exact; the person's refusal to write 'pointwise identical' is reasonable and the assistant supported the weaker wording.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 1 states 'file has 20,001 data rows' (20,000 plus the header) and 'readings about 54 to 67' (first 30 rows only). Minor.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 1 'not needed items: you listed tensile and yield strength, surface roughness, diameter, Kt, Paris': the person listed none of these; echo of the skill's ask-first list (see M1-10).",
+   "severity": "low"
+  },
+  {
+   "issue": "The FAT 63 applicability answer flips from 'cannot be applied directly' (turn 5) to 'writing the company-specified FAT 63 is reasonable, listing the open items' (turn 6) after the person says the company standard prescribes it. Both are caveated; the second is the useful one.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r2/M2_crane_hook_strain_fatigue/ws/20261124T141333Z-28b01d1a-plot_xy/plot.png",
+   "score": 3,
+   "notes": "Product PNG: log-y stem histogram of the despiked record, 14 bins of 5.8 MPa, 4,925 at 2.9 MPa down to 1 at 113 MPa, axis labels with units, title says 'log axis'. Values equal the tool's range_histogram. Not shown to the person (see harness problem)."
+  },
+  {
+   "file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r2/M2_crane_hook_strain_fatigue/ws/20261124T141331Z-22ea9f9e-plot_xy/plot.png",
+   "score": 3,
+   "notes": "Product PNG: raw record 0..2000 s, three clear spikes (3600, -1800, 4100 microstrain) over a 50-600 microstrain load pattern. This is the best evidence for the report and was used only by the assistant to locate the spikes; the person was never offered it."
+  },
+  {
+   "file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r2/M2_crane_hook_strain_fatigue/ws/20261124T141710Z-430c5bad-plot_xy/plot.png",
+   "score": 1,
+   "notes": "Scatter of consecutive differences clipped to y 25..75 (thinned markers, 19,989 of 20,000 points clipped): a working diagnostic for the assistant, not a report picture."
+  },
+  {
+   "file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r2/M2_crane_hook_strain_fatigue/rendered/",
+   "score": 0,
+   "notes": "rendered/ is empty: uat_run.py rasterises only SVG/PDF/GLB and all M2 plots were format=png, so the person was shown no picture in six turns and asked three times ('圖我打不開'). The text bar table and the hand-written SVG (bars correct against the data: 4925 -> 277 px on a 4-decade axis, 1 -> 2 px drawn as a stub, disclosed) are the substitutes."
+  }
+ ],
+ "problems": [
+  {
+   "id": "M2_crane_hook_strain_fatigue-7",
+   "kind": "harness_artifact",
+   "severity": "high",
+   "what": "The harness never shows PNG files to the simulated person: rasterise() handles .svg, .pdf, .glb only; M2's plot_xy calls used format=png (as the plot skill says) so rendered/ stayed empty. In F5 and M1 (format both) the person saw a re-rasterised SVG. Whether a real chat client opens a local PNG path is the real product question: the person says he cannot.",
+   "evidence": "rendered/ empty; person turns 4 and 5: '圖我打不開，你給的只是路徑，我這邊看不到圖'; scripts/uat_run.py lines 80-107",
+   "fix": "uat_run.py: add `elif path.suffix == '.png' and path.parent != out: shutil.copy(...)` to rasterise(); judges then see what the person sees."
+  },
+  {
+   "id": "M2_crane_hook_strain_fatigue-8",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "eng-plot-results / eng-toolkit rule 9 say 'hand over data.png_path ... if no picture can be shown, give a table; never ASCII chart or hand-made SVG', but give no instruction for the case the person reports he cannot open a path. The assistant then broke the rule twice (ASCII bar table in turn 4, a 40-line hand-written SVG in turn 5) because the person asked for a picture. The SVG is correct, but is exactly what the rule forbids; the PNG (and the raw-record plot with the spikes) was never offered as an attachment, nor embedded as ![](path).",
+   "evidence": "turn 4: '條圖格數是我的換算' ASCII bars; turn 5: '```svg <svg xmlns=...' ; F5 turn 3 embedded the path as a markdown image and the person saw it",
+   "fix": "plugin/skills/eng-plot-results/SKILL.md section 6: add 'always embed the PNG as ![title](path) and also give the path; if the person says he cannot see or open it: (1) tell him the exact folder and file name and how to open it, (2) offer the CSV/plot_data.json for Excel, (3) give a table; do not produce SVG or ASCII drawings'."
+  },
+  {
+   "id": "M2_crane_hook_strain_fatigue-3",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "(round 1 problem 3, still open) fatigue_rainflow reports no history extremes and no plausibility message for a record with single-sample excursions; the only hint is the warning 'Yield strength omitted; per-cycle elastic peak validity was not checked'. With yield_strength given, the tool refuses the raw record ('peak stress exceeds yield; use local strain analysis'), which is the spike detector, but neither the skill nor the assistant used it. The assistant needed dsp_correlate and a plot to learn the max/min (4100 / -1800) and Read of raw rows to find the times.",
+   "evidence": "in-process: raw file, sample_scale 0.21 MPa, A 3969, b -1/3 -> ok true, damage 4.39e-3, warnings ['Unreviewed...', 'Yield strength omitted; per-cycle elastic peak validity was not checked.']; adding yield_strength '355 MPa' -> ok false 'peak stress exceeds yield; use local strain analysis'",
+   "fix": "fatigue_rainflow: return values history_max, history_min, max_range and the time/index of the extremes; add a warning when a sample deviates from both neighbours by more than 10x the median absolute step. eng-fatigue-check section 3: 'for a measured strain or stress history always pass yield_strength: a refusal \"peak stress exceeds yield\" means spikes, drift or a wrong scale'."
+  },
+  {
+   "id": "M2_crane_hook_strain_fatigue-12",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "No way to remove spikes or to compare two series inside the toolkit: fatigue_rainflow has no clip/despike option and dsp_filter_apply takes only b/a coefficients (no median filter); there is no tool that lists where two files differ. The assistant could not produce its own spike-free result from the raw file and depended on the person handing over the logger's despiked copy; the 'is the despiked file only changed at 3 points' question was answered with sum identities.",
+   "evidence": "turn 2: 'if noise, give me a cleaning rule, I will recompute'; turn 6: '工具沒有兩檔逐列相減的功能'",
+   "fix": "fatigue_rainflow: parameters `reject_above` / `despike_window` (median) with a count of replaced samples in values; dsp: a `dsp_compare` tool (two series -> differing indices, max abs difference) or a `median` mode in dsp_filter_apply."
+  },
+  {
+   "id": "M2_crane_hook_strain_fatigue-13",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "eng-fatigue-check says 'with endurance_limit, cycles below it do no damage unless below_knee is elementary or haibach'; the assistant read this as 'to get no cut-off set below_knee=elementary', got 'below-knee extension requires an endurance knee', then 1e-3 MPa (out of range), then a dummy knee of 0.01 MPa. A plain call without endurance_limit gives the identical damage (9.578293e-6, 104,403 repeats), checked in-process.",
+   "evidence": "turn 2 calls 1-3 (errors 'below-knee extension requires an endurance knee', 'supported range is 1 .. 1e+18'); in-process despiked file without endurance_limit/below_knee: damage 9.578293e-06",
+   "fix": "eng-fatigue-check section 3 rainflow bullet: 'a straight S-N line with no cut-off (IIW FAT): pass only basquin_a and basquin_b, nothing else'; add the FAT conversion 'A = FAT/2 * (N_ref)^(1/3) = 31.5 x 2e6^(1/3) = 3969 MPa for FAT 63, m 3 (range -> amplitude)'."
+  },
+  {
+   "id": "M2_crane_hook_strain_fatigue-14",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Turn 2 reported 'remaining life 0 h / 0 years' as the headline and a 7,500 h guess (3x wrong) before asking whether the spikes were real; no plausibility check of 861 MPa against steel yield or the hook rating.",
+   "evidence": "turn 2: '剩餘壽命為 0 小時／0 年'; '若只計小循環，總壽命約 1.8 萬小時，剩餘約 7,500 小時（推測，需重跑確認）'",
+   "fix": "eng-fatigue-check section 4 (verify): 'before reporting a life from a measured record compare max stress with Sy and with the rated load; if it exceeds Sy, report a data-quality problem first, not a life'."
+  },
+  {
+   "id": "M2_crane_hook_strain_fatigue-2",
+   "kind": "tool_bug",
+   "severity": "low",
+   "what": "(round 1, fixed) the raw logger CSV with its header line is now accepted: result data.header_skipped = 'time_s,strain_ue', input_samples 20000.",
+   "evidence": "result.json of 20261124T141159Z fatigue_rainflow: header_skipped 'time_s,strain_ue'",
+   "fix": "none."
+  },
+  {
+   "id": "M2_crane_hook_strain_fatigue-15",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "The ask-first list is echoed as if said by the person (see M1-10) and turn 1 sends five questions (FAT slope, reference cycles, cut-off, Miner limit, mean stress, cycles per day) that the person's one-line statement 'FAT 63' mostly answers by the IIW definition; the person's persona is impatient. Cost one turn.",
+   "evidence": "turn 1 list items 1-5",
+   "fix": "eng-fatigue-check section 1: 'FAT class from IIW: m 3, 2e6 cycles, range, no cut-off for constant amplitude unless the person says otherwise; state it as the assumption and ask only for E, unit and the gauge position'."
+  }
+ ],
+ "what_worked": [
+  "Raw file accepted with header (header_skipped reported); damage, repeats to failure and remaining life reproduce the truth to 0.1 %.",
+  "The assistant checked its own first fatigue_rainflow run by hand (N = 2e6 (63/2.1)^3) and found its factor-8 mistake in basquin_a, and told the person.",
+  "It found the three spikes without any shell: plotted the record, read the raw rows by offset, and reported time, value and MPa; confirmed the extremes with dsp_correlate.",
+  "It insisted that the damage, not the cycle count, matters (4,925 noise cycles under 6 MPa) and checked the largest cycle (113 MPa) by hand: 30 % of the damage.",
+  "It did not overclaim the pointwise comparison and gave the person two defensible report sentences plus an Excel formula (=SUMPRODUCT(--(B2:B20001<>C2:C20001))).",
+  "FAT applicability (nominal vs hot-spot stress, gauge distance, detail category, design factor) and the life sensitivity to FAT 71/80/100 (1.43/2.05/4.00x) are useful report material."
+ ],
+ "vs_round1": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": [
+   "M2_crane_hook_strain_fatigue-1",
+   "M2_crane_hook_strain_fatigue-2",
+   "M2_crane_hook_strain_fatigue-4",
+   "M2_crane_hook_strain_fatigue-6"
+  ],
+  "still_open": [
+   "M2_crane_hook_strain_fatigue-3",
+   "M2_crane_hook_strain_fatigue-5"
+  ],
+  "new": [
+   "M2_crane_hook_strain_fatigue-7",
+   "M2_crane_hook_strain_fatigue-8",
+   "M2_crane_hook_strain_fatigue-12",
+   "M2_crane_hook_strain_fatigue-13",
+   "M2_crane_hook_strain_fatigue-14",
+   "M2_crane_hook_strain_fatigue-15"
+  ],
+  "regressed": []
+ },
+ "skills_loaded": "turn 1: Skill eng-toolkit:eng-fatigue-check (the right domain skill); not eng-toolkit or eng-plot-results. The skill's 'PNG path' hand-over and 'inline series from data.range_histogram' recipe were followed and worked; its 'with endurance_limit ... below_knee' sentence led to the dummy 0.01 MPa knee.",
+ "picture_reach": "None: the person received no picture (rendered/ empty, harness shows only SVG/PDF/GLB; the plots were PNG-only). The assistant gave a path he said he could not open, then a text bar table and hand-written SVG code."
+}

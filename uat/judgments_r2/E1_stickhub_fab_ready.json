@@ -1,0 +1,66 @@
+{
+ "id": "E1_stickhub_fab_ready",
+ "verdict": "PARTIAL",
+ "one_line": "Every board fact and check is right and honest (2 layers not 4, 94 parts, 47 nets, 16.5 x 40 mm, DRC 0 errors at 0.15 mm, layout sits exactly on 0.15 mm because 0.2 mm gives 499+ errors, ERC 0 errors, library warnings explained) and the final verdict 'yes by the fab's written rules, with caveats' matches the truth; but the board picture stayed an unreadable A4 PDF after 3 requests and the Gerber+drill set could not be delivered as one upload folder.",
+ "goal_met": false,
+ "turns": 5,
+ "skills_loaded": [],
+ "answers": [
+  {"item": "which file is the board / schematic / others", "truth": "StickHub.kicad_pcb board, .kicad_sch schematic, .kicad_pro project rules, .kicad_sym symbol library", "assistant_said": "table: pcb = the board, sch = schematic, sym = symbol library, pro = project settings (source of DRC rules)", "result": "right"},
+  {"item": "DRC with project rules / 0.15 mm clearance", "truth": "0 errors, 0 unconnected; 94 lib_footprint warnings are noise", "assistant_said": "errors 0, unconnected 0, 94 warnings all lib_footprint_issues 'footprints library not visible, not the board's problem'; same with zone refill", "result": "right"},
+  {"item": "DRC at 0.20 mm (does the layout sit exactly on 0.15 mm?)", "truth": "499 clearance errors (a capped count)", "assistant_said": "turn 3: 'at 0.2 mm clearance violations at least 499, track width at least 199 (both kicad-cli list caps, true number higher); cannot be re-routed by tomorrow'", "result": "right"},
+  {"item": "ERC", "truth": "0 errors; 234 library warnings are noise", "assistant_said": "ran on StickHub.kicad_sch: errors 0, design warnings 0, 234 library warnings (140 symbol, 94 footprint link), 140 symbols, no sub-sheets", "result": "right"},
+  {"item": "footprints / parts", "truth": "94", "assistant_said": "94 (pcb_info)", "result": "right"},
+  {"item": "nets", "truth": "47", "assistant_said": "47 on the PCB; 'schematic net count not returned by the tool, unverified'", "result": "right"},
+  {"item": "copper layers", "truth": "2; the colleague's '4-layer' is wrong", "assistant_said": "'this board is 2 layers, not 4' (copper_layers 2, F.Cu and B.Cu)", "result": "right"},
+  {"item": "outline", "truth": "16.5 x 40.0 mm", "assistant_said": "16.5 x 40 mm", "result": "right"},
+  {"item": "min track / min drill / vias / thickness vs the fab sheet", "truth": "0.15 / 0.3 / 87 / 1.6", "assistant_said": "track 0.15 (equal to limit), via drill 0.3 and 0.4, NPTH 4 mm, thickness 1.6 mm, 857 of the tracks are 0.15 wide; all within the sheet", "result": "right"},
+  {"item": "gerber set for the fab", "truth": "9 layer files + job (+ zip)", "assistant_said": "gerbers.zip and 9 Gerber files + job file, listed one by one; 'KiCad default output, not matched to the fab's output settings'", "result": "right"},
+  {"item": "drill file", "truth": "one Excellon file", "assistant_said": "board.drl; and 'gerbers.zip does not contain the drill file' (the tool says so in a warning)", "result": "right"},
+  {"item": "plain verdict", "truth": "yes with caveats: 2 layers not 4; library warnings are noise; no margin above 0.15 mm", "assistant_said": "turn 2 'a 2-layer board can be sent, all three values exactly at the limit'; turn 3 'can be sent, but it depends on the fab accepting equal'; turn 4 'by the written rules yes, can be sent, not the fab's review'", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "believe the colleague's '4-layer board'", "caught": true},
+  {"trap": "assume KiCad DRC knows the fab's rules", "caught": true},
+  {"trap": "report the 94 / 234 library warnings as board problems", "caught": true},
+  {"trap": "show that the layout sits exactly on 0.15 mm by checking a slightly larger clearance", "caught": true},
+  {"trap": "ask for and compare against the fab's capability sheet", "caught": true},
+  {"trap": "the demo-folder path leads to a wrong verdict (round-1 failure)", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "Turn 3 writes 'the board has 857 track segments, all 0.15 mm; the design uses the limit almost everywhere'. pcb_info: 857 of 1,293 track items are 0.15 mm (66 %), 436 are 0.2-0.6 mm. 'all' and 'almost everywhere' overstate it.", "severity": "low"},
+  {"issue": "Alarm not supported by the evidence: 'if the fab does not accept equal, this board cannot go out tomorrow and must be re-routed'. The person gave the fab's minimums as 'min clearance 0.15'; a minimum is conventionally inclusive. The assistant said it did not know, which is honest, but it repeated the worry in turns 2, 3 and 4 and the person had to force a plain yes.", "severity": "medium"},
+  {"issue": "Turn 4 tells a person who said 'I have no KiCad' to open KiCad from a path on 'this computer'; the assistant treats the machine running the tools as the person's PC (the paths of the exported files are in a temp workspace the person says he cannot find). In this harness that is the same machine, so it is partly a harness artifact, but a real deployment may not be.", "severity": "low"},
+  {"issue": "The 0.2 mm DRC run used refill_zones false (the tool warns 'fills stored in the file may be stale'); the assistant reported the counts without that caveat. The 0.15 mm run with refill true gave the same result, so the conclusion stands.", "severity": "low"},
+  {"issue": "No claim of work not done: it said it cannot zoom, cannot zip, cannot copy files and gave manual steps. 'about 12 x 11.5 mm tab' is marked as an estimate from picture pixels (推測); it matches the picture (12.2 x 11.5).", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T140039Z-49f28cfe-pcb_export_board_p1.png (pdf F.Cu,B.Cu,Edge.Cuts)", "score": 1, "notes": "A4 landscape, the board is about 75 x 180 px in the middle of a 1350 x 960 page (6 % of the width). Copper blue and red overlaid, vias as white dots, one black slot. No labels, scale, legend or title. The person: 'I only see a blue board'. Technically a true-scale plot, useless as 'a picture of the board'."},
+  {"file": "rendered/20261124T140137Z-4daaf5aa-pcb_export_board_p1.png (pdf Edge.Cuts only)", "score": 0, "notes": "Same tiny scale, outline only, nothing but a white outline and the slot. The assistant made it as an attempt at a bigger picture; it is not bigger and has no content."},
+  {"file": "pcb_export svg", "score": 0, "notes": "Not made this time (the assistant used pdf), so no readability test; the skill text says SVG 'may not open in common viewers'."}
+ ],
+ "problems": [
+  {"id": "E1-2", "kind": "tool_gap", "severity": "high", "what": "Still no usable board picture for a non-designer (open since round 1). pcb_export pdf/svg puts the board at true scale on one A4 page with the chosen layers overlaid; there is no crop-to-board, no scale/zoom, no PNG (the round-2 PNG output covers plot_*, geometry_view and fem_view, not pcb_export). The person asked for it in turns 2, 3, 4 and 5 and left without it. This is one of his four stated deliverables.", "evidence": "board = 75 x 180 px on a 1350 x 960 px page; assistant turn 5: 'I cannot output only the board; my PDF tool only produces a whole A4 page, no crop or zoom option'", "fix": "pcb_export: add a page size 'fit' (crop to Edge.Cuts plus margin; kicad-cli pcb export pdf/svg supports --page-size-mode 2) and export='png' (render the fitted SVG/PDF to a 1600 px PNG, one image per side: F.Cu+silk, B.Cu+silk); update eng-pcb-review, which today says 'No ... PNG export'."},
+  {"id": "E1-5", "kind": "tool_gap", "severity": "medium", "what": "The fab package is still not one upload: gerbers.zip excludes the drill file (now said in a tool warning, which the assistant relayed), the drill file is a separate job folder, files are named board-*.* instead of StickHub-*.*, and everything lands in a temp workspace path. The assistant gave a 5-step manual copy-and-zip recipe with long temp paths; the person said he cannot find the temp folder and the assistant has no tool to copy.", "evidence": "pcb_export gerbers warning: 'gerbers.zip holds the plotted layers and the .gbrjob job file; drill files are a separate export'; turn 5 steps 1-5", "fix": "pcb_export export='fab_package': plotted layers + drill (+ optional pos) in one folder and one zip named <board>_fab.zip; keep the board's file name; return one path plus the file list."},
+  {"id": "E1-8", "kind": "model_error", "severity": "medium", "what": "Over-hedged verdict that cost two turns: the written fab rule 'min clearance 0.15 / min track 0.15 / min drill 0.3' was met, DRC and ERC were clean and the 2-layer count is allowed, yet turns 2 and 3 led with 'depends on whether the fab accepts equal' and 'if not, the board cannot go out tomorrow'. The plain yes came only in turn 4 after the person asked 'if equal counts as pass, it can go, right?'. The overstatement 'all 857 segments are 0.15' added to the alarm.", "evidence": "turn 3 first line: '…能否過關取決於板廠是否接受「等於」。我無法替板廠判斷' and turn 3 point 2; turn 4 'Yes: by the literal rule it is acceptable'", "fix": "eng-pcb-review: add 'A fab minimum is inclusive unless the sheet says otherwise; say so, give the margin (here 0 mm) and one sentence of risk, then give the yes/no'. The skill should also say to report margin = measured minus fab minimum per rule."},
+  {"id": "E1-6", "kind": "skill_gap", "severity": "medium", "what": "A PCB workflow skill (eng-pcb-review) now exists but was never loaded (no Skill call in any turn). The assistant did the right things anyway (asked for the fab sheet, ran DRC at the fab's value and at 0.2 mm, called the library warnings noise, ran ERC, stated that the toolkit does not check silk, mask, Gerber content), so no harm here, but nothing in the tool descriptions guarantees this for a weaker run.", "evidence": "transcript.json tools per turn: pcb_info, pcb_drc x2 | pcb_export x3, Read | pcb_export, pcb_erc, pcb_drc, Bash, Read | none | none", "fix": "Move the five rules that mattered here (ask for the fab sheet; run DRC at fab value and one step above; library warnings are noise; ERC before verdict; picture limits) into the pcb_drc / pcb_export descriptions, which are always in context."},
+  {"id": "E1-1", "kind": "tool_bug", "severity": "low", "what": "Round-1 bug fixed and verified: pcb_drc at 0.2 mm now warns 'clearance (error) is reported 499 times, which is the number at which kicad-cli stops listing ... at least that, treat it as a lower bound' and sets data.violations.at_kicad_limit. Listed as 'fixed'; no action.", "evidence": "result.json warnings of 20261124T140143Z-2878b680-pcb_drc", "fix": "none"},
+  {"id": "E1-7", "kind": "harness_artifact", "severity": "low", "what": "The person asks for Desktop copies and a PNG, which the harness tools (toolkit, Skill, Read) cannot give; the assistant tried one Bash call (a rasteriser check), which was blocked. The scenario also hands the person files in KiCad's install folder, yet he says KiCad is not installed. The round-1 demo-folder suspicion did not recur.", "evidence": "turn 3 tool Bash: python -c \"import fitz ...\"; person turn 4: 'KiCad 我沒裝'", "fix": "Scenario: give the person's files a neutral path (copy the demo project into inbox/) and drop 'I did not install KiCad' or accept that the assistant may name the install folder."}
+ ],
+ "what_worked": [
+  "Everything checkable matched kicad-cli to the digit; pcb_info cross-check 'all_agree true' with KiCad 10.0.6.",
+  "Asked for the fab's capability sheet in turn 1 (round-1 miss) and compared layers, size, thickness, track, clearance and drill in a table.",
+  "Ran DRC at 0.2 mm to prove there is no margin and reported the capped count as 'at least' (round-1 miss), plus a useful extra: the project's own min_copper_edge_clearance is 0, so edge clearance is not enforced.",
+  "Library warnings explained in two plain sentences for a firmware engineer; ERC run and reported with 140 symbols.",
+  "Refused the 4-layer claim from evidence (copper_layers 2) and said the file may not be the colleague's version.",
+  "Was candid about every limit: no zoom, no zip, no copy tool, Gerbers not matched to the fab's own settings; gave manual steps instead of pretending."
+ ],
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PARTIAL",
+  "fixed": ["E1-1", "E1-3", "E1-4"],
+  "still_open": ["E1-2 (now rated high)", "E1-5", "E1-6 (skill exists, not loaded)", "E1-7"],
+  "new": ["E1-8"],
+  "regressed": []
+ }
+}

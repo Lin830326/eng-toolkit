@@ -1,0 +1,199 @@
+{
+ "id": "S3_l_bracket_fem",
+ "verdict": "PASS",
+ "one_line": "Correct bent-plate model (inner R6, outer R12), tip drop 2.287 mm, bend peak 291-302 MPa at the inner bend, honest retraction of an over-eager 'converged', correct 'not OK for S235' verdict and a 9 mm / 1.5 alternative; the tool PNG is a good stress picture with the maximum marked, but the part is drawn lying on its side, the sideways tip motion was not reported and the mesh study is capped by an over-pessimistic element estimate.",
+ "goal_met": true,
+ "turns": 4,
+ "answers": [
+  {
+   "item": "maximum von Mises and place",
+   "truth": "inner-bend peak 293 MPa (3 mm) / 291 MPa (2.5 mm), plane strain ~278 MPa (corrected truth for outer R12); not converged, keeps rising slowly; the fixed foot is a singularity",
+   "assistant_said": "291.4 MPa (2.7 mm, with a 20 mm stub plate), 293.1 (3.5 mm); the final model without plate 291.2 (2.7 mm) and 302.0 MPa (2.2 mm), all at the inner R6 bend, 'not converged, true linear peak may be above 302'",
+   "result": "right"
+  },
+  {
+   "item": "tip vertical deflection",
+   "truth": "2.28 mm (R12 outer corner model)",
+   "assistant_said": "2.333 mm (with the invented stub plate, headline in turn 1), 2.287 mm for the described fixed foot face (turn 2 table)",
+   "result": "right"
+  },
+  {
+   "item": "tip sideways displacement / meaning of the 3.0 mm magnitude",
+   "truth": "about 1.8 mm sideways; displacement magnitude is not the deflection",
+   "assistant_said": "gave uy and the magnitude (3.007 / 2.920 mm) side by side but never said the tip also moves sideways 1.82 mm (values.max_displacement_ux was in the tool result)",
+   "result": "missing"
+  },
+  {
+   "item": "mesh convergence answer for the manager",
+   "truth": "deflection converged, maximum von Mises NOT converged, foot value a singularity",
+   "assistant_said": "turn 1 'convergence check passed'; turn 2 corrected: 'displacement converged (2.287 mm on both meshes), peak not converged (291 -> 302 MPa, +3.7 %, location moves)', tool element cap reached",
+   "result": "right"
+  },
+  {
+   "item": "is the 6 mm bracket OK for 2 kN (S235)",
+   "truth": "NOT acceptable: nominal leg at about yield, bend above yield",
+   "assistant_said": "not OK with 'no local yielding' criterion; SF 0.78-0.81; nominal M/My 1.01; with his SF 1.5: 8 mm 179 MPa (SF 1.31, no), 9 mm 144 MPa (SF 1.63, yes), 10 mm 119.5 MPa (SF 1.97)",
+   "result": "right"
+  },
+  {
+   "item": "nominal leg stress (hand check)",
+   "truth": "237 MPa by beam theory, about 220 MPa von Mises in the 3D model",
+   "assistant_said": "237.5 MPa (M = 114,000 N mm, S = 480 mm3), peak/nominal = 1.23",
+   "result": "right"
+  },
+  {
+   "item": "permanent deformation above yield",
+   "truth": "not predictable with the linear toolkit; should be said",
+   "assistant_said": "'fem_static is linear, cannot compute permanent set'; then a labelled guess 'much less than 0.1 mm (推測)'",
+   "result": "unverifiable"
+  },
+  {
+   "item": "8 / 9 / 10 mm alternatives (beyond truth)",
+   "truth": "not in truth; round-1 judge's own run of 8 mm: 176-180 MPa",
+   "assistant_said": "8 mm 179.2 (2.4 mm) / 178.4 (2.7 mm); 9 mm 144.0 / 142.9; 10 mm 119.5 / 118.8 MPa; tip uy 0.92 / 0.631 / 0.449 mm",
+   "result": "unverifiable"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "reporting max_displacement (magnitude) as the tip deflection",
+   "caught": true
+  },
+  {
+   "trap": "calling the maximum von Mises converged because the deflection is",
+   "caught": true
+  },
+  {
+   "trap": "treating the clamped-foot peak as a real stress (not triggered: the bend dominates with the true outer R12, foot never quoted)",
+   "caught": true
+  },
+  {
+   "trap": "claiming a permanent-set number from a linear model",
+   "caught": true
+  },
+  {
+   "trap": "sliver elements at 4 mm (avoided: sizes 3.5 / 2.7 / 2.2 mm, no sliver warning)",
+   "caught": true
+  },
+  {
+   "trap": "the person's welded foot is a fully fixed face (the assistant first added a 20 mm stub plate of its own)",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 1 headline: 'mesh convergence check passed' from a 3.5 -> 2.7 mm pair (ratio 1.3); retracted in turn 2 with the sentence '我先前兩組結果收斂的說法過度'. Recovery was prompt and explicit.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 1 modelled a 20 x 40 x 80 mm stub plate the person never specified (disclosed in the assumption list) and quoted 291.4 MPa / 2.33 mm for it; the described fixed foot face was only run in turn 2 (2.287 mm). Tip drop is 2 % different.",
+   "severity": "low"
+  },
+  {
+   "issue": "Element counts are quoted twice in one reply with different values: the table gives 33,959 elements at 2.5 mm (9 mm plate) while the text says '9 mm 在 2.5 mm 已估計 57,279 元素'. The second number is the tool's pre-flight estimate, which is 1.6x the real count (see r2-2); the reader cannot tell.",
+   "severity": "low"
+  },
+  {
+   "issue": "The permanent-set guess ('永久彎曲應遠小於 0.1 mm') rests on the nominal leg moment and ignores the bend peak 29 % above yield. It is labelled 推測 and the tool limit is stated.",
+   "severity": "low"
+  },
+  {
+   "issue": "Stated the outer R12 assumption, 'yield 235 MPa from memory' when guessing S235 before he said it, and that welds, fatigue and plasticity are not modelled; reported tool results as tool results and its hand checks as 'my arithmetic'.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "ws/20261124T142159Z-1ac1fb7c-fem_view/fem_view.png",
+   "score": 2,
+   "notes": "Tool PNG: title, 'von Mises stress [MPa]', colour bar 0.04-291.4 with ticks, a ringed marker 'max 291.4 MPa' at the right place (inner bend, mid width), deformation factor x2.74 and 'nodal, unreviewed' stated, axes triad, ghost outline of the undeformed shape. It is report-grade in tone but the bracket is drawn lying on its side (leg along Y; the skill says build with gravity along -z), the invented stub plate is a dark block, the leg is a large olive area near yield that the answer does not discuss, and a sequential map has no red (the person asked where the red spot is; the assistant explained). The assistant looked at the PNG (Read) and described it accurately. Reach: full path plus a description of colours, marker and range was given; the person opened it and discussed it."
+  },
+  {
+   "file": "ws/20261124T142909Z-b34abd8a-fem_view/fem_view.png",
+   "score": 2,
+   "notes": "9 mm version for the report: same layout, max 144 MPa marked at the bend, deformation x8.59 (a caricature, stated in the answer and the figure), part again lying on its side, no base plate block. Good enough to paste into a report with the caption 'shape exaggerated'."
+  },
+  {
+   "file": "rendered/20261124T142159Z-1ac1fb7c-fem_view_fem_view.png",
+   "score": 1,
+   "notes": "Runner's own rasterisation of the GLB (440 px, dark, no marker, no legend): not the product's picture, which is why the persona found 'no red and no marked spot' only in prose. Harness artifact."
+  }
+ ],
+ "problems": [
+  {
+   "id": "S3_l_bracket_fem-r2-1",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "The bracket was built with the leg along y (extrude on plane 'xy', supports 'y = 0', load '-y'), so every picture shows it lying on its side with 'Z is up'. The loaded skill eng-3d-view section 3 says exactly the opposite ('Build parts with gravity along -z ... a part built along y lies on its side').",
+   "evidence": "geometry_make_part spec turn 1: plane 'xy', path from (0,0) to (6,88) in y; fem_view.png legend text 'Size X 80 x Y 120 x Z 80 mm' and the picture shows the leg horizontal.",
+   "fix": "eng-3d-view/SKILL.md: move the gravity sentence into section 1 and add a worked L-bracket spec (plane 'xz'); add a step 'look at the PNG: is the part upright, which end is the support?'. Optional: geometry_make_part description example with plane 'xz'."
+  },
+  {
+   "id": "S3_l_bracket_fem-r2-2",
+   "kind": "tool_bug",
+   "severity": "medium",
+   "what": "fem_static's pre-flight element estimate is 1.6x the real count, so it refuses finer meshes that would fit under the 60,000-element cap. On this 72,066 mm3 part the finest allowed size is 2.168 mm (real count about 35,000) and the manager's 'does the stress change with a finer mesh' cannot be answered by halving.",
+   "evidence": "fem_static element_size '2.2 mm' -> values.element_count 35,266 (node_count 60,321); estimate for 2.2 mm = 57,400 (the assistant quotes it). Judge re-run: element_size '2.0 mm' -> input.too_large 'would need about 7.64e+04 elements; the limit is 60000 (use a size of at least 2.168 mm)'; '1.8 mm' -> 1.05e+05. Real count at 2.0 mm would be about 47,000.",
+   "fix": "eng_toolkit/domains/fem/mesh.py estimate_elements / TET_PER_UNIT_VOLUME: recalibrate for thin plates (about size^3 / 5.2 per element here, not size^3 / 8.5) or skip the pre-check above the cap and rely on the post-mesh count that is already enforced (line 27 comment says both are held to the cap)."
+  },
+  {
+   "id": "S3_l_bracket_fem-r2-3",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "The tip also moves sideways 1.82 mm (values.max_displacement_ux) but the answer lists only uy and the 3.0 mm magnitude and never explains the 0.7 mm gap; the person believed the tip only drops.",
+   "evidence": "fem_static 2.7 mm no plate: max_displacement_uy 2.286586, max_displacement_ux 1.815089, max_displacement 2.919421 mm; answer turn 2 table shows 'tip uy 2.287' only.",
+   "fix": "eng-3d-view/SKILL.md section 5: 'If max_displacement differs from the component you were asked for, report the other components too (tip also moves sideways by ux).'"
+  },
+  {
+   "id": "S3_l_bracket_fem-r2-4",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Turn 1 added a stub plate (20 mm thick, 40 x 80 mm) and fixed its bottom instead of fixing the foot face the person described; the first headline numbers belong to that model.",
+   "evidence": "geometry_make_part turn 1: box size 40/20/80 at (-20,-20,0), supports 'y = -20 mm'; turn 2 re-run without it: tip uy 2.287 vs 2.333 mm.",
+   "fix": "eng-3d-view/SKILL.md section 5: 'Fix the face the user names; do not add parts he did not describe.'"
+  },
+  {
+   "id": "S3_l_bracket_fem-r2-5",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "First answer called the mesh converged from a 1.3x refinement; the skill says halve the size. Corrected a turn later, so the final state is right.",
+   "evidence": "Turn 1: '網格收斂檢查通過'; turn 2: '收斂通過的說法過度，更正如下'; eng-3d-view section 5 'each HALF the previous'.",
+   "fix": "None beyond r2-2 (the cap prevents halving); add to the skill 'if the cap prevents halving, say the peak is not shown to be converged'."
+  },
+  {
+   "id": "S3_l_bracket_fem-r2-6",
+   "kind": "harness_artifact",
+   "severity": "low",
+   "what": "The runner rasterises the GLB and legend SVG for the persona but not the tool's own fem_view.png, so the persona judged the stress picture from the GLB render and the assistant's words.",
+   "evidence": "rendered/ contains 20261124T142159Z-1ac1fb7c-fem_view_fem_view.png (440 px GLB render) and no copy of ws/.../fem_view.png (125,526 bytes).",
+   "fix": "scripts/uat_run.py rasterise: copy native ws/**/*.png into rendered/."
+  }
+ ],
+ "what_worked": [
+  "Bent plate built as a real profile (inner R6, outer R12 by two arcs); peak 291-293 MPa at the inner bend and tip drop 2.287 mm match the corrected truth and the round-1 judge's independent run.",
+  "Honest self-correction on convergence, with a table of four runs and the sentence that the true linear peak may be higher; displacement correctly called converged (2.287 mm on 2.7 and 2.2 mm meshes).",
+  "Hand checks labelled 'my arithmetic' (237.5 MPa, tip drop 2.37 vs 2.33) with an honest comparison, plastic section modulus and M/My from structures_section.",
+  "Thickness search 6 -> 8 -> 9 -> 10 mm against his SF 1.5 with the arithmetic shown, and a manager-ready wording of the limits (linear, no weld, no fatigue, no plasticity).",
+  "fem_view PNG produced, looked at (Read) and described correctly; full path and colour legend in words in the answer. Traditional Chinese kept (round 1 drifted to Simplified)."
+ ],
+ "vs_round1": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": [
+   "S3_l_bracket_fem-3 (fem_view now writes a labelled PNG with the maximum marked)",
+   "S3_l_bracket_fem-6 (Traditional Chinese throughout)",
+   "S3_l_bracket_fem-2 (peak declared not converged, location movement reported; still no halving because of the cap)",
+   "S3_l_bracket_fem-7 (assistant tools restricted; the persona no longer asks for Python)"
+  ],
+  "still_open": [
+   "S3_l_bracket_fem-4 (part still built along y and shown on its side, now against a loaded skill sentence)"
+  ],
+  "new": [
+   "S3_l_bracket_fem-r2-2",
+   "S3_l_bracket_fem-r2-3",
+   "S3_l_bracket_fem-r2-4",
+   "S3_l_bracket_fem-r2-6"
+  ],
+  "regressed": []
+ }
+}

@@ -1,0 +1,215 @@
+{
+ "id": "C1_heatsink_cnc_quote",
+ "verdict": "PASS",
+ "one_line": "All numbers right (149 g, 124.75 x 34.99 x 35, 22 R0.25 fillets, 3 deep holes, a real 0.94 mm hole-to-bottom ligament found by the tool itself) and honestly caveated; the round-1 false 182-degree corners are gone. Remaining weakness: the picture cannot isolate the real problems (fillets invisible, whole bottom face painted for a thin strip), the spindle axis was never stated, and no domain skill was loaded.",
+ "goal_met": true,
+ "turns": 4,
+ "answers": [
+  {
+   "item": "mass_6061_g",
+   "truth": "149.03 g",
+   "assistant_said": "0.149 kg (約 149 g), volume 55,195 mm3, density 2700 kg/m3",
+   "result": "right"
+  },
+  {
+   "item": "bbox_mm_x_y_z",
+   "truth": "124.75 x 34.99 x 35.00",
+   "assistant_said": "124.75 × 34.99 × 35 mm",
+   "result": "right"
+  },
+  {
+   "item": "bbox_note (file name says 50)",
+   "truth": "no 50 mm dimension, z is 35",
+   "assistant_said": "'檔名寫 50 mm，但 Z 向實測為 35 mm，以實測為準'; refused to guess where the name came from and asked which the design needs",
+   "result": "right"
+  },
+  {
+   "item": "hole_count / diameter / depth / ratio",
+   "truth": "3 x d3.2 through 35, 10.94",
+   "assistant_said": "3 個 Ø3.2 mm 通孔，深 35 mm; 深徑比 10.94 > 10",
+   "result": "right"
+  },
+  {
+   "item": "root fillets not reachable with 3 mm mill",
+   "truth": "22 x R0.25 < R1.5",
+   "assistant_said": "鰭根內角 R0.25 mm，共 22 處，需 ≥ R1.5",
+   "result": "right"
+  },
+  {
+   "item": "3 mm = diameter (tool_radius 1.5 mm)",
+   "truth": "1.5 mm radius",
+   "assistant_said": "「3mm 銑刀」我依直徑 3 mm 解讀，刀半徑為 R1.5 mm (stated, not asked)",
+   "result": "right"
+  },
+  {
+   "item": "wall_1mm_ok",
+   "truth": "fins OK (about 2 mm); real hole-to-bottom ligament 0.94 mm < 1 (brief correction)",
+   "assistant_said": "孔到 -Y 面的壁厚 0.94 mm，共 3 處 < 1 mm; move holes +Y by at least 0.06 mm, 0.5 recommended (I checked: still more than 1 mm to the slot floor)",
+   "result": "right"
+  },
+  {
+   "item": "fin_thickness_range / fin_gap_range / gap fits 3 mm mill",
+   "truth": "2.01-3.98 mm; 8.02-10.0 mm; yes",
+   "assistant_said": "not stated. It only said 鰭片錐形壁只做抽樣檢查. The tool had data.measurements.narrowest_slot_mm 8.69 and smallest_wall_mm 0.94 (no other wall below 1 mm at its sample points) but the answer never says 'fins and slots are fine'",
+   "result": "missing"
+  },
+  {
+   "item": "dfm_problem_faces",
+   "truth": "3 hole walls + 22 root fillets, not fin flanks",
+   "assistant_said": "magenta = 22 fillet faces, orange = 3 hole walls, blue = whole F1 (the 0.94 strip lies on it); all fin flanks grey",
+   "result": "right"
+  },
+  {
+   "item": "bar stock (not in truth)",
+   "truth": "not scored",
+   "assistant_said": "130 x 40 x 40 mm, labelled as its own assumption (2.5 mm per side); blank 0.56 kg (208,000 mm3 x 2.7e-6, arithmetic correct)",
+   "result": "unverifiable"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "3 mm is a diameter (tool_radius 1.5 mm)",
+   "caught": true
+  },
+  {
+   "trap": "file name 125x35x50 vs model 124.75 x 34.99 x 35",
+   "caught": true
+  },
+  {
+   "trap": "density written as a bare 2700 (must be kg/m^3)",
+   "caught": true
+  },
+  {
+   "trap": "min-wall check blind (round 1: face_pairs_tested 0)",
+   "caught": true
+  },
+  {
+   "trap": "false 'radius 0' corners at material angle 182 deg",
+   "caught": true
+  },
+  {
+   "trap": "do not turn false corners red in the picture sent to the shop",
+   "caught": true
+  },
+  {
+   "trap": "approach direction (fins +y, shop mills from the fin side): ask or state the tool_axis used",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "tool_axis '+z' was chosen silently. The answer states radius and wall assumptions but never the spindle axis; the scenario shop mills from the fin side (+y). The corner verdict depends on the axis (floor-to-wall corners are in not_performed).",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turns 1 and 4 separate tool results (149 g, 0.94 mm) from own arithmetic or assumptions (bar stock, 10xD remarks, 'extrusion' guess marked 推測), and say the GLB was never opened in Windows 3D Viewer. Good disclosure.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 3 tells Amy a GLB cannot carry text and gives a legend to paste into an email, but the PNG it had just made (heatsink_problem.png) has the legend burned in; its path was never given in turn 2 (only the GLB path).",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "ws/20261124T135629Z-1dd58b18-geometry_view/heatsink_dfm.png (product PNG, 1200x782)",
+   "score": 2,
+   "notes": "Isometric plus front/top/right, legend ('DFM error flagged 26 faces', 'no DFM finding 47 faces'), size, axes, caption that colour is a rule of thumb not a verdict. Readable. But the whole -Y bottom face is solid red (for the 0.94 mm strip around 3 holes), the 3 hole walls are small red dots and the 22 R0.25 fillets are invisible at this scale; a shop would think the whole bottom is bad. Path given in the turn-1 answer; the person's own picture was the harness re-render, see C1-14."
+  },
+  {
+   "file": "ws/20261124T135757Z-a1ee97d3-geometry_view/heatsink_problem.png (product PNG)",
+   "score": 2,
+   "notes": "Same sheet with highlight groups real_problem_corners (magenta, 22), real_problem_holes (orange, 3), wall_face_whole (blue, F1) and legend. Clear legend, but the magenta group is not visible at all (the tool's own view.json says share_of_model_in_isometric_view 2.3e-05) and the bottom face is one big blue slab. The person asked exactly this ('只標真的有問題的地方'); the tool cannot mark a strip inside a face and has no close-up. Forwardable only with the assistant's explanatory note."
+  },
+  {
+   "file": "rendered/20261124T135629Z-1dd58b18-geometry_view_heatsink_dfm.png and rendered/20261124T135757Z-a1ee97d3-geometry_view_heatsink_problem.png",
+   "score": 1,
+   "notes": "445x445 harness re-render of the GLB (uat/render_glb.py): grey part with thin coloured edge lines, no legend, bottom face not visible. Not what the product delivered; do not blame the product. This is what the simulated person was shown."
+  }
+ ],
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PASS",
+  "fixed": [
+   "C1_heatsink_cnc_quote-1",
+   "C1_heatsink_cnc_quote-2",
+   "C1_heatsink_cnc_quote-4",
+   "C1_heatsink_cnc_quote-6",
+   "C1_heatsink_cnc_quote-7",
+   "C1_heatsink_cnc_quote-8"
+  ],
+  "still_open": [
+   "C1_heatsink_cnc_quote-5"
+  ],
+  "new": [
+   "C1_heatsink_cnc_quote-9",
+   "C1_heatsink_cnc_quote-10",
+   "C1_heatsink_cnc_quote-11",
+   "C1_heatsink_cnc_quote-12",
+   "C1_heatsink_cnc_quote-13",
+   "C1_heatsink_cnc_quote-14"
+  ],
+  "regressed": [],
+  "not_exercised": [
+   "C1_heatsink_cnc_quote-3 (thickness query from inside material: no thickness query was run this time; the skill now documents start: inside)"
+  ],
+  "notes": "-1: 22 near-tangent edges now skipped (measurements.near_tangent_edges_skipped 22; 28 errors instead of 47). -2: cnc.min_wall now reports plane-to-cylinder 'Wall 0.94 mm thick between F1 (plane) and F73 (cylinder)', smallest_wall_mm 0.94. -4: geometry_view writes PNG. -5 partly: the skill text now says what round 1 asked for, but the assistant never loaded it (see -11)."
+ },
+ "problems": [
+  {
+   "id": "C1_heatsink_cnc_quote-9",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "geometry_view cannot show a problem smaller than a face or too small for the isometric scale. A thin wall between a hole and a face colours the whole 4,366 mm2 bottom face; the 22 R0.25 fillets (the main DFM problem) are invisible. The person misread it twice (turn 2 'whole front is red', turn 3 'will the shop think the whole face is bad?').",
+   "evidence": "view.json heatsink_problem: group real_problem_corners share_of_model_in_isometric_view 2.303e-05, real_problem_holes 0.002595; result.warnings holds only the generic 'colours are this toolkit's coding' text.",
+   "fix": "eng_toolkit/domains/geometry/view.py: (1) when a group's share_of_model_in_isometric_view < 1e-3, add a warning 'group X is not visible at this scale'; (2) add an optional close-up panel (parameter detail='F6' or 'group:<name>' with a zoomed camera on those faces) to the PNG; (3) for wall findings draw the finding location as an overlay instead of painting the whole face."
+  },
+  {
+   "id": "C1_heatsink_cnc_quote-10",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Spindle axis not asked and not reported. The call used tool_axis '+z' (along the extrusion); the answer lists tool radius and wall as assumptions but not the axis, so a shop that mills from the fin side cannot tell what was checked.",
+   "evidence": "geometry_check_dfm input {\"process\":\"cnc_milling\",\"tool_axis\":\"+z\",...}; the answer never mentions axis or Z direction machining.",
+   "fix": "Skill eng-dfm-review section 1 already says to ask for tool_axis; add to section 7 'Inputs: always print the tool_axis used and why'. (See -11: the skill was not loaded.)"
+  },
+  {
+   "id": "C1_heatsink_cnc_quote-11",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "No Skill tool call in the whole conversation: eng-dfm-review and eng-3d-view were never loaded although the request (STEP, CNC, DFM, coloured faces) matches both descriptions. The result was good anyway, but the skill's ask-first (axis) and hand-over rules were not applied. Same pattern in C3.",
+   "evidence": "transcript.json: tools of turns 1-4 are geometry_measure, geometry_check_dfm, geometry_view x3, Read x3; no Skill.",
+   "fix": "Put a routing rule in the MCP server instructions (eng_toolkit/gateway/server.py): 'before the first tool of a domain, load its eng-* skill'. eng-drawing's 'Use FIRST' wording worked in C2 (it was loaded); copy that wording into the descriptions of eng-dfm-review and eng-tolerancing."
+  },
+  {
+   "id": "C1_heatsink_cnc_quote-12",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "The person asked for red; highlight groups get colours from a fixed colour-blind-safe palette (magenta, orange, blue) that cannot be chosen. The assistant had to explain magenta as 'closest to red'.",
+   "evidence": "Turn 2: '顏色由工具依順序分配，無法指定純紅'",
+   "fix": "geometry_view: accept a colour per highlight group (e.g. 'corners=red: F6,F7')."
+  },
+  {
+   "id": "C1_heatsink_cnc_quote-13",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Turn 2 gave only the GLB path for the highlight view. The PNG with the legend already existed (heatsink_problem.png) and was the better thing to forward; turn 3 then told Amy the GLB 'cannot carry text' and gave a legend to paste into an email instead.",
+   "evidence": "Turn 2 answer lists only ...\\heatsink_problem.glb; result.artifacts contains heatsink_problem.png",
+   "fix": "eng-3d-view hand-over section: 'give the PNG path first, then the GLB path, and say the PNG already carries the legend'."
+  },
+  {
+   "id": "C1_heatsink_cnc_quote-14",
+   "kind": "harness_artifact",
+   "severity": "low",
+   "what": "The harness rasterises only svg/pdf/glb, not PNG files made by the tools. The person was shown the 445 px GLB re-render (grey part, thin coloured edges, no legend), not the product PNG, so 'whole front is red' in turn 2 cannot come from what he was shown; it echoes the assistant's text. In C3 the plot_bar PNG was never shown at all.",
+   "evidence": "scripts/uat_run.py rasterise(): suffix in .svg/.pdf/.glb only; rendered/ for C1 holds 445x445 images, for C3 is empty.",
+   "fix": "uat_run.py rasterise(): copy .png artifacts into rendered/ and show them to the simulated person."
+  }
+ ],
+ "what_worked": [
+  "One geometry_measure call with density '2700 kg/m^3' gave mass, box, holes; the file-name 50 vs 35 was explained and put back to the person as a question.",
+  "geometry_check_dfm with tool_radius 1.5 mm and min_wall 1 mm now returns only real findings (28: 22 fillets, 3 hole ligaments, 3 deep holes); near-tangent kinks are skipped with a warning.",
+  "The assistant gave concrete changes with numbers (R>=1.5, hole centre +0.5 mm, drill from both ends) and a short 'not checked' list (tool length, deflection, threads).",
+  "It corrected Amy's wrong reading in turn 4 ('blue face is not no-problem: it holds the 0.94 mm ligament').",
+  "geometry_view PNG includes legend, size, axes and a 'rule of thumb, not a verdict' caption."
+ ]
+}

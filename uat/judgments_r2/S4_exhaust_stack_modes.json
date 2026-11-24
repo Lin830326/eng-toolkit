@@ -1,0 +1,205 @@
+{
+ "id": "S4_exhaust_stack_modes",
+ "verdict": "PASS",
+ "one_line": "Every number is right and independently reproduced (f1 4.117, f2 49.47 flagged as the 50 Hz resonance, f3 156.4 Hz, fixed-free Pcr 15.36 kN, top mass useless, 2 in pipe 63.2 Hz, spring-clamp and rigid-brace frequencies and buckling factors) with honest guesses for the clamp stiffness; the person still never saw a picture (PNG path only, plus one hand-drawn ASCII chart that the skill forbids).",
+ "goal_met": true,
+ "turns": 5,
+ "answers": [
+  {
+   "item": "f1",
+   "truth": "4.12 Hz",
+   "assistant_said": "4.117 Hz (structures_modal) with a hand check 4.12 Hz (effective mass 13.9 kg)",
+   "result": "right"
+  },
+  {
+   "item": "f2 and resonance verdict",
+   "truth": "49.49 Hz, within 1-2 % of 50 Hz: resonance risk",
+   "assistant_said": "49.47 Hz, 'only about 1 % from 50 Hz', likely the cause of the buzz",
+   "result": "right"
+  },
+  {
+   "item": "f3",
+   "truth": "156.45 Hz",
+   "assistant_said": "156.4 Hz",
+   "result": "right"
+  },
+  {
+   "item": "buckling (fixed-free, K = 2)",
+   "truth": "15.35 kN; factor 10.2 for 1.5 kN",
+   "assistant_said": "15,358 N (structures_column), factor 9.0 against 1.70 kN (1.5 kN + 12 kg + pipe 8.3 kg, 'my arithmetic'); asked whether the 1.5 kN is axial",
+   "result": "right"
+  },
+  {
+   "item": "why her pi^2 EI/L^2 (61 kN) differs",
+   "truth": "K = 1 is pinned-pinned; 61.39 vs 15.35 kN",
+   "assistant_said": "61.4 kN is the pinned-pinned result; a cantilever has K = 2, effective length 4 m, 'four times, from the squared effective length'",
+   "result": "right"
+  },
+  {
+   "item": "top mass 8 kg / 15 kg",
+   "truth": "8 kg 50.29 Hz, 15 kg 49.15 Hz: does not help",
+   "assistant_said": "8 kg 50.27, 15 kg 49.13 Hz; 'changing the top mass cannot move the second mode away from 50 Hz'",
+   "result": "right"
+  },
+  {
+   "item": "2 in sch40 pipe",
+   "truth": "f1 5.89, f2 63.25 Hz (+26 %)",
+   "assistant_said": "5.89 / 63.24 Hz (+26.5 %), buckling factor 19.1 (judge's FE: 63.25 Hz, 19.08)",
+   "result": "right"
+  },
+  {
+   "item": "rigid brace at 1 m",
+   "truth": "no number (a brace is the other lever)",
+   "assistant_said": "f1 9.07, f2 145.38 Hz, buckling factor 22.9, modelled as translation-only restraint (roller_x); judge's FE: 9.069 / 145.45 Hz, 22.93",
+   "result": "right"
+  },
+  {
+   "item": "bolt-on clamp with finite stiffness (beyond truth)",
+   "truth": "not in truth; judge's own beam FE",
+   "assistant_said": "k = 10 / 100 / 1000 kN/m: f2 50.10 / 55.46 / 90.48 Hz, buckling factor 9.8 / 14.4 (FE: 50.13 / 55.49 / 90.54 Hz, 9.81 / 14.41); and 'a stiffer support raises f2, it does not lower it' correcting his premise",
+   "result": "right"
+  },
+  {
+   "item": "the clamp stiffness k of a bolted steel frame",
+   "truth": "unknowable from the toolkit",
+   "assistant_said": "'no reliable data; 10-100 kN/m on thin angle, 100-1000 on H-beam web, guess, error 3-10x', and a way to measure it; recommended the 2 in pipe, which does not depend on k",
+   "result": "unverifiable"
+  },
+  {
+   "item": "effect of the 1.5 kN axial load on frequency",
+   "truth": "not in truth",
+   "assistant_said": "'tool has no prestress; guess it lowers f2 slightly, not calculated'; judge's FE with geometric stiffness: f2 49.49 -> 49.15 Hz, f1 4.12 -> 3.89 Hz",
+   "result": "right"
+  },
+  {
+   "item": "mode-shape picture the person can see",
+   "truth": "he wants shape against height for the first two modes",
+   "assistant_said": "plot_xy PNG (3 modes) and plot_bar PNG made and Read; given as path only; then a hand-typed ASCII chart (turn 2) and finally the 11-row table to paste into Excel",
+   "result": "missing"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "only the first natural frequency matters (reports only the headline first_frequency)",
+   "caught": true
+  },
+  {
+   "trap": "buckling with pi^2 EI / L^2, K = 1, for a cantilevered stack",
+   "caught": true
+  },
+  {
+   "trap": "a top-mass change moves the 50 Hz mode (the tip is near a node of mode 2)",
+   "caught": true
+  },
+  {
+   "trap": "bolted clamp is not rigid; a support only raises the frequencies",
+   "caught": true
+  },
+  {
+   "trap": "do not hand-draw a chart (base skill rule 9, eng-plot-results section 6)",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 2 'text version' of the chart is a hand-placed ASCII plot attributed to 'structures_modal, mode_shapes.csv' without 'my arithmetic'. Checked against mode_shapes.csv the rows are within about one character (0.02 per character) but the figure is not a tool output and the base skill forbids it; the person said the second line looked messy.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 1 lists 'reduce the top mass' among ways to leave 50 Hz; turn 2 shows by calculation that mass changes of 8 or 15 kg move f2 by 0.5 Hz. The earlier advice was corrected openly.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 4 table row says 'rigid (ideal support that does not allow rotation)' while its note says the model only restrains translation; the numbers are for the translation-only support (roller_x), the label is wrong.",
+   "severity": "low"
+  },
+  {
+   "issue": "Statements that the chat 'can only show text' and (turn 3) 'if Chinese is blank the plotting machine lacks a CJK font' were not checked: the assistant had Read the first PNG (CJK fine) but never looked at the bar chart.",
+   "severity": "low"
+  },
+  {
+   "issue": "Catalogue values (OD 48.26, wall 3.68, E 193 GPa, rho 8000, fy 205 MPa) are listed as 'from my table, please check against the data sheet'; clamp stiffness ranges are labelled guesses with an error band; the 20 % separation rule is labelled 'my rule, not a standard'; the neglected housing rotary inertia, flange flexibility and damping are named.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "ws/20261124T142135Z-de4d8e65-plot_xy/plot.png",
+   "score": 2,
+   "notes": "Mode shapes 1-3 (normalised ux) against height 0-2 m, axis labels with units, legend with frequencies, title states the result ('2nd mode 49.5 Hz close to 50 Hz'), CJK renders, data match mode_shapes.csv (mode 1 tip 0.268, mode 2 max 0.511 at 1.2 m, tip -0.075). Held back from 3: only 11 stations so mode 3 is a kinked polyline with a doubtful peak, no node markers, and a third mode he did not ask for. It did not reach him: the markdown image link and the bare path were useless to him ('only see a path'), the persona got no picture from the runner, and the assistant then drew an ASCII chart and gave a table."
+  },
+  {
+   "file": "ws/20261124T142340Z-076114c9-plot_bar/plot.png",
+   "score": 2,
+   "notes": "Grouped bars of f1 and f2 for three options with value labels (4.12 / 49.47 ... 145.4 Hz) and the motor frequency in the title; correct against the tool values. No 50 Hz reference line, the 145 Hz bar dwarfs the others, and it was never looked at by the assistant (it hedged about missing CJK fonts). Not seen by the person."
+  }
+ ],
+ "problems": [
+  {
+   "id": "S4_exhaust_stack_modes-r2-1",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "When the person could not open the PNG the assistant drew a hand-made ASCII chart and presented it as 'the same chart'. The rule 'never hand-write ASCII charts; give a table' sits in the base skill eng-toolkit rule 9 and in eng-plot-results section 6; neither was loaded in this run.",
+   "evidence": "Turn 2: '## 圖：文字版（終端機無法顯示圖片）… 1 字元 = 0.02 …' followed by a code block; Skill calls in S4: ['eng-toolkit:eng-structural-check'] only. Turn 4 then gave the correct table for Excel.",
+   "fix": "Same as S2-r2-2: make the base rules reach the assistant (hook text, domain skills repeat rule 9 in one line). eng-structural-check section 6 (it mentions charts) should say 'if the person cannot see the PNG, give the station table to paste into Excel; never draw a chart in text'."
+  },
+  {
+   "id": "S4_exhaust_stack_modes-r2-2",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "The mode-shape PNG exists but a chat user cannot see it; four of five turns carry the request 'show it to me directly' and it is never satisfied. The tools return a path only.",
+   "evidence": "Person turns 2-4: '圖我打不開，只看到一串檔案路徑', '可以直接畫成真的圖片貼在對話裡嗎', '圖還是打不開'; assistant: '這個對話介面只能顯示文字，我無法把圖片嵌進對話'.",
+   "fix": "eng_toolkit/domains/plot (and fem_view / geometry_view): add the PNG as an MCP image content block next to data.png_path, so Claude Desktop and similar clients display it inline. eng-plot-results section 6: 'tell him to open the path in File Explorer; also paste the numbers as a table'."
+  },
+  {
+   "id": "S4_exhaust_stack_modes-r2-3",
+   "kind": "harness_artifact",
+   "severity": "medium",
+   "what": "The runner does not copy native tool PNGs to rendered/, so the persona saw no picture for S4 (and S2) and could not react to a picture that did exist and was correct; its 'cannot open' complaints are partly artificial.",
+   "evidence": "transcript.json 'rendered': [] although ws/20261124T142135Z-de4d8e65-plot_xy/plot.png and ws/20261124T142340Z-076114c9-plot_bar/plot.png exist; scripts/uat_run.py rasterise handles only .svg/.pdf/.glb.",
+   "fix": "scripts/uat_run.py: copy ws/**/*.png into rendered/ and put them in the persona prompt."
+  },
+  {
+   "id": "S4_exhaust_stack_modes-r2-4",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Turn 4 table labels the 9.07 / 145.38 Hz row as an 'ideal support that does not allow rotation' while the support (roller_x) restrains only the lateral translation; a support that also fixed rotation would give higher frequencies.",
+   "evidence": "Turn 4 table row '剛性（不允許轉動的理想支架）' vs the note under it '只限制移動、不限制轉動'; judge's FE with translation-only restraint at 1 m: 9.069 / 145.45 Hz.",
+   "fix": "No product change; skill could say 'name a rigid lateral support as pinned, not clamped'."
+  },
+  {
+   "id": "S4_exhaust_stack_modes-r2-5",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "eng-plot-results says 'you cannot see the picture'; eng-3d-view says 'look at it before describing it'; the assistant has Read and used it for the first PNG only. Plots made without looking (the bar chart) were described with an unfounded font worry.",
+   "evidence": "S4 turn 1 Read of plot.png; turn 3 plot_bar not read; turn 3 text 'if the Chinese is blank the machine lacks a CJK font' while the file renders CJK correctly.",
+   "fix": "eng-plot-results/SKILL.md first paragraph: replace 'you cannot see the picture' by 'Read the PNG once before describing it'."
+  }
+ ],
+ "what_worked": [
+  "Turn 1 already answered the whole engineering question: f1, f2 (the second mode at 49.5 Hz flagged as the cause), f3, fixed-free Pcr, a labelled hand check of f1 and Pcr, and a clear list of what was assumed. The headline-only trap (first_frequency) is avoided.",
+  "The K = 1 vs K = 2 question was answered with the exact numbers (61.4 vs 15.36 kN), the correct physics and no condescension.",
+  "Options were evaluated with tools rather than guessed: 8 / 12 / 15 kg top mass, 2 in sch40, a rigid brace at 1 m, and spring clamps at 10 / 100 / 1000 kN/m with the buckling factor of each; every figure reproduced within 0.1 % by an independent Euler-Bernoulli FE written by the judge (frequencies and buckling factors).",
+  "Corrected the person's premise ('the brace lowers the frequency') and gave a measurement method for the unknown clamp stiffness; labelled the stiffness ranges as guesses and chose the 2 in pipe because it does not need k.",
+  "Recovered from the unviewable picture by giving the mode-shape table (11 rows) for Excel; limits (rigid clamp, point mass without rotary inertia, no damping, no prestress in modal) stated; the effect of the axial load was guessed in the right direction."
+ ],
+ "vs_round1": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": [
+   "S4_exhaust_stack_modes-1 (plot_xy now writes a PNG, looked at and described)",
+   "S4_exhaust_stack_modes-3 (a finite-stiffness support was modelled with structures3d_modal springs without trouble)",
+   "S4_exhaust_stack_modes-4 (assistant tools restricted; persona stays in role)"
+  ],
+  "still_open": [
+   "S4_exhaust_stack_modes-2 (a hand-typed ASCII chart again, this time roughly right and offered once; the person still never saw a picture)"
+  ],
+  "new": [
+   "S4_exhaust_stack_modes-r2-2",
+   "S4_exhaust_stack_modes-r2-3",
+   "S4_exhaust_stack_modes-r2-4",
+   "S4_exhaust_stack_modes-r2-5"
+  ],
+  "regressed": []
+ }
+}

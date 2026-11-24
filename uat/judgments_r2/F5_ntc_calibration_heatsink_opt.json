@@ -1,0 +1,229 @@
+{
+ "id": "F5_ntc_calibration_heatsink_opt",
+ "verdict": "PASS",
+ "one_line": "The person got every calibration, uncertainty, Rth and fin-design number right (SH coefficients, CIs and 64.11 C match the truth to all digits; 15 x 1.5 mm, 275 g) in 3 turns, from tool calls, without any file leak; weak points: the part-tolerance uncertainty is quoted as '+-0.30 K' (a 1-sigma value, the 95 % figure is 0.56 K), the fin gap is computed with n instead of n-1, no skill was loaded at all, and the first SH fit failed on parameter scaling.",
+ "goal_met": true,
+ "turns": 3,
+ "answers": [
+  {
+   "item": "Steinhart-Hart A, B, C (0..100 C)",
+   "truth": "A 1.12448e-3, B 2.34881e-4, C 8.4797e-8",
+   "assistant_said": "a 1.12448e-3, b 2.34881e-4, c 8.4797e-8 (optimize_fit on T in degC after rescaling p1=1000a, p3=1e-4 c)",
+   "result": "right"
+  },
+  {
+   "item": "95 % CI of A, B, C",
+   "truth": "half-widths 1.37e-6 / 2.53e-7 / 1.22e-9",
+   "assistant_said": "[1.12311,1.12585]e-3, [2.34628,2.35134]e-4, [8.358,8.602]e-8",
+   "result": "right"
+  },
+  {
+   "item": "SH residual max / rms 0..100 C",
+   "truth": "0.0193 K max (70 C), 0.0076 K rms",
+   "assistant_said": "max 0.019 K at 70 C, rms 0.0076 K, Durbin-Watson 0.77",
+   "result": "right"
+  },
+  {
+   "item": "Why beta with datasheet B 3988 K fails (0.77 K max error)",
+   "truth": "2-parameter beta over 0..100 C: best B 3952 K, max error 0.62 K; datasheet B 0.77 K",
+   "assistant_said": "free beta fit B 3878 K (CI 3862..3894), 25..100 C fit 3955 K; explains 3988 K is a two-point (25/100 C) value, local B drifts 3935 K (25..50) to 4024 K (50..100), Durbin-Watson 0.32-0.36 so the CI understates model error; SH removes the 0.7 K deviation",
+   "result": "right"
+  },
+  {
+   "item": "Temperature at 2150 ohm",
+   "truth": "64.11 C",
+   "assistant_said": "64.11 C (optimize_sensitivity on the SH fit); turn 2 first gave 64.1 C by hand log-interpolation, labelled 'my arithmetic'",
+   "result": "right"
+  },
+  {
+   "item": "Fit-only 95 % CI of the temperature",
+   "truth": "+-0.0052 K",
+   "assistant_said": "'擬合統計不確定度 0.0023 K' (1 sigma from GUM, not labelled as 1 sigma in the text)",
+   "result": "right"
+  },
+  {
+   "item": "Uncertainty from R25 +-1 %, B +-1 % (the person's wrong assumption: fit CI = uncertainty)",
+   "truth": "0.56 K at 95 %, 0.73 K worst case",
+   "assistant_said": "'單顆公差 +-0.30 K' (GUM standard uncertainty 0.30 K from R25 57.7 ohm and B 23 K = uniform limits / sqrt3, computed around the beta B=3988 model); Rth quoted '0.65 +- 0.01 K/W (k=2)'. The +-0.30 K is a 1-sigma number presented as a '+-' tolerance; the 95 % value (0.6 K) is never stated for the temperature",
+   "result": "wrong"
+  },
+  {
+   "item": "Measured heatsink Rth",
+   "truth": "0.652 K/W, range 0.640..0.664",
+   "assistant_said": "0.65 K/W = (64.1-25)/60, +-0.01 K/W at k=2",
+   "result": "right"
+  },
+  {
+   "item": "Lightest integer design Rth <= 0.55 K/W",
+   "truth": "15 x 1.5 mm, 275.4 g, Rth 0.524",
+   "assistant_said": "15 x 1.5 mm, H 30 mm, 0.275 kg, Rth 0.516 (thermal_fin tip=convective, 77.6 W at dT 40 K) / 0.519 with 0.004 K/W base conduction (hand)",
+   "result": "right"
+  },
+  {
+   "item": "Continuous relaxation and rounding; 14 fins infeasible",
+   "truth": "n 14.2, t 1.5, 267.7 g; 14 fins need 2.2 mm / 329 g",
+   "assistant_said": "optimize_minimize best feasible n 14.31, t 1.5, 0.269 kg (reported as 'not converged'); 14 x 1.5 mm = 0.548 (tool) / 0.552 K/W with base term, marked fail",
+   "result": "right"
+  },
+  {
+   "item": "Fin gap of the recommended design",
+   "truth": "5.54 mm ((100-15*1.5)/14)",
+   "assistant_said": "5.2 mm = (100-15*1.5)/15; the optimize_minimize constraint is also written (100-n t)/n",
+   "result": "wrong"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "Fit CI taken as the uncertainty of the reading (person's wrong assumption)",
+   "caught": true
+  },
+  {
+   "trap": "Continuous optimiser returns n = 14.3; rounding down to 14 violates Rth",
+   "caught": true
+  },
+  {
+   "trap": "Hand arithmetic 1/T table (no tool prepares it)",
+   "caught": true
+  },
+  {
+   "trap": "Plain beta with datasheet B is about 0.8 K off over 0..100 C",
+   "caught": true
+  },
+  {
+   "trap": "Fin gap count n-1",
+   "caught": false
+  },
+  {
+   "trap": "Quote the part tolerance as an expanded (95 %) interval, not the GUM standard uncertainty",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 1 asked for the R/T table instead of reading it from a file (the round-1 leak is gone). It still printed an unrequested 'rough estimate' with an assumed B = 3950 K (64.1 C, 0.65 K/W), labelled 'my arithmetic, not tool-verified'. The numbers were later confirmed, but an assumed B from memory is what the ask-first rule forbids as a verdict; it said it was only an order of magnitude.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 2 table lists 64.8 C (beta-fit parameters) as 'my arithmetic'; the value came from optimize_sensitivity (nominal 64.83). Mis-attribution of a tool value.",
+   "severity": "low"
+  },
+  {
+   "issue": "'+-0.30 K' is called 'R25 and B +-1 % tolerance' in the turn 2 and 3 bullets (the turn 2 table does say 標準不確定度). A reader takes it as the bound; the 95 % bound is about 0.6 K, the worst case 0.73 K. The person ended with 'put +-0.30 K in the error budget'. Rth +-0.01 (k=2) is right.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Good: no verdict without the table and the 0.55 K/W boundary definition; stated assumptions (1-D fin, uniform h, no contact resistance, NTC-to-base gradient not quantified); disclosed the failed SH fit ('超過計算時間預算') and the optimiser's 'not converged'.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r2/F5_ntc_calibration_heatsink_opt/ws/20261124T141324Z-437396d6-plot_xy/plot.png",
+   "score": 3,
+   "notes": "Product PNG (1600x1000, format both): SH residual in K versus 0..100 C, 21 points, zero line, axis labels with units, title with the max (-0.019 K at 70 C, matches the fit). Minor: x axis padded to 0..120 for data ending at 100; the first marker at x=0 is half-clipped by the axis. The assistant gave a markdown image plus the plain path and described the picture."
+  },
+  {
+   "file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r2/F5_ntc_calibration_heatsink_opt/rendered/20261124T141324Z-437396d6-plot_xy_plot.png",
+   "score": 2,
+   "notes": "What the person was shown: the harness re-rasterised plot.svg with resvg (1100x688, fallback CJK font). Same data, but CJK glyphs are cut (title reads with missing strokes, y label garbled). Harness artifact, not the product PNG. The person did get to see the residual plot."
+  }
+ ],
+ "problems": [
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-6",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "No Skill call in any of the 3 turns (eng-toolkit, eng-optimize, eng-thermal-check never loaded) although eng-toolkit says 'Load before any mcp__eng-toolkit__ tool'. The n-1 gap sentence and the 'standard, not expanded' note in eng-optimize never reached the assistant.",
+   "evidence": "transcript.json turn 2 tools: optimize_fit, optimize_sensitivity, optimize_minimize, optimize_fit, optimize_fit, optimize_sensitivity, optimize_minimize, thermal_fin x3 - no Skill; turn 3 the same",
+   "fix": "Put the five rules that matter (units, labelled arithmetic, ask-first, PNG hand-over, n-1/gap style geometry counts) into the MCP server instructions, which every client receives, and strengthen the eng-toolkit skill description ('call this Skill first for any engineering request')."
+  },
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-7",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "optimize_sensitivity returns a standard (1 sigma) uncertainty and eng-optimize says 'standard, not expanded', but nothing tells the assistant how to turn a +-a % datasheet tolerance into a bound or to report the expanded value. The assistant quoted the 1 sigma (0.30 K) as '+-0.30 K tolerance'.",
+   "evidence": "turn 3: '單顆公差（±0.30 K）是主要項'; optimize_sensitivity result gum.standard_uncertainty 0.3010 (R25=57.7, B=23.0); truth Monte Carlo 95 % 0.56 K, worst case 0.73 K",
+   "fix": "plugin/skills/eng-optimize/SKILL.md section 4 (sensitivity): add 'a +-a % uniform limit is u = a/sqrt(3); report the expanded value U = k u (k=2 for about 95 %) and the worst case sum(|c_i| a_i), and say which one the number is'. Optionally return data.gum.expanded_95 from optimize_sensitivity."
+  },
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-8",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "optimize_fit cannot fit 1/(a+b*log(x)+c*log(x)^3)-273.15 with a ~ 1e-3, b ~ 2e-4, c ~ 1e-7 from the natural start: it burns the time budget (10 s, 8278 evaluations, multistart=8) or stops with 'LM trust damping could not improve the residual' (multistart=1); the 1/T form converges at once. The first SH attempt failed, the assistant needed a hand-rescaled model (p1=1000a ...), cost a turn and showed 'Steinhart-Hart 未完成' to the person. The time-budget refusal has family 'input.out_of_range', param /time_limit, which points at the wrong field.",
+   "evidence": "re-run in-process: model '1/(a+b*log(x)+c*log(x)^3)-273.15', initial 'a=0.001;b=0.00025;c=0.0000001', 21 points 0..100 C -> ok false 'optimize.time_budget_exceeded' (multistart 8) and 'fit did not converge: LM trust damping could not improve the residual' (multistart 1); model 'a+b*log(x)+c*log(x)^3' on y=1/T from 'a=0.001;b=0.0002;c=1e-7' -> a 1.12794e-3, b 2.34253e-4, c 8.7691e-8 in 0.7 s",
+   "fix": "optimize_fit: scale each parameter by its initial value (x_scale / Jacobian column scaling) before LM; report a time-budget stop as optimize.not_converged with the best iterate; add to the eng-optimize fit bullet: 'parameters differing by more than 3 orders of magnitude: pass scaled parameters (p1=1000*a) or fit the linearised form'."
+  },
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-4",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "(still open from round 1) Fin gap counted with n gaps instead of n-1: 5.2 mm reported for 15 x 1.5 mm (true (100-22.5)/14 = 5.54 mm) and constraint '3 - (100 - n*t)/n <= 0'. The supplier drawing value is wrong; the design is unchanged. The n-1 sentence exists in eng-optimize section 1 but the skill was not loaded.",
+   "evidence": "turn 2: 'n = 15 時鰭間距為 (100 − 15 × 1.5) / 15 ≈ 5.2 mm'",
+   "fix": "see F5-6; also add the sentence to the optimize_minimize tool description."
+  },
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-9",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "optimize_minimize multistart ended 'not converged' (all local runs status budget_share_exhausted, 8092 evaluations) for the smooth 2-variable fin problem in the run, but converged in 3 s when I re-ran the same call: the result depends on a wall-clock budget and machine load. The best feasible point was returned and the assistant said 'not converged', which was honest.",
+   "evidence": "run: error.details best_feasible {n 14.3139, t 1.5}, converged false; re-run: ok true, point n 14.3139, t 1.5, objective 0.26873",
+   "fix": "count evaluations, not seconds, for the per-start budget; or report converged when the KKT certificate of the best point passes."
+  },
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-10",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "optimize_sensitivity refuses 'ln' with 'unknown name ln at character 14' and gives no hint that the natural log is called log.",
+   "evidence": "turn 2 first call; error.family input.invalid, message 'unknown name ln at character 14'",
+   "fix": "message: 'unknown name ln; use log (natural log) or log10'."
+  },
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-11",
+   "kind": "harness_artifact",
+   "severity": "low",
+   "what": "The person is shown a resvg raster of plot.svg (with its glyph cut-offs), not the product's plot.png, and only for format svg or both. A plot_xy call with format=png alone gives the person no picture (see M2).",
+   "evidence": "scripts/uat_run.py rasterise(): handles .svg, .pdf, .glb only; rendered/ file is 1100x688, product plot.png is 1600x1000",
+   "fix": "uat_run.py rasterise(): also copy ws/**/*.png and show those instead of the SVG raster."
+  },
+  {
+   "id": "F5_ntc_calibration_heatsink_opt-3",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "(round 1, not exercised now) no tool for spreading resistance of a small heater on the base; this run's person gave no heater size, so the question did not arise, and the assistant never loaded the thermal skill that now says 'outside the toolkit'.",
+   "evidence": "no mention in the transcript",
+   "fix": "unchanged from round 1."
+  }
+ ],
+ "what_worked": [
+  "optimize_fit, optimize_sensitivity (with the fitted correlation matrix), optimize_minimize and thermal_fin reproduced the truth: coefficients, CIs, residuals, 64.11 C, 0.652 K/W, 15 x 1.5 mm, 275 g.",
+  "Turn 1 refused to compute from memory, asked for the table and for the definition of the 0.55 K/W target (base to ambient), and got everything in one reply.",
+  "It explained the person's misconception with numbers: fit-only 0.0023 K, beta-model fit 0.13 K, part tolerance 0.30 K (1 sigma).",
+  "It explained why a fitted beta (3878 K) lies outside its own CI: Durbin-Watson 0.32, B is not constant, the datasheet B is a two-point value.",
+  "thermal_fin was called with tip='convective' and the exact unfinned base area (0.0062 m2): the round-1 adiabatic-tip confusion is gone.",
+  "The residual PNG existed, was described in words and reached the person as an image."
+ ],
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PASS",
+  "fixed": [
+   "F5_ntc_calibration_heatsink_opt-1",
+   "F5_ntc_calibration_heatsink_opt-2",
+   "F5_ntc_calibration_heatsink_opt-5"
+  ],
+  "still_open": [
+   "F5_ntc_calibration_heatsink_opt-3",
+   "F5_ntc_calibration_heatsink_opt-4"
+  ],
+  "new": [
+   "F5_ntc_calibration_heatsink_opt-6",
+   "F5_ntc_calibration_heatsink_opt-7",
+   "F5_ntc_calibration_heatsink_opt-8",
+   "F5_ntc_calibration_heatsink_opt-9",
+   "F5_ntc_calibration_heatsink_opt-10",
+   "F5_ntc_calibration_heatsink_opt-11"
+  ],
+  "regressed": []
+ },
+ "skills_loaded": "none (no Skill call in 3 turns)",
+ "picture_reach": "Person saw a harness raster of the SVG (format both). The product PNG path was given and the picture described."
+}

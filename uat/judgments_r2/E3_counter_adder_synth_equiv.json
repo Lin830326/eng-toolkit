@@ -1,0 +1,57 @@
+{
+ "id": "E3_counter_adder_synth_equiv",
+ "verdict": "PASS",
+ "one_line": "Every number matches the truth: optimised cells 24/23/86/80 (unit-gate 63/62/112/112), cnt8_opt NOT equivalent (tc wrong at count 127, en=1, reachable from reset after 127 enabled edges), adders proved equivalent, no invented um2, and a real bar chart from plot_bar. Weak spots: it offered to map a .lib with Yosys although the toolkit cannot read a liberty file, it never loaded a skill, and it handed over SVG paths (the person saw the picture only because the harness rasterised the SVG).",
+ "goal_met": true,
+ "turns": 3,
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PASS",
+  "fixed": ["E3-1", "E3-2", "E3-4", "E3-5"],
+  "still_open": ["E3-3"],
+  "new": ["E3-6", "E3-7", "E3-8", "E3-9"],
+  "regressed": []
+ },
+ "answers": [
+  {"item": "cnt8 gate count / area", "truth": "24 cells after default synth/ABC (8 DFF + 16 gates); 40 structural", "assistant_said": "24 cells, unit-gate 63 (target optimized, Yosys 0.70), 8 flip-flops = 40 of the 63", "result": "right"},
+  {"item": "cnt8_opt gate count / area", "truth": "23 cells after ABC", "assistant_said": "23 cells, unit-gate 62, one unit less than cnt8", "result": "right"},
+  {"item": "add16_beh / add16_rca gate count", "truth": "86 / 80 cells optimised (unit-gate 112 / 112)", "assistant_said": "86 / 80 cells, both 112 unit-gate, both 33 levels", "result": "right"},
+  {"item": "which adder is smaller", "truth": "rca has 7 % fewer cells, same unit-gate area; structurally rca is clearly smaller; hand-written is not always smaller", "assistant_said": "same area (112) in this model; cell count is not area; hand-written RCA has no area advantage; 'in the company library it may differ, needs .lib'", "result": "right"},
+  {"item": "adders equivalent", "truth": "equivalent (combinational proof)", "assistant_said": "equivalent, proof: complete, all inputs", "result": "right"},
+  {"item": "counters equivalent / can swap", "truth": "NOT equivalent; tc differs at count 0x7F, en=1; first visible after 127 enabled edges", "assistant_said": "not equivalent, do not swap; count=127, en=1: cnt8 tc=0, cnt8_opt tc=1; input sequence: 1 reset clock, then 127 clocks with en=1; 'derived from the RTL, not run from reset by the tool'", "result": "right"},
+  {"item": "limit of the bounded check", "truth": "needs 128 steps; the tool maximum is 100", "assistant_said": "tried cycles=130 (refused), then said the tool maximum is 100 and 127 clocks are needed, so it did not use a bounded check; used a combinational compare of the two tc functions plus a re-check with the start value set to 120 (found at cycle 8)", "result": "right"},
+  {"item": "standard-cell area in um2", "truth": "not available without a .lib; do not invent", "assistant_said": "refused to give um2 in all 3 turns, offered unit-gate relative numbers and gave slide wording; but also offered 'give me the .lib and I map it with Yosys to um2'", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "Trusting a bounded 'no_mismatch_within_bound' (cycles=100) as equivalence", "caught": true},
+  {"trap": "Giving a silicon area in um2 without a liberty file", "caught": true},
+  {"trap": "Person's belief that a hand-written ripple adder is always smaller than a + b", "caught": true},
+  {"trap": "Naming target and metric when comparing adders (cells vs unit-gate area)", "caught": true},
+  {"trap": "Colleague's argument that the counter only counts up from reset so 7 bits suffice", "caught": true},
+  {"trap": "Not promising a capability the toolkit lacks (no tool reads a liberty file)", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 and turn 2 end with 'send me the .lib and I will map it with Yosys and output um2'. No digital_* tool takes a liberty file (plugin/skills/eng-digital-synthesis/SKILL.md section 1: 'the toolkit does not read it'). Turn 3 reduced this to 'give me NAND2/XOR2/DFF areas and I multiply, labelled my arithmetic', which is feasible.", "severity": "medium"},
+  {"issue": "Turn 2 says ABC mapped add16_beh 'to the same gate combination as the hand-written full adder (7 units per bit)'. The real mix is different (beh: 18 AND, 36 NAND, 6 OR, 6 XNOR, 20 XOR; rca: 48 NAND, 32 XOR); only the unit-gate total is equal (112).", "severity": "low"},
+  {"issue": "Turn 1 says the combinational tc comparison 'is enough to decide' without yet showing that count=127 is reachable; turn 2 supplied the reachability argument and said it was reasoning, not a tool run from reset.", "severity": "low"},
+  {"issue": "Everything else was labelled well: tool vs 'my arithmetic' (1/63 = 1.6 %), 'unverified' for the library effect, and the initial-value trick (start at 120) was described as a shortcut.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T140214Z-5a3b5d84-plot_bar_plot.png", "score": 1, "notes": "Right data (63/62/112/112) with value labels, but the Chinese title and y label come out as odd mixed-font glyphs (harness resvg font fallback) and the person could not read them. The assistant had passed format=svg and quoted only the plot.svg path, not a PNG."},
+  {"file": "rendered/20261124T140343Z-024769ca-plot_bar_plot.png", "score": 3, "notes": "English title 'Synthesized area, relative (unit-gate, not um2)', y label 'unit-gate (toolkit convention)', x label, value labels, 0-140 axis, four bars. Ready for a slide. Only the area metric is shown, so the 86 vs 80 cell difference is not visible."}
+ ],
+ "problems": [
+  {"id": "E3-3", "kind": "tool_gap", "severity": "medium", "what": "digital_equivalent still stops at 100 cycles, so the real counterexample (128 steps from reset) cannot be found by the tool; the assistant must split the combinational part and argue reachability by hand, or edit the Verilog.", "evidence": "Assistant call cycles=130 -> error input.out_of_range 'cycles must be a whole number from 0 to 100, got 130'. Truth script: SAT with 128 steps finds it, 127 does not.", "fix": "Raise the cap to about 512 steps for designs under about 64 state bits (the time limit already guards it), or add a k-induction mode, and add a parameter override so the width can be reduced without editing text."},
+  {"id": "E3-6", "kind": "skill_gap", "severity": "medium", "what": "The assistant never called the Skill tool (transcript.json tools: digital_synthesize x4, digital_equivalent x3, plot_bar, ...; no Skill). The guidance that 'the toolkit does not read a liberty file' and the wide-counter recipe lives only in the unloaded skill, so it offered a Yosys .lib mapping that does not exist.", "evidence": "Turn 1: 'If you give me the .lib I can map it with Yosys and output um2.' vs eng-digital-synthesis/SKILL.md section 1: 'Area in um2 needs the company's liberty file, which the toolkit does not read'. gateway/server.py:132 instructions mention neither skills nor the um2 limit.", "fix": "eng_toolkit/gateway/server.py instructions: add 'Before the first call in a domain, load the plugin skill eng-toolkit and the matching domain skill (eng-digital-synthesis, eng-flow-network, ...): they hold the ask-first rules, verified inputs and what the toolkit cannot do.' Also add to the digital_synthesize tool description: 'No technology mapping: area is unit-gate only; um2 needs a liberty file the toolkit cannot read.'"},
+  {"id": "E3-7", "kind": "tool_gap", "severity": "medium", "what": "plot_bar defaults to format=svg and the assistant explicitly chose svg, so the person was given a path to plot.svg and the chat shows no picture. Only the harness rasteriser let the simulated person see it. A real user with an SVG path and CJK text gets viewer-dependent glyphs.", "evidence": "plot_bar input: {\"format\": \"svg\"} twice; replies quote ...\\plot.svg. plugin/skills/eng-toolkit/SKILL.md rule 9 says PNG but was not loaded.", "fix": "Make the plot tools default to format='both' (or png whenever the png extra is installed) so plot.png always exists and data.png_path is the first path in the reply; FORMAT_TEXT in domains/plot/_output.py should say 'default both'."},
+  {"id": "E3-8", "kind": "model_error", "severity": "low", "what": "Claimed ABC mapped the behavioural adder to the same gates as the hand-written one; only the unit-gate total (112) is equal, the cell mix is not.", "evidence": "stat: add16_beh 18 AND/36 NAND/6 OR/6 XNOR/20 XOR = 86 cells; add16_rca 48 NAND/32 XOR = 80 cells.", "fix": "Model behaviour; the skill already says 'ripple 80/112 either way, not smaller after optimisation'."},
+  {"id": "E3-9", "kind": "harness_artifact", "severity": "low", "what": "The CJK garbling the simulated person complained about comes from the harness rasteriser (resvg fallback font on an SVG), not from a PNG the toolkit wrote. The assistant's reaction (switch to English labels) was sensible.", "evidence": "rendered/...5a3b5d84-plot_bar_plot.png shows mixed calligraphic glyphs; in F1 the toolkit's own plot.png renders the same kind of text cleanly.", "fix": "In scripts/uat_run.py rasterise(), load a CJK system font (resvg_py font_files / font_dirs) or show the toolkit's own PNG when one exists."}
+ ],
+ "what_worked": [
+  "Optimised synthesis now runs (round-1 E3-1 is gone): 24/23/86/80 cells, 63/62/112/112 unit-gate, identical to standalone Yosys in the truth script.",
+  "Without any skill it still found the right route: tried cycles=130 (refused), then isolated the two tc functions, got the counterexample count=127, en=1 from digital_equivalent, and argued reachability from reset (127 enabled clocks); the input sequence it gave to the colleague is correct.",
+  "Proved the adders equivalent (proof complete) and named the metric every time it gave a number; explained why 80 vs 86 cells does not mean smaller area.",
+  "Refused um2 three times, gave honest relative slide wording (1.6 % with the arithmetic labelled) and did not recommend the 1-gate saving.",
+  "Recovered from the garbled-text complaint in one call with an English-labelled chart that is slide-ready."
+ ]
+}

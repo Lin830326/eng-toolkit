@@ -1,0 +1,63 @@
+{
+ "id": "F1_cooling_loop_pump",
+ "verdict": "PASS",
+ "one_line": "Asked for the pump curve first (no invented curve, unlike round 1), then fluids_pipe_network gave the right as-is point (3.16 m3/h, 10.27 m), the right split (A 23.2 L/min = 1.39 m3/h, short of 26; B 29.4 L/min fine) and the right verdicts (total flow enough, A short). Weak spots: the system curve in the chart is a parabola through the operating point (up to 9 % high at 6 m3/h) and the point it marks is the throttled variant (3.06), the turn-3 sentence for the boss omits the throttle it depends on, and no skill was loaded.",
+ "goal_met": true,
+ "turns": 4,
+ "vs_round1": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": ["F1-1", "F1-4", "F1-6", "F1-7"],
+  "still_open": ["F1-2", "F1-3", "F1-5"],
+  "new": ["F1-9", "F1-10", "F1-11", "F1-12"],
+  "regressed": []
+ },
+ "answers": [
+  {"item": "operating flow (as-is)", "truth": "3.163 m3/h (+-8 %)", "assistant_said": "3.16 m3/h (52.6 L/min), tool 3.156; with B throttle K=50: 3.06 m3/h; later options 3.22 and 3.29 m3/h", "result": "right"},
+  {"item": "operating head", "truth": "10.29 m (+-0.7)", "assistant_said": "10.27 m (as-is), 10.41 m (throttled)", "result": "right"},
+  {"item": "pump shaft power / efficiency", "truth": "0.198 kW, eta 0.445", "assistant_said": "eta about 0.44 interpolated from the catalogue points, shaft about 196 W (hydraulic 86 W / 0.44), labelled my arithmetic", "result": "right"},
+  {"item": "required total flow 15 kW / 5 K", "truth": "2.601 m3/h", "assistant_said": "43 L/min = 2.58 m3/h (7.17e-4 m3/s with rho 1000, cp 4186)", "result": "right"},
+  {"item": "total flow enough", "truth": "yes", "assistant_said": "yes, 3.16 vs 2.58 m3/h (+19 % margin on the throttled point)", "result": "right"},
+  {"item": "branch A flow", "truth": "1.39 m3/h", "assistant_said": "23.2 L/min = 1.39 m3/h (tool 1.390)", "result": "right"},
+  {"item": "branch B flow", "truth": "1.773 m3/h", "assistant_said": "29.4 L/min = 1.76 m3/h (tool 1.766)", "result": "right"},
+  {"item": "branch A / B enough", "truth": "A no (needs 1.56, dT 5.6 K); B yes (dT 2.9 K)", "assistant_said": "A needs 26 L/min, gets 23.2, dT 5.6 K; B needs 17.3, dT 2.9 K", "result": "right"},
+  {"item": "plate heat exchanger drop at the operating flow", "truth": "77.8 kPa at 3.163 m3/h", "assistant_said": "about 73 kPa (7.5 m) at 3.06 m3/h, called 'consistent with the datasheet 70 kPa at 3.0' (that is only the input scaled by Q^2)", "result": "right"},
+  {"item": "fix options for branch A", "truth": "not in the truth; checkable with the tool", "assistant_said": "four cases from fluids_pipe_network: no change (A 23.2), B throttle K=50 (A 28.2, B 22.8), A valve K=50 / Kv about 7 (A 30.1, B 23.6), A valve removed (A 40.1, B 14.7 short). Re-run in the artifacts: 1.696/1.366, 1.805/1.416, 2.408/0.885 m3/h as quoted", "result": "right"},
+  {"item": "pump-curve / system-curve chart with the operating point", "truth": "crossing near 3.16 m3/h, 10.3 m; true system head 1.06 / 4.16 / 9.27 / 16.38 / 25.5 / 36.6 m at Q = 1 / 2 / 3 / 4 / 5 / 6", "assistant_said": "PNG with pump curve, an approximate system curve H = 10.41 (Q/3.061)^2 (1.11 / 4.44 / 10.0 / 17.8 / 27.8 / 40.0), demand line 2.58 and the point 3.06 / 10.4 marked; labelled 'approximate'", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "Person's assumption that any pump reaching 2.6 m3/h is fine (ignores the branch split)", "caught": true},
+  {"trap": "Two parallel branches need fluids_pipe_network, not pump_system on one pipe", "caught": true},
+  {"trap": "Kv 4.0 and 70 kPa at 3 m3/h turned into loss coefficients (valve K 152, PHE K 350, both correct)", "caught": true},
+  {"trap": "Inventing a pump curve when none was given", "caught": true},
+  {"trap": "DN40 is not a 40 mm bore (sch40 ID 40.9 mm, DN32 35.1, DN25 26.6)", "caught": true},
+  {"trap": "System curve from the network model, not a parabola fitted to one point", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 3 gives the person a sentence for the manager: 'under the current assumptions the operating point 3.06 m3/h, 10.4 m can supply both branches'. That is only true with the K=50 throttle in B; as installed, branch A is short (23.2 vs 26 L/min). The turn-2 reply and the turn-4 reply say so, but this sentence does not.", "severity": "medium"},
+  {"issue": "Turn 2 says the tool's HX drop 'matches the datasheet 70 kPa at 3.0': the input K was derived from that datapoint, so this is a restatement, not a check.", "severity": "low"},
+  {"issue": "The system curve (chart and Excel table) was built by hand as a parabola through the operating point and was labelled 'approximate, not point by point from the network'. Honest, but it is up to 9 % off at 6 m3/h (40.0 vs 36.6 m) and the person was told to redraw it from that table.", "severity": "low"},
+  {"issue": "All assumptions were listed: valve treated as fully open at Kv 4.0, elbow 0.75, tee 1.0, HX 0.5 m of DN40, laser-head and coil internal drop NOT included. It repeatedly named the missing laser-head and coil pressure drops, NPSH and expansion-vessel pressure as the items that could change the answer.", "severity": "low"},
+  {"issue": "Turn 1 stated 'I cannot judge yet' instead of guessing, and asked for the curve, HX drop, fluid, schedule: correct behaviour. It still ran 3 pipe-drop calls at an assumed 30 degC (rho 996, mu 0.80 mPa s) and labelled them.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T140547Z-9a19bd1e-plot_xy_plot.png (rasterised from the SVG of turn 2)", "score": 1, "notes": "Pump curve, parabola system curve, marker at 3.06 / 10.4. The CJK title and legend come out in a distorted fallback font and the legend entry is cut off ('... H=10.41(Q/3.0...'). This is the only picture the simulated person was shown. The assistant passed the SVG path with no PNG."},
+  {"file": "ws/20261124T140647Z-4acbbc96-plot_xy/plot.png (PNG, turn 3; NOT in rendered/)", "score": 2, "notes": "Clean 1600 px chart, CJK text sharp, axes Q (m3/h) 0 to 6 and H (m) 0 to 45, pump curve solid, system curve dashed, circle on the operating point with label, dashed demand line at 2.58 m3/h. Deductions: the system curve is the approximate parabola, and the marked point is the throttled variant (3.06) not the as-is 3.16; the title does not say which. The assistant opened it with Read before claiming 'Chinese text is clear'."}
+ ],
+ "problems": [
+  {"id": "F1-2", "kind": "tool_gap", "severity": "medium", "what": "Neither fluids tool returns a pump-curve / system-curve table or marks the operating point; the system curve needs 7 extra pipe_network calls with a negative demand (the recipe is only in the skill). The assistant did not do it and fitted H = a Q^2 through the operating point.", "evidence": "plot_xy series 2 y = [0, 0.28, 1.11, 2.50, 4.44, 6.95, 10.00, 13.61, 17.78, 27.78, 40.0] against the truth system head 0.27 / 1.06 / 2.36 / 4.16 / 6.46 / 9.27 / 12.58 / 16.38 / 25.5 / 36.61 at 0.5 .. 6 m3/h.", "fix": "Let fluids_pump_system and fluids_pipe_network (one pump) write curves.csv (Q, pump head, system head, efficiency) on a grid up to the last pump point and return values.operating_point, so plot_xy can take it directly (data_file) and mark the point."},
+  {"id": "F1-3", "kind": "tool_gap", "severity": "low", "what": "Kv and 'dp at flow' still have to be converted to K by hand (valve K 152, PHE K 350, option valves K 50 for Kv 4/7).", "evidence": "pipes 'hx,p,j1,0.5 m,40.9 mm,0.046 mm,350', valves 'a,open,152'; 'K = 50 is about Kv 4.0 on DN25' (labelled my arithmetic; correct).", "fix": "Accept 'kv=4.0' or 'dp=70 kPa@3 m^3/h' in the K field of pipe and valve records, or add calc_kv_to_k."},
+  {"id": "F1-5", "kind": "tool_gap", "severity": "low", "what": "plot_xy still truncates legend entries with an ellipsis when the legend box is narrower than the label.", "evidence": "First chart legend: '系統曲線（近似 H=10.41·(Q/3.0…'.", "fix": "Let the legend grow up to about 45 % of the plot width or wrap to two lines before truncating; warn in the result when a label is cut."},
+  {"id": "F1-9", "kind": "harness_artifact", "severity": "high", "what": "scripts/uat_run.py rasterise() converts only .svg, .pdf and .glb. A native plot.png (format=png) is never copied to rendered/, so the person was never shown the PNG and said 'the PNG path will not open, I can only see the previous picture'. The run therefore ends with the person redrawing the chart in Excel although the toolkit produced a good PNG.", "evidence": "rendered/ holds only 20261124T140547Z-...plot_xy_plot.png (the turn-2 SVG); ws/20261124T140647Z-4acbbc96-plot_xy/plot.png exists and is clean. Turn 4 PERSON: 'PNG 那個路徑我打不開，我這邊只看得到前一張圖'.", "fix": "In rasterise(), copy any *.png under ws/ to rendered/ (skip plot.svg when a plot.png sits next to it)."},
+  {"id": "F1-10", "kind": "model_error", "severity": "low", "what": "The chart (title 'pump curve and system curve') marks the throttled-B variant (3.06 m3/h, 10.4 m) and a parabola through it, while the as-is operating point (3.16 m3/h, 10.27 m) that the person asked about is not on it; nothing on the chart says which case it is.", "evidence": "plot_xy marker '3.06,10.4,運轉點 3.06 m³/h'; turn 2 headline numbers 3.16 / 10.27 for the as-is loop.", "fix": "eng-plot-results skill: 'Say in the title which case a marked point belongs to (as installed / with change X).'"},
+  {"id": "F1-11", "kind": "model_error", "severity": "medium", "what": "The boss-ready sentence in turn 3 says the pump can supply both branches without the condition that B must be throttled; as installed A gets 23.2 of 26 L/min. The person almost took the opposite shortcut in turn 4 ('so I must add the DN25 valve').", "evidence": "Turn 3: 'Suggested wording: under current assumptions the operating point 3.06 m3/h, 10.4 m supplies the flow both branches need'. Tool, as installed: A 1.390 m3/h < 1.56 required.", "fix": "eng-flow-network skill section 7: 'Quote the branch verdicts for the case as installed first, and every sentence for a third party must carry the change it depends on.'"},
+  {"id": "F1-12", "kind": "skill_gap", "severity": "medium", "what": "No Skill call in any turn. The eng-flow-network recipe (negative-demand system curve, Kv to K formula, ask for the valve preset) was never read. Haiku asked for the curve first on its own, but built the system curve by guesswork and read 'Kv 4.0' as the fully-open value and recommended buying a bigger valve, instead of simply opening the balancing valve preset.", "evidence": "tools in transcript.json turns 1-4: calc_*, fluids_pipe_network, plot_xy, Read; no Skill. Skill section 4 step 4: 'No tool returns a curve table ... call fluids_pipe_network again with the pump removed, P demand -4 m^3/h'. Turn 4: 'replace the A valve by one with Kv about 7'.", "fix": "gateway/server.py instructions: tell the assistant to load eng-toolkit and the domain skill first. Add to eng-flow-network section 4: 'A balancing valve with a preset: the datasheet Kv is the current setting; the first fix to offer is to open the preset, not to buy a new valve.'"}
+ ],
+ "what_worked": [
+  "Did not invent the pump curve (round 1's worst failure): turn 1 gave only the one honest number (43 L/min required) and a list of what it needed, and named that the split between branches was unknown.",
+  "Model in fluids_pipe_network is right line by line: DN40/32/25 sch40 bores 40.9/35.1/26.6 mm, 0.046 mm roughness, PHE K 350, valve K 152 (Kv 4.0 on DN32), elbows 0.75, tees 1.0, closed loop as a fixed-head node. Flows within 1 % of the truth script (A 1.390 vs 1.39, B 1.766 vs 1.773, total 3.156 vs 3.163).",
+  "Corrected the person's wrong deduction in turn 4 ('you must add the DN25 valve') by separating 'is the pump enough' from 'does each branch get enough' and ran three more network cases in the tool; the numbers re-check from the result.json files.",
+  "Answered the pump-health question honestly: operating point left of best efficiency (4 m3/h, 0.46), cavitation not computed, NPSH data missing.",
+  "Opened its own PNG with Read, confirmed legible CJK, and when the person could not open the path gave the data table to redraw it instead of claiming success."
+ ]
+}

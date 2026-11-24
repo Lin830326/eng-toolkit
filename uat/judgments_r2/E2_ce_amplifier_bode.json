@@ -1,0 +1,62 @@
+{
+ "id": "E2_ce_amplifier_bode",
+ "verdict": "PASS",
+ "one_line": "Correct bias (2.00 / 1.20 / 6.40 V), 1 kHz gain 42.1 dB / 127 V/V, lower corner 186 Hz and a clearly caveated upper corner of 419 kHz from the person's datasheet numbers; the 'KiCad model has no capacitances' trap was caught in turn 1 and the new bandpass_3db tool removed the manual bracketing; the two charts reached the person and are good (waveform 3, Bode 2); the remaining faults are small: turn 1 ran on guessed Rs/Cin instead of asking, wrapped phase and a truncated legend on the Bode plot, a garbled sentence about bandwidth.",
+ "goal_met": true,
+ "turns": 3,
+ "skills_loaded": [],
+ "answers": [
+  {"item": "DC operating point (demo bf=200 model)", "truth": "Vb 2.00, Ve 1.20, Vc 6.40 V, Ic 2.55 mA", "assistant_said": "Vb 2.00 V / Ve 1.20 V / Vc 6.40 V (op analysis); Vc is 0.3 V below the mid-swing 6.7 V, 'saturates first, max symmetric swing about +-5 V'", "result": "right"},
+  {"item": "gain at 1 kHz", "truth": "42.11 dB / 127.5 V/V", "assistant_said": "turn 2: 42.1 dB (about 127 V/V) with Rs 600, Cin 1 uF; turn 1 (guessed Rs 1k, Cin 10 uF): 40.8 dB / 110 - superseded", "result": "right"},
+  {"item": "mid-band peak", "truth": "42.26 dB", "assistant_said": "peak 42.3 dB at 8.71 kHz", "result": "right"},
+  {"item": "lower -3 dB corner", "truth": "186 Hz +-15 %", "assistant_said": "186 Hz (bandpass_3db, tool); each capacitor alone: Cin 71 Hz, CE 127 Hz, Cout 1.3 Hz; 'use 186, not the 126 Hz hand number, which left out Cin'", "result": "right"},
+  {"item": "upper -3 dB corner", "truth": "none for the bf=200 model (flat to 1 GHz); about 469 kHz with the full PSpice model", "assistant_said": "turn 1: 'KiCad model gives no credible high corner' (the 10 MHz sweep stays flat); turn 2 with the person's datasheet maxima (Cibo 25 pF -> CJE, Cobo 8 pF -> CJC, TF = 1/(2 pi 300 MHz) = 0.53 ns): 419 kHz, 'an estimate, upper-bound capacitances, real part probably higher'", "result": "right"},
+  {"item": "'bandwidth' as one number", "truth": "band-pass: lower and upper corner; BW ~ fH - fL", "assistant_said": "'look at the high one, about 419 kHz; 186 Hz is only the lower limit' (with a garbled 'dividing the two')", "result": "right"},
+  {"item": "output for 10 mV, 1 kHz", "truth": "amplitude about 1.265 V, inverted", "assistant_said": "peaks about +1.20 V and -1.33 V, 2.5 V p-p, inverted; 'not near clipping; the asymmetry is about 5 % second harmonic, estimate 7 %' (steady-state window 0.196-0.2 s)", "result": "right"},
+  {"item": "hand estimate cross-check", "truth": "gain 138 (42.8 dB), corner about 250 Hz (open-circuit sum), 20 % / factor 1.5 tolerance", "assistant_said": "turn 1 hand corner 113-126 Hz (CE pole only, ignored Cin), disagreement flagged 'cause not found (unverified)', explained in turn 3 (missing Cin 71 Hz)", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "quote a precise upper bandwidth for the bf=200 model without a warning", "caught": true},
+  {"trap": "believe the KiCad file is a complete 2N2222 / treat bandwidth as one low-pass number", "caught": true},
+  {"trap": "wrong coupling capacitor / source impedance assumed instead of asked", "caught": false},
+  {"trap": "dB value labelled as volt; value_at refuses column 'v(out)'", "caught": true},
+  {"trap": "band-pass corner needs manual bracketing (round-1 gap)", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 states 'Cje 25 pF, Cjc 8 pF, TF 0.6 ns' as 'typical junction capacitances' and builds the first Bode plot and the 296 kHz figure on them; they are from memory, not from a tool and not from the person's datasheet, and are not labelled 'from memory, not a tool result' (eng-toolkit SKILL.md rule). They are marked 'typical' and the person was asked for the real part data, so the harm is small. The person's later datasheet numbers replaced them.", "severity": "low"},
+  {"issue": "Turn 1 plots and quotes results for Rs 1 k, Cin 10 uF, Cout 10 uF, RL 10 k, CE 100 uF without asking; all are listed as 'assumed' in a table and the last question asks for the real CE only. The person then had to give Rs and Cin himself. Numbers shown first (117 Hz, 296 kHz, 40.8 dB) later changed (186 Hz, 419 kHz, 42.1 dB), which confused him ('which one should I use').", "severity": "low"},
+  {"issue": "Vce(sat) = 0.2 V and 'second harmonic = x/4' are from memory; the first is marked 'datasheet typical, inference (推測)', the second 'inference'. Acceptable.", "severity": "low"},
+  {"issue": "Turn 2 text 'the Bode plot only used a sweep from 1 kHz down to 100 MHz' is wrong (the sweep was 1 Hz-100 MHz) and 'dividing the two, bandwidth = the high value' is not a meaningful sentence (BW = fH - fL, about fH).", "severity": "low"},
+  {"issue": "No claim of work not done; limits stated (simulation, not measurement; datasheet max values; beta 200 vs real beta spread; board test procedure given).", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T140130Z-ecdb03f6-plot_xy_plot.png (turn 1 Bode)", "score": 2, "notes": "Log x 1 Hz-100 MHz, gain dB left, phase right, titled, axis labels with units, grid. Correct for what was simulated but that was the wrong circuit (Rs 1 k, Cin 10 uF) with invented capacitances. Phase is wrapped: a vertical jump from -180 to +180 near 6 kHz in the middle of the passband. Legend shows raw column names 'v(nout).db', 'v(nout).phase_deg (right a...' (truncated). Tick labels mix 100000 and 1e6, 1e7, 1e8. No -3 dB markers."},
+  {"file": "rendered/20261124T140256Z-a7250b4f-plot_xy_plot.png (waveform)", "score": 3, "notes": "10 mV 1 kHz input (right axis +-0.01 V) and output (left axis +-1.5 V) over 4 steady-state cycles 0.196-0.200 s, inverted output visible, peaks +1.20 / -1.33 V readable and match the numbers in the text, title says what it is. Dual-axis; good enough for a report."},
+  {"file": "rendered/20261124T140315Z-a360eaed-plot_xy_plot.png (final Bode)", "score": 2, "notes": "Correct circuit (Rs 600, Cin 1 uF, datasheet capacitances): 42.1 dB flat band, rolloff both ends, matches 186 Hz / 419 kHz by eye. Same defects as the first Bode: wrapped phase jump at about 9 kHz, truncated raw legend, mixed tick formats, no -3 dB marks. The person said 'I saw the Bode plot and the waveform'."},
+  {"file": "reach", "score": 2, "notes": "The assistant asked plot_xy for format 'svg' and gave plot.svg paths; no PNG was written by the toolkit (the skill and the tool say use format png). The person saw the pictures only because the harness rasterised the SVG. For a real person an SVG path in a temp folder is a weak hand-over."}
+ ],
+ "problems": [
+  {"id": "E2-4", "kind": "tool_gap", "severity": "low", "what": "Still open: AC phase is wrapped to (-180, 180]; for an inverting stage the curve jumps from -180 to +180 in the middle of the pass-band and plot_xy draws a vertical line across the plot (both Bode figures).", "evidence": "phase_deg column in result.csv is -169.02 at 1 kHz; the figure shows a vertical dashed line at 6-9 kHz", "fix": "spice_simulate ac: add the unwrapped phase column (v(x).phase_unwrapped_deg) or a flag unwrap_phase=true; plot_xy: unwrap automatically when a y column name ends in phase_deg."},
+  {"id": "E2-5", "kind": "tool_bug", "severity": "low", "what": "Still open: plot_xy legend truncates the right-axis series label ('v(nout).phase_deg (right a...') and there is no argument to rename a CSV series; log-axis tick labels mix plain and exponent formats (100000, 1e6, 1e7, 1e8); no way to mark the -3 dB corners except hlines/vlines that the assistant did not use.", "evidence": "plot.png of 20261124T140315Z-a360eaed-plot_xy: legend 'v(nout).phase_deg (right a...', x ticks '10000', '100000', '1e6', '1e7', '1e8'", "fix": "plot_xy: a 'labels' list to rename series; widen the legend box or wrap text; format log ticks consistently (10 k, 100 k, 1 M, 10 M, 100 M)."},
+  {"id": "E2-6", "kind": "model_error", "severity": "low", "what": "The ask-first rule (eng-toolkit skill: ask BEFORE calculating when an input that decides the answer is missing) was not followed: Rs, Cin, Cout, RL and CE were all guessed, the first answer (117 Hz, 40.8 dB, 296 kHz) was wrong for the real board, and the person had to correct it in turn 2 (one turn lost, three corner numbers later in play). No Skill was loaded in any turn (not eng-circuit-sim, not eng-plot-results).", "evidence": "transcript.json: turn 1 tools Read x3, spice_simulate x3, spice_measure x3, plot_xy; no Skill; spice_simulate netlist 'RS vsrc n1 1k', 'CIN n1 base 10u'", "fix": "Make the ask-first list explicit in the spice_simulate description (coupling and bypass capacitors, source and load resistance) and add a hook that fails the first mcp__eng-toolkit__ call if no Skill was loaded."},
+  {"id": "E2-10", "kind": "skill_gap", "severity": "medium", "what": "plot_xy defaults to format 'svg' (and the assistant chose svg explicitly), so the 'plot_* write PNG' product change did not reach this person: the chat message holds an SVG path in the temp workspace, which most people cannot open from a path. eng-plot-results SKILL.md says 'use format=png whenever the person wants to see, paste or send the chart', but the skill was not loaded and the tool description does not carry that sentence.", "evidence": "plot_xy inputs: \"format\": \"svg\"; chat: '圖檔：...\\plot.svg'; ws/*plot_xy/ has plot.svg only", "fix": "plot_xy / plot_panels / plot_bar: default format 'both' (png when the extra is installed, svg always); first line of the tool description 'Give the person data.png_path, not the SVG'."},
+  {"id": "E2-8", "kind": "model_error", "severity": "low", "what": "Two garbled sentences in turn 2: 'the low-frequency 186 Hz is only a lower limit, dividing the two, bandwidth = the high value' and 'this Bode plot only used a sweep from 1 kHz down to 100 MHz'. The advice itself (bandwidth about fH) is right.", "evidence": "turn 2 headline and 'Notes' bullet 2", "fix": "none for the toolkit; a short template in eng-circuit-sim 'band-pass: bandwidth = f_high - f_low, report both corners and the centre gain'."},
+  {"id": "E2-9", "kind": "tool_bug", "severity": "low", "what": "spice_measure value_at on an ac magnitude column (v(nout) -> .mag) returns the gain 127.5 with unit 'volt' (it is V/V for a 1 V AC source). The round-1 bug for '.db' columns is fixed (now 'decibel'), the dimensionless case is not.", "evidence": "re-run value_at column 'v(nout)' at '1 kHz' on result.csv of 20261124T140220Z: {\"quantity\": 127.503, \"unit\": \"volt\"}", "fix": "Return unit 'dimensionless' (or 'V/V') for .mag columns of an AC analysis whose source is 1 V AC; or carry 'volt' only for .re/.im of absolute outputs."}
+ ],
+ "what_worked": [
+  "New spice_measure bandpass_3db returns lower corner 186 Hz and upper corner 419 kHz in one call; on a flat-top model it refuses with the lower corner in details and the message that no upper corner exists - exactly what exposed the missing-capacitance model (round-1 E2-3 fixed).",
+  "value_at now reports 'decibel' for .db columns and accepts column 'v(nout)' (round-1 E2-1 and E2-2 fixed; verified in-process).",
+  "Turn 1 did not claim an upper bandwidth from the KiCad model: 'the model has no junction capacitances or fT, so the high-frequency bandwidth is overestimated' and offered a sensitivity case with typical capacitances, clearly labelled.",
+  "Turn 3 answered the real engineering question (is Vc 6.4 V mid? is +1.2/-1.33 V near distortion?) with load-line arithmetic, an amplitude check and a decomposition by capacitor measured with the tool (71 / 127 / 1.3 Hz), and a bench procedure for the person's own board.",
+  "All numbers that came from the toolkit match the independent ngspice truth: bias exact, 42.11 dB, 186 Hz; upper corner 419 kHz vs 469 kHz for the full model (-11 %, in the direction of the datasheet maxima and said to be conservative).",
+  "No harness workarounds this time (no Bash, no private-memory reads); the person's picture request was met in turn 2."
+ ],
+ "vs_round1": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": ["E2-1", "E2-2", "E2-3", "E2-7"],
+  "still_open": ["E2-4", "E2-5", "E2-6"],
+  "new": ["E2-8", "E2-9", "E2-10"],
+  "regressed": []
+ }
+}

@@ -1,0 +1,237 @@
+{
+ "id": "M4_gantry_servo_sizing",
+ "verdict": "FAIL",
+ "one_line": "Regressed from PARTIAL: the final answer 'ECMA-C20807 passes at 0.8 s, RMS 1.83 N*m, 23 % margin' is wrong in the dangerous direction. The assistant fed forward + return stroke into the distance/move_time shortcut with cycle_time 2.4 s; the tool models ONE stroke per period (net_travel 1 m) and warns of nothing, so RMS is understated by sqrt(2): the true 0.8 s RMS is 2.59 N*m (1.09 x rated, fails), and for the person's real 0.6 s move it is 4.37 N*m (1.83 x). Peak torque 4.23 N*m, 2813 rpm and inertia ratio 25.3 for the 0.8 s case are right, the person got a PNG-rendered torque-speed chart, but it draws the wrong RMS line, and the 0.6 s requirement was dropped after a first turn built on guessed inputs and a wrong '750 W is a hard limit, 3 kW class' claim.",
+ "goal_met": false,
+ "turns": 3,
+ "answers": [
+  {
+   "item": "verdict for the person's request (0.6 s move): adequate?",
+   "truth": "NOT adequate: RMS 4.37 N*m = 1.83 x rated 2.39, peak 7.45 > 7.16 N*m, inertia ratio 25.3; ~4.4 N*m continuous / 7.5 N*m peak needed",
+   "assistant_said": "Turn 1 (guessed inputs: 30 mm pulley, memory datasheet, triangle, no dwell): 'not adequate', RMS 5.72, 3 kW class. Never recomputed for 0.6 s with the person's data",
+   "result": "wrong"
+  },
+  {
+   "item": "verdict at the 0.8 s the person accepts (hand/tool check with return stroke)",
+   "truth": "RMS 2.595 N*m = 1.09 x rated -> fails by about 9 %; peak 4.236 N*m; decel -3.51; 2811 rpm; fix: longer dwell (0.7 s gives about 2.3 N*m) or bigger motor",
+   "assistant_said": "Final: 'ECMA-C20807 通過', RMS 1.83 N*m, margin 0.56 N*m (23 %)",
+   "result": "wrong"
+  },
+  {
+   "item": "rms_torque_full_cycle (0.8 s: 2.59 N*m; 0.6 s: 4.37 N*m)",
+   "truth": "2.59 / 4.37",
+   "assistant_said": "1.83 N*m (tool, shortcut with cycle_time 2.4 s = one stroke per 2.4 s); turn 2: 2.10 N*m",
+   "result": "wrong"
+  },
+  {
+   "item": "peak_motor_torque_Nm (0.8 s trapezoid)",
+   "truth": "4.236",
+   "assistant_said": "4.23 N*m",
+   "result": "right"
+  },
+  {
+   "item": "peak_motor_speed_rpm (0.8 s trapezoid)",
+   "truth": "2811",
+   "assistant_said": "294.6 rad/s = 2,813 rpm, compared with rated 3000 and max 5000 correctly (round 1 treated rated speed as a limit)",
+   "result": "right"
+  },
+  {
+   "item": "reflected_load_to_rotor_inertia_ratio",
+   "truth": "25.3",
+   "assistant_said": "25.3 : 1 (0.003359 / 0.000133), flagged as high vs the 10:1 rule of thumb (labelled recalled)",
+   "result": "right"
+  },
+  {
+   "item": "equivalent moving mass / total efficiency / motor-side inertia",
+   "truth": "82.88 kg / 0.931 / 1.33e-4",
+   "assistant_said": "82.878 kg / 0.9312 / 1.33e-4 kg*m^2 (pulley J/r^2 folded in by hand, labelled)",
+   "result": "right"
+  },
+  {
+   "item": "decel torque, cruise torque",
+   "truth": "-3.514 / about 0.10 N*m (0.8 s)",
+   "assistant_said": "-3.51 / 0.10 on the chart",
+   "result": "right"
+  },
+  {
+   "item": "what to change if not adequate",
+   "truth": "motor of ~4.4 N*m continuous (about 1.5 kW class) or lower acceleration / longer dwell",
+   "assistant_said": "Turn 1: 'a 3 kW class servo, pulley pitch diameter >= 106 mm' (from the false 'power is a hard limit' argument); final: nothing to change (false pass)",
+   "result": "wrong"
+  },
+  {
+   "item": "torque-speed picture with continuous and peak limits and operating points",
+   "truth": "operating points (accel +4.23 N*m to 2813 rpm, decel -3.51 N*m, cruise 0.10) with 2.39 and 7.16 N*m lines",
+   "assistant_said": "Chart delivered (points right; RMS line 1.83 wrong; limit lines only to 3000 rpm, disclosed)",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "RMS over the whole cycle including dwell (move-only RMS overstates by ~30 %)",
+   "caught": true
+  },
+  {
+   "trap": "RMS must include BOTH strokes of a back-and-forth cycle (shortcut cycle_time = one stroke per period understates by sqrt(2))",
+   "caught": false
+  },
+  {
+   "trap": "trapezoid 1/3-1/3-1/3, not a triangle",
+   "caught": true
+  },
+  {
+   "trap": "rotor inertia must include gearbox input inertia; pulley + idler as J/r^2 equivalent mass",
+   "caught": true
+  },
+  {
+   "trap": "rpm vs rad/s in candidates",
+   "caught": true
+  },
+  {
+   "trap": "peak speed compared with the MAXIMUM speed 5000 rpm, not rated",
+   "caught": true
+  },
+  {
+   "trap": "do not use recalled datasheet values as if given",
+   "caught": true
+  },
+  {
+   "trap": "peak power vs rated power is not a servo limit",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 1 states 'ECMA-C20807 不夠用' in bold, 'power 3.1 kW, 750 W 無論怎麼換齒比都不夠' and recommends a 3 kW servo, built on invented inputs (30 mm pulley, 0 N / 50 N friction, 2e-4 rotor inertia, no dwell, triangle) and recalled datasheet numbers. The recalled datasheet values and assumptions are labelled, the power claim is not and is wrong for servos. Never retracted; in turn 3 the same 750 W motor 'passes' at 1.2 kW peak power with no comment.",
+   "severity": "medium"
+  },
+  {
+   "issue": "The final pass is stated with 'RMS margin 23 %' and a chart line 'RMS 1.83'. The tool output contained a clue (profile_duration 2.4 s, net_travel 1 m: one stroke) that the assistant did not check; its own hand check step from the skill (RMS = sqrt(sum T^2 t / sum t) over the whole cycle) was not done.",
+   "severity": "high"
+  },
+  {
+   "issue": "Inputs and unverified items are labelled in each table (source column, 'recalled, unverified'); the legend truncation and the missing 3000-5000 rpm limit region were disclosed. The person's own datasheet values were requested and used.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T141512Z-82d80349-plot_xy_plot.png",
+   "score": 1,
+   "notes": "0.6 s on guessed inputs (30 mm pulley, triangle, recalled datasheet): accel 6.30 / decel -5.15 N*m out to 5305 rpm with RMS 5.72 line. Axes and units ok (rpm, N*m), limits at 2.39 and 7.16 drawn to 3000 rpm, vlines at rated and max speed. The data are wrong for the real machine (true 3750 rpm, 7.45 N*m). Delivered as markdown image link + plot.svg path (format explicitly 'svg'); the PNG exists because the harness rasterised it."
+  },
+  {
+   "file": "rendered/20261124T141741Z-4042735b-plot_xy_plot.png",
+   "score": 1,
+   "notes": "Layout is legible: both axes with units, accel 4.23 / decel -3.51 / cruise 0.10 N*m correct for the 0.8 s trapezoid, 2.39 and 7.16 N*m lines, 3000 and 5000 rpm verticals, title that states the conclusion. But the title says the motor passes and the RMS line is 1.83 N*m (true 2.59, above the 2.39 limit line): the picture carries the false pass. Continuous/peak lines stop at 3000 rpm (disclosed), legend entries 1 and 3 are cut with an ellipsis, CJK glyphs are drawn in a decorative fallback font. Delivered as SVG path again."
+  }
+ ],
+ "problems": [
+  {
+   "id": "M4_gantry_servo_sizing-10",
+   "kind": "tool_gap",
+   "severity": "high",
+   "what": "New. electric_drive_sizing(distance, move_time, cycle_time) models exactly ONE stroke per cycle_time and pads the rest with a zero-speed dwell. For a gantry that goes forward and back (two strokes per period) the RMS is understated by sqrt(2) and the candidate status reads 'pass' where the truth is 'fail'. Nothing in the output warns; the only hint is net_travel 1 m and profile_duration 2.4 s. The tool description says 'the rest is a zero-speed dwell', the skill says 'the RMS covers the repeating cycle', neither says one stroke.",
+   "evidence": "electric_drive_sizing(belt, distance 1 m, move_time 0.8 s, acceleration_time 0.2667 s, cycle_time 2.4 s, load_mass 82.878 kg, radius 0.03183 m, gear_ratio 5, efficiency 0.9312, Coulomb 15 N, candidate ECMA-C20807 0.000133 kg*m^2 2.39 N*m 7.16 N*m 3000 rpm 5000 rpm) -> rms_torque 1.834 N*m, status 'pass within stated profile and scalar limits', drive_profile.csv rows: accel, cruise, decel, then 'dwell 1.6 s'. Same inputs with cycle_time 1.2 s (one stroke plus its own dwell) -> 2.593 N*m 'fail'; explicit 8-row profile (fwd, 0.4 s dwell, back, 0.4 s dwell) -> 2.593 N*m, and 4.366 N*m / 7.446 N*m for 0.6 s (truth 4.369 / 7.45).",
+   "fix": "electric_drive_sizing: add `strokes_per_cycle` (default 1) or `return_stroke=true` for the shortcut (second mirrored move), and always add a warning when cycle_time is given with distance: 'the cycle has ONE move of move_time followed by a dwell of cycle_time - move_time; for forward + return give return_stroke=true or a full profile'. Skill eng-motor-drive-sizing section 3: replace 'the RMS covers the repeating cycle' with 'one stroke per cycle_time; a forward-and-back cycle needs return_stroke or a profile'."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-11",
+   "kind": "model_error",
+   "severity": "high",
+   "what": "New. The assistant set cycle_time 2.4 s for a cycle that contains forward move 0.8 s + dwell 0.4 s + return 0.8 s + dwell 0.4 s, and did not do the skill's hand check of RMS over the whole cycle. It also never loaded any skill, so the skill's 'return stroke' prompt in section 1 and the rule 'with a profile write every phase' never reached it. It then told the person the motor passes with 23 % margin.",
+   "evidence": "Turn 3 tool input: move_time 0.8 s, cycle_time 2.4 s (no profile); text 'RMS 1.83 N*m, 額定 2.39 N*m, 餘量 0.56 N*m（約 23%），通過'. Turn 2 input already used cycle_time 2.0 s with 0.6 s dwell (misread of the person's 0.4 s) and gave RMS 2.10 'pass'.",
+   "fix": "Put the one-stroke fact in the tool (see -10) because no skill was loaded: transcript.json shows no Skill call in any of the 3 turns for this scenario."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-12",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "New. No skill was loaded for a motor-sizing conversation: eng-motor-drive-sizing (which now contains the rated-power rule, the speed-vs-max rule, the PNG rule and the torque-speed recipe) was not read, and eng-toolkit was not read. All of round 1's skill fixes (-1, -3, -4) were therefore not exercised this run, yet the model behaved better on speed (correct vs max speed) because the tool's status text changed. Turn 1 asked no profile or pulley question, passed format 'svg' explicitly, and repeated the 'power is a hard limit' error.",
+   "evidence": "tools per turn: turn 1 electric_drive_sizing x4, Read x2, plot_xy; turn 2 electric_drive_sizing; turn 3 electric_drive_sizing, Read x2, plot_xy. No Skill.",
+   "fix": "Make the plugin load more reliably: the eng-toolkit skill's first line could be mirrored in the MCP server instructions, and each domain tool description should carry its one worst trap (here: one stroke per cycle_time; rated power is not a limit; peak speed vs max speed). Evidence that tool-text fixes work: the speed-vs-max handling improved with no skill."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-2",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "(still open) Turn 1 asked nothing about profile, dwell, pulley or gearbox and filled the gaps (30 mm radius, 0 N / 50 N friction, 2e-4 rotor inertia, 0.95 efficiency, no dwell, triangle, recalled datasheet), then gave a bold verdict and a 3 kW recommendation. The person had to correct inputs in turns 2 and 3 (turn 3 also had to correct the dwell time the assistant had changed to 0.6 s).",
+   "evidence": "Turn 1 first call: radius '0.03 m', efficiency 0.95, coulomb_friction '0 N', candidate rotor '0.0002 kg*m^2'; person turn 2: '欸，你這些是假設的吧？'",
+   "fix": "eng-motor-drive-sizing section 1 already says ask; make the electric_drive_sizing tool refuse (or warn loudly) a candidate row without a stated source, or return `inputs_assumed` in data so the report must list them."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-4",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "(still open) Peak mechanical power compared with the 750 W rating as a hard limit: 'power cannot be fixed by gear ratio, 750 W is not enough, 3 kW class'. The skill now has the rule 'rated power is a continuous rating' but it was not loaded, and the claim stays uncorrected through turn 3 (where the same motor passes at 1.2 kW peak power).",
+   "evidence": "Turn 1: '機械峰值功率 約 3.1 kW 遠超 750 W ... 750 W 馬達無論怎麼換齒比都不夠 ... 需要 3 kW 等級的伺服馬達'",
+   "fix": "Tool: electric_drive_sizing result could carry `data.power_note`: 'peak power vs rated power is not a servo criterion; compare RMS and peak torque at speed'. Same one-line in the tool description."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-7",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "(still open) belt model has no pulley/idler inertia input and candidate rows take no gearbox input inertia; the assistant folded them by hand (82.878 kg, 1.33e-4) and labelled it, correctly this time.",
+   "evidence": "Turn 3: load_mass '82.878 kg', rotor '0.000133 kg*m^2'",
+   "fix": "Add pulley_inertia and gearbox_input_inertia parameters."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-8",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "(round 1: no chart reached the person; now a plot_xy chart reaches him, but still as an SVG path) The assistant called plot_xy with format 'svg' explicitly and handed over a markdown image link and a plot.svg path, no PNG, no description of axis ranges. The harness rasterised the SVG, so the person 'saw' it; a real person would again have an SVG path.",
+   "evidence": "plot_xy input '\"format\": \"svg\"'; assistant text '圖檔路徑: ...\\plot.svg'",
+   "fix": "Default format 'both' in plot_* (see M3-5); one line in the plot_xy description: 'give the person data.png_path'."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-13",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "New. After the person corrected the inputs, the assistant switched to the 0.8 s move the person said he could accept and never gave the 0.6 s result he asked for (the truth answer), nor an explanation of what 0.6 s needs. Even if the 0.8 s analysis had been right, the primary requirement was dropped.",
+   "evidence": "Turn 3 conclusion '0.8 秒、循環 2.4 秒下，ECMA-C20807 通過'; no 0.6 s run after turn 1.",
+   "fix": "Skill report section: 'always show the requested case first, then alternatives'. Model behaviour."
+  },
+  {
+   "id": "M4_gantry_servo_sizing-14",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "New. The chart limit lines stop at 3000 rpm because the toolkit has no torque-speed envelope for a candidate; the assistant drew horizontal lines to 3000 rpm and said the datasheet curve is missing. Legend entries were truncated again with an ellipsis (tool warning ignored), CJK text rendered in a fallback font.",
+   "evidence": "Final PNG: legend 'peak limit 7.16 N*m (to 3,000...' and 'continuous limit 2.39 N*m (to 3,000...' cut; assistant text '圖例文字因工具限制被截短'.",
+   "fix": "Let the candidate row take an optional envelope (speed:torque pairs) and draw it; wrap legend text instead of ellipsis."
+  }
+ ],
+ "what_worked": [
+  "With the person's data the single-stroke inputs were all correct: 82.878 kg equivalent mass, 0.03183 m radius, 0.9312 efficiency, 1.33e-4 kg*m^2, trapezoid with acceleration_time 0.2667 s, Coulomb 15 N. Peak torque 4.23 N*m, 2813 rpm, inertia ratio 25.3 are exact for the 0.8 s move.",
+  "Round-1 errors gone: speed is judged against the 5000 rpm maximum (3751 rpm 'above rated, within max, curve needed'), the inertia ratio is reported, no hand-written SVG, no blocked tools, no double-counted inertia.",
+  "Recalled datasheet values were labelled unverified, the person confirmed them, and the assistant used his corrections each time.",
+  "plot_xy with inline series worked first time and produced a chart with units, limit lines and vertical speed markers (the data content was the problem, not the drawing)."
+ ],
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "FAIL",
+  "fixed": [
+   "M4_gantry_servo_sizing-1",
+   "M4_gantry_servo_sizing-3",
+   "M4_gantry_servo_sizing-5",
+   "M4_gantry_servo_sizing-6",
+   "M4_gantry_servo_sizing-9"
+  ],
+  "still_open": [
+   "M4_gantry_servo_sizing-2",
+   "M4_gantry_servo_sizing-4",
+   "M4_gantry_servo_sizing-7",
+   "M4_gantry_servo_sizing-8 (PNG hand-over)"
+  ],
+  "new": [
+   "M4_gantry_servo_sizing-10",
+   "M4_gantry_servo_sizing-11",
+   "M4_gantry_servo_sizing-12",
+   "M4_gantry_servo_sizing-13",
+   "M4_gantry_servo_sizing-14"
+  ],
+  "regressed": [
+   "final verdict and RMS: round 1 ended with the right RMS 4.37 / 2.59 N*m and 'not adequate' (via an explicit 8-row profile); round 2 ended with a false pass (RMS 1.83) because the shortcut was used"
+  ]
+ },
+ "skills_used": "None. No Skill call in any turn, so eng-motor-drive-sizing and eng-plot-results (which now hold the right guidance) were never in play. Nothing a skill said misled the assistant."
+}

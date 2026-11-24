@@ -1,0 +1,264 @@
+{
+ "id": "M3_air_receiver_manway",
+ "verdict": "PARTIAL",
+ "one_line": "Better than round 1 (3 turns instead of 7, hemisphere trap caught in turn 1, shell 4.57 mm / 2:1 end 4.58 mm / 6 mm plate / bolt torque 88.1 N*m / utilisation 0.78 / 6-16 bar chart data all right, scope limits flagged). But the bolt-fatigue factor is still 1.72 against a truth of 12.3 (the skill text that says how was ignored), the hydrotest stress uses the corroded wall (200.8 vs 166.4 MPa, conservative), the chart read-out in the text is wrong at two points (10 bar, 12 bar), and the picture was handed over as an SVG path although a PNG was possible.",
+ "goal_met": false,
+ "turns": 3,
+ "answers": [
+  {
+   "item": "allowable_design_stress_MPa",
+   "truth": "170.8",
+   "assistant_said": "170 MPa (hand, 'Rm/2.4 = 170.8', from memory, labelled unverified); 170 used in the tool",
+   "result": "right"
+  },
+  {
+   "item": "shell_required_thickness_EN13445_mm",
+   "truth": "4.56",
+   "assistant_said": "4.57 mm (machine_pressure_vessel thin, joint_efficiency 0.85, allowable 170 MPa: 4.567; Lame 4.585 quoted as 4.58)",
+   "result": "right"
+  },
+  {
+   "item": "shell_plate_to_order (incl. 1 mm corrosion + 0.3 mm tolerance) / commercial plate",
+   "truth": "5.86 -> 6 mm",
+   "assistant_said": "4.57 + 1 + 0.3 = 5.87 -> 6 mm; remaining margin 0.13 mm stated",
+   "result": "right"
+  },
+  {
+   "item": "ellipsoidal_2to1_end_required_mm",
+   "truth": "4.55",
+   "assistant_said": "4.58 mm (hand, EN 13445-3 form from memory, labelled) -> same 6 mm",
+   "result": "right"
+  },
+  {
+   "item": "reject the hemisphere (sphere) formula for the dished end",
+   "truth": "2.28 mm is wrong for a 2:1 end",
+   "assistant_said": "Turn 1: sphere gives 1.76 mm only for a TRUE hemisphere; a dished end (2:1 or torispherical) cannot use it; asks which head it is. After the supplier fact: 2:1 end 4.58 mm",
+   "result": "right"
+  },
+  {
+   "item": "hydrotest_pressure_bar",
+   "truth": "15.73",
+   "assistant_said": "1.43 x 11 bar = 1.573 MPa",
+   "result": "right"
+  },
+  {
+   "item": "hydrotest_membrane_stress_MPa (new wall 5.7 mm) vs allowable Re/1.05 = 252.4",
+   "truth": "166.4 vs 252.4 -> passes",
+   "assistant_said": "200.8 MPa on the corroded wall 4.7 mm vs 0.95 Re = 251.75 MPa (limit from memory, labelled) -> passes",
+   "result": "wrong"
+  },
+  {
+   "item": "required_thickness_vs_design_pressure 6..16 bar (incl. c): 3.78 / 4.61 / 5.45 / 6.28 / 7.11 / 7.95",
+   "truth": "see left",
+   "assistant_said": "Plotted 3.797 (0.6 MPa) ... 5.467 (1.0) ... 6.304 (1.2) ... 7.981 (1.6 MPa): all within 0.5 %",
+   "result": "right"
+  },
+  {
+   "item": "chart read-out in the text (which plate at which pressure)",
+   "truth": "10 bar 5.45 mm -> 6 mm; 12 bar 6.28 mm -> 6.5 or 7 mm; 16 bar 7.95 mm -> 8 mm",
+   "assistant_said": "'10 bar 需 6 mm（5.9 mm）' (5.9 is the 11 bar value), '12 bar 起需 8 mm（6.3 mm）' (6.3 mm needs 6.5 or 7 mm, not 8)",
+   "result": "wrong"
+  },
+  {
+   "item": "out_of_scope flagged (nozzle reinforcement, saddles, code stamp, welds, vessel fatigue)",
+   "truth": "all flagged",
+   "assistant_said": "nozzle reinforcement (d/sqrt(D e) = 2.6, 'no pad usually not enough', labelled guess), saddles/Zick, EN 13445 calc book, PED module, gasket, weld details, NDT all listed as outside the toolkit",
+   "result": "right"
+  },
+  {
+   "item": "pressure force on cover / per bolt",
+   "truth": "45.7 kN / 5.713 kN",
+   "assistant_said": "5.72 kN per bolt (hand)",
+   "result": "right"
+  },
+  {
+   "item": "preload 75 % Fp / torque K 0.2 / bolt max load C 0.25 / utilisation",
+   "truth": "36.67 kN / 88.0 N*m / 38.1 kN / 0.779",
+   "assistant_said": "36.7 kN / 88.1 N*m / 38.1 kN / 0.78 (mech_bolt_check with proof_strength 580 MPa)",
+   "result": "right"
+  },
+  {
+   "item": "joint_separation_margin_x",
+   "truth": "8.56",
+   "assistant_said": "separation load 48.9 kN vs 5.72 kN per bolt, 'large margin' (ratio not stated)",
+   "result": "right"
+  },
+  {
+   "item": "fatigue_stress_amplitude_MPa",
+   "truth": "3.08",
+   "assistant_said": "about 3.1 MPa (hand); mean 447 MPa",
+   "result": "right"
+  },
+  {
+   "item": "fatigue_goodman_safety_factor_Se129 (Shigley preloaded bolt, constant preload)",
+   "truth": "12.3",
+   "assistant_said": "1.72 (fatigue_sn correction mode, proportional scaling); 'about 1.6' if Kf 2.2 is added; recommends 1.6 as the conservative value; conclusion 'fatigue is not controlling'",
+   "result": "wrong"
+  },
+  {
+   "item": "does Se 129 MPa already include the thread notch",
+   "truth": "yes (Shigley Table 8-17, rolled thread); no extra Kf",
+   "assistant_said": "Turn 3: 'I cannot confirm', suggests dividing by Kf 2.2 as a possibility, tells the person to check the table note",
+   "result": "wrong"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "hemisphere (half-thickness) formula for a 2:1 ellipsoidal end",
+   "caught": true
+  },
+  {
+   "trap": "design pressure = relief-valve set pressure 11 bar, not 10 bar working",
+   "caught": true
+  },
+  {
+   "trap": "joint coefficient z = 0.85 (now an input: joint_efficiency)",
+   "caught": true
+  },
+  {
+   "trap": "EN 13445 denominators (-P, -0.5P) versus plain p r/t",
+   "caught": true
+  },
+  {
+   "trap": "corrosion allowance + under-tolerance added before rounding to a commercial plate",
+   "caught": true
+  },
+  {
+   "trap": "nozzle reinforcement outside the tool, must be flagged",
+   "caught": true
+  },
+  {
+   "trap": "bolt fatigue outside mech_bolt_check: hand calc clearly labelled or an honest 'not covered'",
+   "caught": false
+  },
+  {
+   "trap": "preload is a constant mean (Shigley bolt Goodman); Se 129 MPa already includes the thread notch",
+   "caught": false
+  },
+  {
+   "trap": "hydrotest is on the new (uncorroded) vessel, allowable Re/1.05",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 1 filled missing inputs (gasket diameter 300 mm, torque 60 N*m, E = 1.0, allowable 170 MPa, torispherical crown 1200 / knuckle 72 mm) and gave a bold conclusion and a 'bolt passes, utilisation 0.70' line from them. Every item was labelled as an assumption and a question list followed, but the skill says to ask before the first verdict. The values were replaced in turn 2 once the person gave data.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 3 tells the person it cannot confirm that Shigley's 129 MPa includes the thread factor and offers a Kf = 2.2 'conservative' safety factor of 1.6 (labelled guess). The skill the assistant loaded in turn 1 says the bolt Se already includes the notch. The chart values are a hand computation and were disclosed as such, but the text read-out contradicts the plotted data (10 bar '5.9 mm').",
+   "severity": "medium"
+  },
+  {
+   "issue": "Hand calculations and recalled values (f = 170.8, EN 13445-5 limit, 2:1 end formula, torispherical M factor) are labelled 'my arithmetic' or 'from memory, unverified' each time. No recalled number was passed off as tool output. The nozzle clause is cited as EN 13445-3 s7.5 (reinforcement of openings is clause 9; 7.5 is dished ends), marked unverified.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T141414Z-2768c94e-plot_xy_plot.png",
+   "score": 2,
+   "notes": "Data correct (spot check: 0.6 MPa 3.80, 1.0 MPa 5.47, 1.1 MPa 5.89 just under the 6 mm line, 1.6 MPa 7.98 on the 8 mm line). Title, y label with unit, 6 mm and 8 mm plate lines, markers: readable. Weak points: x axis is in MPa (0.4-1.8) although the person asked in bar (the label says 'MPa, 6 to 16 bar(g)'), no marker or line at the 11 bar design point, no commercial 6.5/7 mm steps. Delivery score 1: the assistant gave only the plot.svg path (format left at the default svg); this PNG exists because the harness rasterised the SVG for the person. A real person would have had an SVG path again (the round-1 failure)."
+  }
+ ],
+ "problems": [
+  {
+   "id": "M3_air_receiver_manway-1",
+   "kind": "model_error",
+   "severity": "high",
+   "what": "(still open from round 1) Bolt fatigue safety factor is wrong by about 7x. Preload treated as a fluctuating mean on a proportional-scaling Goodman line (fatigue_sn correction mode), instead of Shigley's preloaded-bolt form with constant preload. The conclusion 'not controlling' survives only because the error is conservative.",
+   "evidence": "fatigue_sn(mode correction, alternating 3.08 MPa, mean 447 MPa, goodman, endurance 129 MPa, ultimate 800 MPa) -> safety_factor 1.716, data.assumptions 'Safety scales mean and amplitude together'. Truth n = Se(Sut - si)/(Sut sa + Se(sm - si)) = 12.3. plugin/skills/eng-machine-design/SKILL.md section 4 already says: 'fatigue_sn correction mode assumes proportional loading and does not apply'; the assistant loaded that skill in turn 1 and still used the tool.",
+   "fix": "Tool: fatigue_sn correction mode should warn (not only list in data.assumptions) when mean_stress/alternating_stress > 20: 'mean stress is nearly constant in a preloaded joint; proportional scaling is very conservative; see the bolt formula'. Add a constant-mean option (load line from the fixed mean). Skill eng-fatigue-check: add the preloaded-bolt paragraph (it is only in eng-machine-design)."
+  },
+  {
+   "id": "M3_air_receiver_manway-2",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "(still open) The preloaded-bolt guidance lives only in eng-machine-design; eng-fatigue-check has none. eng-toolkit, eng-fatigue-check and eng-plot-results were never loaded in this run (only eng-machine-design, turn 1). A model that does fatigue reaches for fatigue_sn without reading a skill.",
+   "evidence": "transcript.json tools: turn 1 Skill eng-toolkit:eng-machine-design only; turns 2-3 no Skill call.",
+   "fix": "Put one sentence in the fatigue_sn tool description: 'Bolted joints: preload is a constant mean, use the preloaded-bolt Goodman, not this mode (skill eng-machine-design section 4)'. Tool descriptions are always seen; skills are not always loaded."
+  },
+  {
+   "id": "M3_air_receiver_manway-8",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "(still open) Hydrotest stress computed on the corroded wall 4.7 mm instead of the new wall 5.7 mm. Conservative (200.8 vs 166.4 MPa), same verdict; the limit 0.95 Re from memory is about Re/1.05 and fine.",
+   "evidence": "machine_pressure_vessel(cylinder, 600 mm, 1.573 MPa, thickness 4.7 mm, allowable 170 MPa) -> hoop 200.8 MPa",
+   "fix": "eng-machine-design SKILL section 4: add 'hydrotest: on the new (uncorroded) wall minus under-tolerance only; allowable Re/1.05 (EN 13445-5 10.2.3.3)'."
+  },
+  {
+   "id": "M3_air_receiver_manway-11",
+   "kind": "docs",
+   "severity": "low",
+   "what": "(still open) fatigue_sn refusal in correction mode still names param /mode, not the offending argument /cycles.",
+   "evidence": "fatigue_sn(mode correction, cycles 1.46e6 cycle ...) -> error input.invalid, details.param '/mode', message 'correction mode accepts endurance as safety strength, not a curve or cycles'",
+   "fix": "details.param '/cycles' and message 'drop cycles in correction mode, or use mode=estimate'."
+  },
+  {
+   "id": "M3_air_receiver_manway-5",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "(round-1 tool_gap half fixed; the hand-over is still open) plot_xy can now write PNG, but the default is svg and the assistant gave only the plot.svg path. The eng-toolkit rule 9 and eng-plot-results (PNG, give data.png_path, describe the picture) were never loaded. The person 'saw' the chart only because the harness rasterises SVG files.",
+   "evidence": "plot_xy inputs.json: no format key -> default 'svg'; result.json artifacts list only plot.svg, inputs.json, plot_data.json; the assistant text gives the plot.svg path with no PNG.",
+   "fix": "Make plot_xy/plot_panels/plot_bar default to format='both' (PNG plus SVG) whenever the png engine is installed, and name data.png_path in the tool description. Skills alone do not reach a model that does not load them."
+  },
+  {
+   "id": "M3_air_receiver_manway-13",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "New: the chart read-out in the text is wrong in two places although the plotted data is right, and the plate steps are not commercial steps. It says 10 bar needs 6 mm (5.9 mm): 5.9 mm is the 11 bar point, 10 bar is 5.47 mm. It says 12 bar 'needs 8 mm (6.3 mm)': 6.30 mm rounds to 6.5 mm (the person asked for 0.5 mm steps); 8 mm is needed only above about 15.3 bar. The person said the plate choice was clear without noticing.",
+   "evidence": "'讀數：6 bar 需 4 mm（約 3.8 mm 取整），10 bar 需 6 mm（5.9 mm），11 bar 需 6 mm，12 bar 起需 8 mm（6.3 mm）'; plotted y: 5.467 at 1.0 MPa, 5.885 at 1.1, 6.304 at 1.2.",
+   "fix": "eng-plot-results report step: 'quote read-outs from data.series y values, not from memory of the picture; round to the person's plate steps'. Model behaviour."
+  },
+  {
+   "id": "M3_air_receiver_manway-14",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "New: turn 3 casts doubt on the person's correct statement that Shigley's 129 MPa includes the thread Kf, and proposes an unfounded Kf 2.2 giving a 'conservative' 1.6. This pushes the person toward a number that is 8x too low.",
+   "evidence": "'我不能確認 129 MPa 是否已含螺紋的 Kf ... 假設 Kf 約 2.2（推測）... 安全係數約 1.6 ... 建議以 1.6 作為保守值'",
+   "fix": "eng-machine-design already says 'it already includes the thread notch: no extra Kf'; repeating it in the fatigue_sn tool description is the reliable route (see -2)."
+  },
+  {
+   "id": "M3_air_receiver_manway-15",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "New: machine_pressure_vessel has no 2:1 / torispherical head form and no pressure sweep. The head value and the six chart points were hand computations typed into plot_xy as inline series (disclosed), and the skill's stand-in allowable = fz - P/4 was not used.",
+   "evidence": "Turn 2 text: '曲線數值是我用上面的公式手算（不是工具結果）'; head 4.58 mm 'my arithmetic'.",
+   "fix": "Add geometry='ellipsoidal_2to1' (and torispherical) to machine_pressure_vessel, and a pressure list that returns a table CSV for plot_xy."
+  }
+ ],
+ "what_worked": [
+  "Turn 1 did not endorse the hemisphere idea: it ran the sphere case, explained it is valid only for a true hemisphere (the new tool warning is in the output) and asked for the head shape; after the supplier fact it gave 4.58 mm and the 6 mm plate.",
+  "joint_efficiency and corrosion_allowance now exist: shell 4.567 mm thin / 4.585 mm Lame with the person's z = 0.85, in one call, no tuned allowable.",
+  "mech_bolt_check with proof_strength 580 MPa and load_share 0.25 gave torque 88.08 N*m, bolt load 38.13 kN, utilisation 0.780: exact against the truth.",
+  "Asked an ordered list of missing inputs after the first answer; the person gave everything in one message, so the whole job took 3 turns (round 1: 7).",
+  "Scope limits (nozzle, saddles, code stamp, welds, gasket) were listed in every turn and hand calculations were labelled."
+ ],
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PARTIAL",
+  "fixed": [
+   "M3_air_receiver_manway-3",
+   "M3_air_receiver_manway-4 (joint efficiency, corrosion allowance and the sphere warning are in the tool; no ellipsoidal head yet, see -15)",
+   "M3_air_receiver_manway-6",
+   "M3_air_receiver_manway-7 (partly: turn 1 still computes from guessed inputs, but labels them and asks)",
+   "M3_air_receiver_manway-9",
+   "M3_air_receiver_manway-10 (assistant passed proof_strength 580 MPa)",
+   "M3_air_receiver_manway-12"
+  ],
+  "still_open": [
+   "M3_air_receiver_manway-1",
+   "M3_air_receiver_manway-2",
+   "M3_air_receiver_manway-5 (PNG hand-over)",
+   "M3_air_receiver_manway-8",
+   "M3_air_receiver_manway-11"
+  ],
+  "new": [
+   "M3_air_receiver_manway-13",
+   "M3_air_receiver_manway-14",
+   "M3_air_receiver_manway-15"
+  ],
+  "regressed": []
+ },
+ "skills_used": "Turn 1: Skill eng-toolkit:eng-machine-design (right domain skill). eng-toolkit, eng-fatigue-check and eng-plot-results never loaded. The skill did not mislead; its bolt-fatigue and sphere-versus-dished-end guidance was correct and partly followed (proof_strength 580, ask-first list, sphere caveat); its fatigue sentence was ignored."
+}

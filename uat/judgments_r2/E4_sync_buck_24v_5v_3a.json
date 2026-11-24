@@ -1,0 +1,62 @@
+{
+ "id": "E4_sync_buck_24v_5v_3a",
+ "verdict": "PASS",
+ "one_line": "10 uH, ripple 0.80 A (24 V) / 0.83 A (28 V), peak 3.40 / 3.42 A, efficiency 95.7 % at 24 V (truth 95.6 %) with a complete loss table, and a steady-state 28 V waveform from ngspice that agrees with the formula within 2 %; electric_converter now has a synchronous mode. Weak spots: turn 1 invented MOSFET data and led with 94.8 %, gate charge 8 nC was entered for one FET, and the minimum output capacitance for 20 mV (13.2 uF) was never stated.",
+ "goal_met": true,
+ "turns": 3,
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PASS",
+  "fixed": ["E4-1", "E4-2", "E4-6", "E4-7"],
+  "still_open": ["E4-3", "E4-4", "E4-5"],
+  "new": ["E4-8", "E4-9", "E4-10"],
+  "regressed": []
+ },
+ "answers": [
+  {"item": "inductance to buy", "truth": "8.8 uH for 30 % ripple at 24 V (9.13 uH at 28 V) -> standard 10 uH", "assistant_said": "10 uH standard value; 8.92 uH calculated for 0.9 A ripple; Isat must be >= 3.4 A, suggest >= 4 A; his 6 A part leaves about 1.75x", "result": "right"},
+  {"item": "inductor ripple, 10 uH, 24 V", "truth": "0.805 A pp", "assistant_said": "0.80 A (tool), simulation 0.79 A at the first (assumed-parts) run", "result": "right"},
+  {"item": "inductor ripple, 10 uH, 28 V (worst case)", "truth": "0.835 A pp", "assistant_said": "0.83 A (tool) / 0.82 A (simulation, 2.53 to 3.36 A)", "result": "right"},
+  {"item": "peak inductor current 24 V / 28 V", "truth": "3.402 / 3.417 A", "assistant_said": "3.40 / 3.42 A (tool); simulation 3.36 A at 28 V (open loop, Vout 4.90 V so the mean current is 2.94 A)", "result": "right"},
+  {"item": "output capacitance for 20 mV pp at 28 V", "truth": "13.2 uF minimum with 5 mohm ESR; 47 uF gives 4 to 8 mV", "assistant_said": "minimum never stated (electric_converter returns minimum_output_capacitance but it was not quoted); 2 x 22 uF = 44 uF gives 8.9 mV (tool) / 7.1 mV (sim), so 47 uF is not needed; derating check at 50 % capacitance gives 13.5 mV (labelled my arithmetic)", "result": "missing"},
+  {"item": "efficiency at 24 V, 3 A with his MOSFETs", "truth": "95.6 % +/- 1 point, total loss 0.689 W", "assistant_said": "95.7 %, total 0.68 W; 28 V: 95.3 %, 0.738 W. Loss table: overlap 0.431, DCR 0.181, low-side 0.044, dead time 0.042, gate 0.020, high-side 0.020, ESR 0.0003", "result": "right"},
+  {"item": "largest loss contributors", "truth": "V-I overlap 0.36 W (24 V), DCR 0.18 W, then dead time, low side, gate", "assistant_said": "overlap 58 %, DCR 25 %, low-side 6 %, dead time 5.7 %; hand check 0.5 x 28 x 3 x 20 ns x 500 kHz = 0.42 W", "result": "right"},
+  {"item": "simulated inductor ripple confirms the formula", "truth": "0.804 A (24 V), 0.834 A (28 V); formula and simulation within 3 %", "assistant_said": "0.79 (24 V, assumed parts) and 0.82 A (28 V, his parts) vs tool 0.83; statistics re-checked from result.csv: 0.789 / 0.821 A", "result": "right"},
+  {"item": "open-loop Vout and a lossless simulation cannot give efficiency", "truth": "Vout about 4.99 V open loop; a lossless-switch simulation cannot give efficiency", "assistant_said": "Vout 4.90 V (duty 0.179 slightly low), explained as fixed duty not compensating Rds and DCR; said the simulation has no overlap loss so it cannot verify that loss", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "electric_converter without loss inputs returns about 99.99 % efficiency", "caught": true},
+  {"trap": "Start-up transient polluting the simulated ripple (naive tran from 0)", "caught": true},
+  {"trap": "Ideal-switch simulation cannot give efficiency", "caught": true},
+  {"trap": "Converter tool is nonsynchronous (round 1); now has synchronous, low_side_resistance, dead_time", "caught": true},
+  {"trap": "Worst case at 28 V input, not 24 V", "caught": true},
+  {"trap": "plot x_range takes decimals in seconds", "caught": true},
+  {"trap": "gate_charge for a synchronous stage is the sum of both FETs", "caught": false},
+  {"trap": "Ask for the part data before an efficiency figure", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 chose MOSFET 40/15 mohm, Qg 20 nC, ESR 10 mohm, ripple target 50 mV without asking and put 'efficiency about 94.8 %' in the first (bold) conclusion line. It did list them under 'assumptions' and said they were not checked against datasheets, but the person had to correct all of them in turn 2.", "severity": "medium"},
+  {"issue": "Gate drive loss 0.020 W is shown as 'gate drive (8 nC, 5 V)' although he has two FETs of 8 nC each (0.040 W). Total loss is 0.738 W instead of 0.758 W and efficiency 95.3 % instead of 95.2 %. Not disclosed.", "severity": "low"},
+  {"issue": "The 28 V simulated peak (3.36 A) differs from the tool (3.42 A) because the open-loop output is only 4.90 V (mean current 2.94 A, duty set a little low); both values are shown, the reason for the gap is not given. A design review could take 3.36 A as the peak.", "severity": "low"},
+  {"issue": "Labelling was good elsewhere: 'my arithmetic' for 5/24, 6/3.42 = 1.75, the derating case, loss shares; tool vs simulation columns kept apart; ESR 5 mohm assumed to be the whole bank and said so.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T140357Z-103eba40-plot_panels_plot.png", "score": 2, "notes": "Two panels (inductor current 2.53 to 3.32 A, switch node 0 to 24 V), 3 clean periods, axis titles with units. But it is the 24 V case with the assistant's invented parts (this is what the person complained about). Time ticks are raw seconds (6.41e-4), no ripple annotation, switch-node trace drawn dashed."},
+  {"file": "rendered/20261124T140604Z-c3ec2e55-plot_panels_plot.png", "score": 2, "notes": "The 28 V, his-parts case, correct data (2.53 to 3.355 A). The title is cut off with an ellipsis ('... MOSFET 12...') because it is too long for the sheet. Superseded by the next call."},
+  {"file": "rendered/20261124T140608Z-0e528aec-plot_panels_plot.png", "score": 3, "notes": "28 V worst case, steady state 2.100 to 2.106 ms, 3 periods; I_L from 2.53 to 3.355 A matches result.csv (0.821 A pp); switch node 0 to 28 V with -0.7 V dead-time dip. Legible and usable in a design review. Small nits: raw-seconds time ticks and no ripple marker."}
+ ],
+ "problems": [
+  {"id": "E4-3", "kind": "skill_gap", "severity": "medium", "what": "Still opens with invented part data and a headline efficiency (94.8 %) instead of asking for Vin range, MOSFET Rds/Qg, DCR, capacitor ESR. Cause: no Skill call in the transcript, so the ask-first rule in plugin/skills/eng-toolkit/SKILL.md ('converter: Vin range, part data') never reached the assistant.", "evidence": "Turn 1 call: switch_resistance '40 mohm', low_side_resistance '15 mohm', gate_charge '20 nC', capacitor_esr '10 mohm', target_output_ripple '50 mV'. Tool list of all 3 turns has no Skill entry. Turn 2 PERSON: '效率那個數字用的不是我的 MOSFET 啦'.", "fix": "gateway/server.py instructions: 'Before the first call in a domain load the plugin skill; it says which inputs to ask for.' Also put one line in the electric_converter description: 'Efficiency needs the person's Rds(on) (both FETs), Qg, rise/fall time, dead time, DCR and ESR: ask for them; do not assume.'"},
+  {"id": "E4-4", "kind": "model_error", "severity": "low", "what": "The minimum output capacitance for 20 mV pp was never stated although electric_converter returns minimum_output_capacitance when target_output_ripple is given. The person's question was answered for the 44 uF on hand only.", "evidence": "Re-run in-process (28 V, 12/6/20/5 mohm, 44 uF): result has values.minimum_output_capacitance. Truth 13.2 uF; the assistant's replies contain no such number.", "fix": "eng-motor-drive-sizing skill: 'Report minimum_output_capacitance next to the part the person has.' Tool: add a one-line summary string 'min C for target ripple: x uF' in data."},
+  {"id": "E4-5", "kind": "tool_gap", "severity": "low", "what": "plot_xy and plot_panels still label a microsecond window in raw seconds ('6.41e-4', '2.101e-3'); there is no x scale or offset.", "evidence": "All three rendered panels: x_label 'Time (s)', ticks 2.1e-3 ... 2.106e-3.", "fix": "Add x_scale (multiplier 1e6, label 'Time (us)') and x_offset, or auto SI-prefix ticks."},
+  {"id": "E4-8", "kind": "model_error", "severity": "low", "what": "gate_charge was entered as 8 nC (one FET). The tool description says 'sum of both FETs if synchronous=true' and the person said 'Qg 8n each', so gate loss is 0.020 W instead of 0.040 W.", "evidence": "Calls: gate_charge '8 nC' -> gate_drive_loss 0.02 W, efficiency 0.9531, total 0.7381 W. Re-run with '16 nC': 0.04 W, 0.9519, 0.7581 W.", "fix": "Accept 'gate_charge_per_fet' (and multiply by 2 internally) or reject a synchronous run whose gate_charge looks like a single FET; at minimum repeat 'both FETs: 16 nC for 2 x 8 nC' in the converter skill."},
+  {"id": "E4-9", "kind": "tool_bug", "severity": "low", "what": "plot_panels cuts a title that is too long with an ellipsis in the PNG instead of wrapping it, and draws the second panel trace dashed with no reason.", "evidence": "rendered/...c3ec2e55 title: '28 V in, 5 V out, 10 uH, 500 kHz: steady state, 3 cycles (open loop, MOSFET 12...'. The assistant noticed (it re-plotted with a short title).", "fix": "In domains/plot, wrap titles onto a second line before truncating and warn in the result when a title was shortened."},
+  {"id": "E4-10", "kind": "docs", "severity": "low", "what": "The truth script puts the ESR in series with the load instead of in series with the capacitor, so its 4.3 / 4.5 mV output ripple is lower than the capacitor-with-ESR value (about 7 to 9 mV). The assistant's netlist (ESR in series with C) is the better model; the truth tolerance '4 to 8 mV' still accepts it.", "evidence": "uat/truth/E4...py NETLIST: 'C1 out 0 47u ic=...', 'Resr out co 5m', 'Rload co 0'. Assistant: 'RESR out co 5m', 'COUT co 0 44u', sim ripple 7.1 mV.", "fix": "Change the truth netlist to 'C1 co 0 47u' (ESR in the capacitor branch) and re-derive vout_ripple."}
+ ],
+ "what_worked": [
+  "electric_converter now takes synchronous=true, low_side_resistance, dead_time and warns when no loss inputs are given (verified in-process: 'Ideal: no loss inputs were given ... not a prediction'). Round 1's E4-1 and E4-2 are gone and the loss table matches the truth within 0.02 W per line except gate drive.",
+  "Simulation done right without any skill: open-loop sync buck with S switches, body diode and dead time, steady window 2.0 to 2.2 ms (not the start-up), ripple 0.821 A (re-computed from result.csv) against the tool 0.83 A and formula 0.835 A.",
+  "Read the PNG it had just drawn (Read tool) and re-plotted with a shorter title when the first 28 V picture was clipped; used format both so a PNG path exists.",
+  "Handled both corrections in turn 2 and 3 (his parts, 28 V worst case, steady-state redraw, loss list) with tool-vs-my-arithmetic labelling and an honest 'sim has no overlap loss, cannot verify it'.",
+  "Cap derating caveat (DC bias) and the Isat margin (6/3.42 = 1.75) are useful and correctly labelled."
+ ]
+}

@@ -1,0 +1,232 @@
+{
+ "id": "S1_mezzanine_beam_ipe240",
+ "verdict": "PASS",
+ "one_line": "Right answer in 3 turns with a picture the person could use: IPE 240 fails L/360 (21.6 mm vs 16.7 mm, stress 148 MPa fine), IPE 270 is the smallest that passes (14.6 mm, 112 MPa), S275 = yield not allowable explained, and the final combined moment + deflection chart is a PNG path in kN*m and mm that the person pasted. Weak spots: turn 1 gave four split SVG charts in N*m and metres after three failed point-load inputs, the self-weight and the section data were handled late or from memory, and the hand shear figure (16 MPa) is about 25 % low.",
+ "goal_met": true,
+ "turns": 3,
+ "answers": [
+  {
+   "item": "load line / point load",
+   "truth": "7.5 kN/m (7.801 with self-weight) / 11.768 kN at 2 m",
+   "assistant_said": "7.5 kN/m, 11.77 kN at 2 m; self-weight 0.301 kN/m added in turn 2 (7.801)",
+   "result": "right"
+  },
+  {
+   "item": "reactions, M_max and location (no self-weight)",
+   "truth": "30.345 / 26.423 kN, 46.544 kN*m at 2.477 m",
+   "assistant_said": "30.35 / 26.42 kN, 46.55 kN*m at 2.48 m",
+   "result": "right"
+  },
+  {
+   "item": "M_max with self-weight",
+   "truth": "47.859 kN*m at 2.497 m",
+   "assistant_said": "47.86 kN*m (tool), x about 2.5 m",
+   "result": "right"
+  },
+  {
+   "item": "sigma_max / utilisation vs fy",
+   "truth": "143.5 (147.6 with self-weight) MPa / 0.52 (0.54)",
+   "assistant_said": "143.5 MPa 52 % (turn 1, catalogue W 324.3 cm3); about 148 MPa estimated with self-weight; IPE 270 112 MPa 41 %",
+   "result": "right"
+  },
+  {
+   "item": "delta_max and position",
+   "truth": "21.019 mm at 2.928 m (21.64 mm at 2.93 m with self-weight)",
+   "assistant_said": "21.0 mm at 2.93 m; 21.6 mm with self-weight (tool max_member_deflection)",
+   "result": "right"
+  },
+  {
+   "item": "passes L/360 (16.67 mm)",
+   "truth": "false",
+   "assistant_said": "'21 mm 不行', exceeds by 5.0 mm",
+   "result": "right"
+  },
+  {
+   "item": "smallest_IPE_passing_L360 and its numbers",
+   "truth": "IPE 270; sigma 112.1 MPa; delta 14.62 mm",
+   "assistant_said": "IPE 270, 14.6 mm (L/410), 112 MPa; IPE 220 30.3 mm and IPE 240 21.6 mm shown as failing",
+   "result": "right"
+  },
+  {
+   "item": "S275 is yield, not allowable",
+   "truth": "fy = 275 MPa; ASD about 0.6 fy = 165 MPa; EC3 fy/gM0 with FACTORED loads",
+   "assistant_said": "'275 MPa 是 fy，不是容許應力'; EN 1993 design strength fy/gM0; example ASD factor 1.5 giving 183 MPa and 78 %; states loads are unfactored and no dynamic factor",
+   "result": "right"
+  },
+  {
+   "item": "not checked list",
+   "truth": "LTB (deck restrains), shear, web crippling, connections, vibration",
+   "assistant_said": "LTB, connections, vibration/dynamic factor, load factors named; web crippling not named; shear hand estimate 16 MPa (true max about 21.8 MPa with V Q /(I tw); average V/(h tw) = 20 MPa)",
+   "result": "right"
+  },
+  {
+   "item": "diagrams in kN*m and mm for the selected section, one picture",
+   "truth": "M peak 48.1 kN*m at 2.5 m; deflection peak 14.6 mm at 2.9 m",
+   "assistant_said": "One two-panel PNG, kN*m and mm, 0-6 m, peaks 48.095 and 14.621 (tool series y_max)",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "S275 is the yield strength, not a 275 MPa allowable",
+   "caught": true
+  },
+  {
+   "trap": "self-weight not in the person's load",
+   "caught": true
+  },
+  {
+   "trap": "mech_beam_bending cannot combine UDL + point load: use structures_frame",
+   "caught": true
+  },
+  {
+   "trap": "nodal maximum displacement is not the in-span maximum",
+   "caught": true
+  },
+  {
+   "trap": "roller_y for a horizontal beam",
+   "caught": true
+  },
+  {
+   "trap": "catalogue section values vs idealised I section",
+   "caught": true
+  },
+  {
+   "trap": "diagram axes in kN*m and mm for the report, one figure",
+   "caught": true
+  },
+  {
+   "trap": "deflection limit must be asked, not assumed",
+   "caught": true
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Section properties (IPE 220/240/270 I, A, W, kg/m) come from memory, not a tool, but each table says so ('記憶，未由工具查表') and turn 3 repeats it with 'check against the supplier catalogue before the report'. The values equal the catalogue.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 1 declared a first input error ('A = 4910 mm2, actual about 3910') and the point-load workaround; both disclosed. The shear estimate 'tau about 16 MPa (my arithmetic)' is about 25 % below the 21.8 MPa that VQ/(I tw) gives (30.35 kN, IPE 240); labelled as an unverified hand figure and not used for a decision.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 1 headline says strength is fine at 52 % of 275 MPa on unfactored service loads, with EC3 fy/gM0 as the design strength; the assumption (loads not factored, 1.35/1.5 would give about 75-80 %) is in the assumptions list and repeated in turn 3. The verdict stands either way.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T141932Z-396a9f46-plot_panels_plot.png",
+   "score": 2,
+   "notes": "Final chart, IPE 270: two stacked panels sharing x (0-6 m), M in kN*m (0-50, peak 48.1 at 2.5 m, visible kink at the 2 m point load), deflection in mm (0-15, peak 14.6 at 2.9 m), titles and units on both axes, sign convention in the panel titles, 1600 px PNG. Delivery 3: PNG path given, described with peaks and locations, person said 'kN*m and mm are clear, I paste this'. Missing: the L/360 = 16.7 mm reference line and peak labels (the skill suggests hlines), CJK glyphs in a decorative fallback font, x label small."
+  },
+  {
+   "file": "rendered/20261124T141728Z-f5bf791e-plot_xy_plot.png",
+   "score": 1,
+   "notes": "Turn 1 moment, member 1 only (0-2 m), y in N*m (0-50000), correct values; SVG path only. Split into two members because of the failed point-load syntax; unusable for a report as a diagram."
+  },
+  {
+   "file": "rendered/20261124T141729Z-3092a73c-plot_xy_plot.png",
+   "score": 1,
+   "notes": "Turn 1 moment, member 2, local x 0-4 m (not the beam coordinate), N*m; correct values, peak 46.5 kN*m at local 0.5 m (global 2.5 m). Not pasteable."
+  },
+  {
+   "file": "rendered/20261124T141731Z-b940576c-plot_xy_plot.png",
+   "score": 1,
+   "notes": "Turn 1 deflection member 1, metres (-0.0186 at 2 m), SVG path only; correct but split and in m."
+  },
+  {
+   "file": "rendered/20261124T141732Z-7dce0349-plot_xy_plot.png",
+   "score": 1,
+   "notes": "Turn 1 deflection member 2, local x, metres, min -0.0210 m at local 0.93 m (global 2.93 m); correct but split and in m."
+  }
+ ],
+ "problems": [
+  {
+   "id": "S1_mezzanine_beam_ipe240-6",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "New. The error for a malformed member point load says only 'expected (6,) nonempty comma-separated fields' and does not show the grammar. The assistant failed three times (7 fields, 7 fields, 5 fields), abandoned member point loads, split the beam into two members at the load node, and so produced two station CSVs and four split charts for turn 1.",
+   "evidence": "structures_frame member_loads 'e,point,global,2 m,0 N,-11772 N,0 N*m' -> input.invalid /member_loads/1 'expected (6,) nonempty comma-separated fields'; the grammar in plugin/skills/eng-structural-check/SKILL.md is 'member,point,local|global,x,Px,Py'.",
+   "fix": "Error message: 'member_loads point row: member,point,local|global,x,Px,Py (got 7 fields)'; same for uniform rows. Also accept the optional Mz or reject it by name."
+  },
+  {
+   "id": "S1_mezzanine_beam_ipe240-7",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "New. In turn 1 the assistant handed over four SVG paths (split by member, N*m and metres, local x for member 2) although the structural skill's last line says to rescale to kN*m and mm and hand over a PNG. It loaded eng-structural-check but not eng-plot-results; only after the person asked (turn 2) did it produce the one combined PNG. The model followed the skill text in turn 2 but not in turn 1.",
+   "evidence": "Turn 1 plot_xy calls: data_file member_1/2_stations.csv, y_columns 'M_N_m', 'v_local_m', no format (svg), y_label 'N*m' / 'm'; turn 2 plot_panels format 'both', inline series in kN*m / mm.",
+   "fix": "Default PNG (format both) in the plot tools; in structures_frame, write one merged `beam_stations.csv` (global x, M_kNm, V_kN, deflection_mm) when members are collinear, or add the unit conversion to plot_xy/plot_panels (see round-1 -2)."
+  },
+  {
+   "id": "S1_mezzanine_beam_ipe240-2",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "(round 1; PNG part fixed) plot_xy/plot_panels cannot rescale a column, so every kN*m / mm chart means retyping 62 station values as inline series by hand. It worked here (values match the tool CSV to 3 digits) but it costs tokens and invites typing errors.",
+   "evidence": "plot_panels inputs: series with 62 hand-copied points per panel; panels record 'title|y_columns|y_label|y_scale'.",
+   "fix": "Allow 'M_N_m*0.001' or 'M_N_m:kN*m' in y_columns, and merging two data_files on x."
+  },
+  {
+   "id": "S1_mezzanine_beam_ipe240-4",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "(still open) No IPE/HEA section table: I, A, W, weight for IPE 220/240/270 came from the model's memory (correct, labelled). Section A was first entered as 4910 mm2 (IPE 240 is 3912).",
+   "evidence": "Turn 1 text 'IPE240 約 30.7 kg/m（取自記憶，未驗證）'; first input A '4910 mm^2'.",
+   "fix": "Add an EN 10365 IPE/HEA/HEB table to structures_section (shape='IPE 240')."
+  },
+  {
+   "id": "S1_mezzanine_beam_ipe240-8",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "New. The hand shear estimate is low: 16 MPa where VQ/(I tw) gives about 21.8 MPa (V = 30.35 kN) and V/(h tw) gives 20.4 MPa. Not used for the decision (stress and deflection govern) and labelled unverified.",
+   "evidence": "'估計 τ ≈ 16 MPa（我的算術，未工具驗證）'",
+   "fix": "None needed beyond the label; a shear check input in mech_beam_bending or structures_section would remove the hand arithmetic."
+  },
+  {
+   "id": "S1_mezzanine_beam_ipe240-9",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "New. The final chart has no L/360 = 16.7 mm line and no peak annotations, although the eng-plot-results skill recipe shows hlines for limits and the whole question was about that limit. The person did not ask for it.",
+   "evidence": "plot_panels inputs: no hlines; panels spec 'title|w|label|linear'.",
+   "fix": "Skill eng-structural-check / eng-plot-results: 'on a deflection diagram draw the limit as hlines=\"16.67,L/360\" (single panel plot_xy) or state it in the title'; plot_panels could accept per-panel hlines."
+  },
+  {
+   "id": "S1_mezzanine_beam_ipe240-10",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "New. Turn 1 did not include the beam self-weight in the first analysis (noted it as an assumption with an estimate) and asked the person for the deflection limit after reporting; round 1 included self-weight unprompted. The person had to ask in turn 2. No harm: the estimate (21.7 mm) matched the later tool value.",
+   "evidence": "Turn 1 assumption 3: '未計梁自重 ... 我的估計：彎矩約增 4%，應力約 148 MPa，撓度約 21.7 mm'; person turn 2: '自重也幫我加進去算'.",
+   "fix": "eng-structural-check skill: 'add the member self-weight unless the person says it is included'."
+  }
+ ],
+ "what_worked": [
+  "Every number matches the truth within 1 %: M 46.55 / 47.86 kN*m, 143.5 / 148 MPa, 21.0 / 21.6 mm, IPE 270 14.6 mm and 112 MPa. Verdict (stress fine, L/360 fails, IPE 270) exactly right in 3 turns (round 1: 5).",
+  "structures_frame now reports max_member_deflection and warns when the in-span maximum exceeds the nodal maximum; the assistant quoted 21.0 mm at 2.93 m, not the nodal 18.6 mm.",
+  "The answer to 'S275 = 275 MPa allowable?' is correct and specific (yield, EC3 fy/gM0 with factored loads, ASD factor), and it asked for the deflection limit instead of assuming L/360, as the skill says.",
+  "Turn 2 delivered what the person asked in one step: IPE 220/240/270 compared with self-weight, one combined chart in kN*m and mm as a PNG with the full path, a text description of both peaks, and a short unit note. The person pasted it.",
+  "Assumptions (service loads, no dynamic factor, no LTB, memory-based section data) were listed and repeated in the closing message."
+ ],
+ "vs_round1": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "PASS",
+  "fixed": [
+   "S1_mezzanine_beam_ipe240-1",
+   "S1_mezzanine_beam_ipe240-3",
+   "S1_mezzanine_beam_ipe240-5",
+   "S1_mezzanine_beam_ipe240-2 (the PNG half; the unit-scaling half remains as a low gap)"
+  ],
+  "still_open": [
+   "S1_mezzanine_beam_ipe240-2 (unit scaling)",
+   "S1_mezzanine_beam_ipe240-4"
+  ],
+  "new": [
+   "S1_mezzanine_beam_ipe240-6",
+   "S1_mezzanine_beam_ipe240-7",
+   "S1_mezzanine_beam_ipe240-8",
+   "S1_mezzanine_beam_ipe240-9",
+   "S1_mezzanine_beam_ipe240-10"
+  ],
+  "regressed": []
+ },
+ "skills_used": "Turn 1: Skill eng-toolkit:eng-structural-check (right skill; its max_member_deflection and rescale-to-kN*m lines were applied in turn 2). eng-toolkit and eng-plot-results not loaded. The skill did not mislead; its point-load grammar was correct but the assistant did not copy it."
+}

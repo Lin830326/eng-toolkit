@@ -1,0 +1,230 @@
+{
+ "id": "S2_roof_truss_wind_uplift",
+ "verdict": "PARTIAL",
+ "one_line": "Round 2 gets the decision-critical result right (wind uplift governs, diagonals -7.63 kN, Euler 14.5 kN, util 1.05 with his factor 2, L50x50x5 fails, L70x6 passes, Iv not Ix) but the wind case omitted the eave joints, so the bottom-chord wind forces are 8-14 % too high and no reaction or hold-down force was ever reported; the criterion was not asked for (turn 3 said 'nothing above 100 %'), 1 turn was wasted, and the bar chart never reached the person.",
+ "goal_met": true,
+ "turns": 5,
+ "answers": [
+  {
+   "item": "snow+dead: top chord",
+   "truth": "-25.445 kN, all four panels",
+   "assistant_said": "-25.44/-25.45 kN (turn 3 and 4 tables)",
+   "result": "right"
+  },
+  {
+   "item": "snow+dead: bottom chord",
+   "truth": "+23.625 end, +15.75 middle kN",
+   "assistant_said": "+23.63 / +15.75 kN",
+   "result": "right"
+  },
+  {
+   "item": "snow+dead: diagonals and verticals",
+   "truth": "diagonals +10.085, verticals -6.3 / 0 kN",
+   "assistant_said": "+10.08, -6.30, 0",
+   "result": "right"
+  },
+  {
+   "item": "wind+dead: critical diagonals",
+   "truth": "-7.626 kN",
+   "assistant_said": "-7.63 kN (loads f,-2.16 kN,3.9 kN;g,0 N,3.9 kN;h,2.16 kN,3.9 kN)",
+   "result": "right"
+  },
+  {
+   "item": "wind+dead: top chord and verticals",
+   "truth": "top +15.75 / +18.08, verticals +4.76 kN",
+   "assistant_said": "+15.75 / +18.08, +4.76",
+   "result": "right"
+  },
+  {
+   "item": "wind+dead: bottom chord",
+   "truth": "-13.545 end panels, -7.59 middle kN",
+   "assistant_said": "-14.63 end, -8.67 middle (conservative by 8 % and 14 %)",
+   "result": "wrong"
+  },
+  {
+   "item": "reactions / uplift anchor (support force)",
+   "truth": "snow 12.6 kN up each end; wind 7.8 kN down (hold-down) each end",
+   "assistant_said": "never stated after turn 1 (unit-load run); the eave joints carrying half a panel were never loaded, so the model's reactions would be 9.45 / 5.85 kN",
+   "result": "missing"
+  },
+  {
+   "item": "Euler loads L50x50x5 diagonal / L80x80x8 top / L60x60x6 bottom",
+   "truth": "14.27 / 132.0 / 49.0 kN",
+   "assistant_said": "14.50 / 134.34 / 49.31 kN (polygon Imin 45,891 / 300,750 / 95,159 mm^4)",
+   "result": "right"
+  },
+  {
+   "item": "governing case and critical member",
+   "truth": "wind uplift; diagonals B1-T2 / B3-T2",
+   "assistant_said": "wind; diagonals (2,0)-(4,1.6) and (6,0)-(4,1.6)",
+   "result": "right"
+  },
+  {
+   "item": "utilisation of the diagonal with his factor 2",
+   "truth": "1.07, FAILS",
+   "assistant_said": "turn 3: '52.5 %, both cases below 100 %' (N/Pcr, FS 1.90 named but compared with no rule); turn 5 after he gave the rule: 105.2 %, fails",
+   "result": "right"
+  },
+  {
+   "item": "fix: which angle for the diagonals and does it pass",
+   "truth": "L60x60x6 gives 0.51 (passes)",
+   "assistant_said": "L70x6: 31.5 % under his rule, passes; never tested L60x60x6 or L63 under his rule (over-sized but correct)",
+   "result": "right"
+  },
+  {
+   "item": "does the bottom chord also need changing",
+   "truth": "L60x60x6 in compression under wind: 0.55 with the correct force",
+   "assistant_said": "59.3 % (force 14.63 kN, 8 % high), no need to change",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "Ix (parallel axis, 11.0 cm4) instead of the minor principal Iv (4.5 cm4) for the angle",
+   "caught": true
+  },
+  {
+   "trap": "snow governs because 1.05 > 0.65 kN/m2",
+   "caught": true
+  },
+  {
+   "trap": "the biggest-force / longest bar (top chord) is the critical one",
+   "caught": true
+  },
+  {
+   "trap": "wind normal to the slope must be resolved into Fx and Fy at every joint; horizontals do not cancel in the member forces",
+   "caught": true
+  },
+  {
+   "trap": "eave (support) joints also carry half a panel of the wind load; the horizontal part at the roller joint loads the bottom chord",
+   "caught": false
+  },
+  {
+   "trap": "pinned-end buckling length = joint to joint (K=1) and Euler with the person's factor 2",
+   "caught": true
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 3 told the person both cases stay below 100 % with utilisation = N/Pcr although it printed 'safety factor 1.90' and never asked which factor he requires; with factor 2 the member fails. He supplied the rule only in turn 5.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 1 ran a full unit-load analysis on an assumed Pratt layout with E = 200 GPa before asking (the hard ask-first rule says ask BEFORE calculating). It was labelled as an assumption and concluded 'cannot judge safe or not', so the harm is limited.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 4 reports the diagonal as 96.8 % (secant, first-yield load 7.88 kN as capacity, e = 14.34 mm assumed) and turn 5 as 105.2 % (his rule): two different utilisations for the same bar in consecutive turns. Both labelled, but the secant load is a first-yield load and was not asked for.",
+   "severity": "low"
+  },
+  {
+   "issue": "Recalled values were labelled (angle dimensions, Q235 fy 235 MPa, KL/r limit 200 'from memory'); tool numbers named; arithmetic marked 'my arithmetic'. It told him the chart used the old a-h names and not to rely on it; no claim of a picture it did not make.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "ws/20261124T142207Z-fbfed1d1-plot_bar/plot.png",
+   "score": 2,
+   "notes": "Grouped bar chart of the 13 members, snow vs wind, signed kN, axis labels with units, legend, zero line, CJK renders, all 26 values labelled (labels shortened to 2 significant figures to fit: -15 for -14.625, 16 for 15.75). Data match the truth except the three wrong wind bottom-chord bars (-15 / -8.7 vs -13.5 / -7.6). Categories are the assistant's internal node codes (af, fg, ...) that the person said he could not map to his drawing, and the assistant itself disowned the picture in turn 4. It never reached the person: only a path was printed (no 'open in Explorer'), the persona was shown no picture (the runner does not copy native tool PNGs to rendered/), he said he could not open the chart in turns 4 and 5. Reach: no."
+  }
+ ],
+ "problems": [
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-1",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Eave (support) joints were left out of the load list in both cases. Wind: bottom-chord end panels -14.63 instead of -13.545 kN, middle panels -8.67 instead of -7.59 kN; reactions (7.8 kN uplift per end, the hold-down force) never computed or reported.",
+   "evidence": "transcript.json turn 3: loads 'f,-2.16 kN,3.9 kN;g,0 N,3.9 kN;h,2.16 kN,3.9 kN'. Judge re-run of structures_truss with the same members and 'a,-1.08 kN,1.95 kN;f,-2.16 kN,3.9 kN;g,0 N,3.9 kN;h,2.16 kN,3.9 kN;e,1.08 kN,1.95 kN' gives ab -13,545 N, bc -7,590 N (= truth) while the assistant's list gives -14,625 / -8,670 N.",
+   "fix": "eng-structural-check/SKILL.md section 3 (pressure normal to a sloped surface): add 'Load the eave and support joints too (half a panel): their vertical part goes straight into the support but their horizontal part at a roller joint loads the bottom chord. Report the reactions from the tool (wind uplift = hold-down force) and check them against the sum of the applied loads.'"
+  },
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-2",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "The assistant loaded only the base skill eng-toolkit:eng-toolkit and never eng-structural-check, although the base skill's routing list sends trusses there. The ask-for-criterion rule, the wind resolution rule (re-derived by the model itself this time), the secant caveat and the reaction check live only in the domain skill. In S3 and S4 the opposite happened: only domain skills were loaded, never the base skill, although each domain skill starts 'Load eng-toolkit first'.",
+   "evidence": "transcript.json Skill calls: S2 turn 1 ['eng-toolkit:eng-toolkit']; S3 turn 1 ['eng-toolkit:eng-structural-check', 'eng-toolkit:eng-3d-view']; S4 turn 1 ['eng-toolkit:eng-structural-check'].",
+   "fix": "plugin/hooks/hooks.json reminder and eng-toolkit/SKILL.md first paragraph: 'Before the first tool call load this skill AND the workflow skill from the routing list; each depends on the other.' Cheapest: repeat the hard rules (ask-first, labelled arithmetic, no hand-drawn charts, PNG hand-over, no invented factors) in the hook text, which every turn sees."
+  },
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-3",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "The acceptance criterion (safety factor against Euler) was never asked; turn 3 defined utilisation as N/Pcr and said no member exceeds 100 %, which reads as 'safe' to a person whose rule is factor 2.",
+   "evidence": "Turn 3: '最危險的是斜腹桿 bg、dg…使用率 52.5%…兩工況都沒有超過 100%'; same turn: '安全係數 1.90'. His rule appears only in turn 5.",
+   "fix": "eng-structural-check/SKILL.md section 1: 'For a compression bar ask which safety factor against Euler the user applies before printing a utilisation; define it as N / (Pcr / SF). If SF is unknown, give N/Pcr and the factor (1.90) without a pass or fail word.'"
+  },
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-4",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Flow: turn 2 declined to compute and asked for node coordinates and member pairs that the person's message already implied (diagonals from x=2 and x=6 up to the ridge, verticals at x=2, 4, 6, span 8 m, rise 1.6 m), and misread '13 members' as 13 web members. Turn 3's tables used node codes a-h that the person never saw ('af 看起來是下弦'), costing another turn.",
+   "evidence": "Turn 2: '我算出的 5 支腹桿與你說的 13 支也不一樣…需要你提供 1. 節點座標表…'; turn 4 person: '你的桿件名稱我看不懂'.",
+   "fix": "eng-toolkit/SKILL.md ask-first: 'Ask only for what cannot be inferred; restate the model you infer and run it.' eng-structural-check section 6: 'Name members by their end coordinates, never by internal node ids.'"
+  },
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-5",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Turn 4 replaced the person's Euler-factor rule with an unrequested eccentric secant model (assumed e = centroid-to-leg-face distance) and recommended L70x6 from it; everything was redone in turn 5 under his rule.",
+   "evidence": "Turn 4: '建議改用 L70x6，使用率 41.2%' (secant) vs turn 5 'L70x6 使用率 31.5%'.",
+   "fix": "eng-structural-check/SKILL.md section 4 item 7 says a secant load is a first-yield load; add 'Answer in the user's criterion first; offer the secant check as one extra line, not as the headline.'"
+  },
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-6",
+   "kind": "harness_artifact",
+   "severity": "medium",
+   "what": "The runner never showed the persona the PNG that plot_bar produced. rasterise() converts .svg, .pdf and .glb but copies no native .png, so for S2 and S4 the persona prompt said '(none yet)' and he asked for the picture every turn.",
+   "evidence": "transcript.json 'rendered': [] for S2 and S4 although ws/20261124T142207Z-fbfed1d1-plot_bar/plot.png exists (76,833 bytes); scripts/uat_run.py rasterise: only suffix .svg / .pdf / .glb.",
+   "fix": "scripts/uat_run.py rasterise: copy every ws/**/*.png into rendered/ so the persona sees what a client that shows images would show."
+  },
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-7",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "The PNG reaches the chat only as a file path in text. A person in a chat client gets no picture; the assistant answered 'I cannot show images here' and could not do better.",
+   "evidence": "Turn 3: 'plot_bar，檔案在 C:\\Users\\USER\\...\\plot.png'; turn 4: '我無法在這個對話裡顯示圖片'; turn 5: '我無法把圖片貼進對話'.",
+   "fix": "eng_toolkit/domains/plot/_output.py (and fem_view, geometry_view): besides data.png_path, return the PNG as an MCP image content block (or a base64 data URI) so clients that render images show it; keep the path for the rest. eng-plot-results section 6: tell the person to open the path in File Explorer."
+  },
+  {
+   "id": "S2_roof_truss_wind_uplift-r2-8",
+   "kind": "tool_bug",
+   "severity": "low",
+   "what": "plot_bar shortens value labels to fit the bar, so the printed label differs from the data (-15 for -14.625, 16 for 15.75, 24 for 23.625); on wider bars the same tool prints 4 significant figures (S4: 49.47, 145.4).",
+   "evidence": "S2 plot.png labels -25, 24, 16, 18, -15, -8.7, 4.8, 10, -7.6 for data -25.445, 23.625, 15.75, 18.078, -14.625, -8.67, 4.764, 10.085, -7.626.",
+   "fix": "eng_toolkit/domains/plot/bar.py: add a label_format parameter (default 3 significant figures) and rotate or shrink labels instead of cutting digits."
+  }
+ ],
+ "what_worked": [
+  "The wind load was resolved into Fx and Fy at the joints (outward horizontals 2.16 kN, zero at the ridge) and the diagonals came out at -7.626 kN, exactly the truth; round 1's central failure (vertical-only wind) is gone.",
+  "Angle sections built as structures_section polygons and the minor principal I used for buckling (L50x50x5: 45,891 mm^4, Pcr 14.50 vs 14.27 kN); the Ix trap is avoided and the sharp-corner idealisation is stated.",
+  "Clear explanation why wind governs although snow is the larger load, and why the bottom chord and diagonals go into compression under suction.",
+  "After the person gave his rule the answer was in his terms: 105.2 % fail for L50x50x5, 31.5 % pass for L70x6, 59.3 % bottom chord.",
+  "Honest labelling of memory values and of the stale chart; no invented load factors, E corrected to 210 GPa on request; limits (purlin bending, connection eccentricity, no code check) named."
+ ],
+ "vs_round1": {
+  "verdict_before": "FAIL",
+  "verdict_now": "PARTIAL",
+  "fixed": [
+   "S2_roof_truss_wind_uplift-1",
+   "S2_roof_truss_wind_uplift-2 (no invented Fink truss, loads or load factors; a Pratt layout was still assumed once and flagged)",
+   "S2_roof_truss_wind_uplift-3 (tool now writes PNG; delivery to the person is still path-only)",
+   "S2_roof_truss_wind_uplift-4 (all labels drawn now; shortened to 2 significant figures, see r2-8)",
+   "S2_roof_truss_wind_uplift-5 (assistant tools restricted; see r2-6 for the new runner gap)"
+  ],
+  "still_open": [
+   "S2_roof_truss_wind_uplift-6 (a secant first-yield model is again used unprompted)"
+  ],
+  "new": [
+   "S2_roof_truss_wind_uplift-r2-1",
+   "S2_roof_truss_wind_uplift-r2-2",
+   "S2_roof_truss_wind_uplift-r2-3",
+   "S2_roof_truss_wind_uplift-r2-4",
+   "S2_roof_truss_wind_uplift-r2-5",
+   "S2_roof_truss_wind_uplift-r2-6",
+   "S2_roof_truss_wind_uplift-r2-7",
+   "S2_roof_truss_wind_uplift-r2-8"
+  ],
+  "regressed": []
+ }
+}
