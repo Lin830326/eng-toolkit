@@ -662,6 +662,14 @@ uv run eng-toolkit doctor
 
 新增領域：在 `eng_toolkit/domains/<name>/` 建一個 FastMCP 子 server 與 `DOMAIN = DomainInfo(...)`；領域與引擎都是**被發現的**，不用改任何共用清單：套件下有 `DOMAIN` 就會掛上閘道，領域自己的 `engines.py` 寫 `ENGINES = (Engine(...), ...)` 就會進授權登記表。清單見 [docs/adding-a-domain.md](docs/adding-a-domain.md)。每個工具用 `runner.run_tool` 包裝，輸入過 `units.parse_quantity`，就自動符合契約、落檔與來源紀錄。
 
+## 貢獻
+
+歡迎回報錯誤、補驗證案例、新增工具或領域。issue 與 pull request 可以用英文或繁體中文。
+
+* 規則、環境設定與送 pull request 的步驟：[CONTRIBUTING.md](CONTRIBUTING.md)。
+* 新增領域的檔案清單與預算：[docs/adding-a-domain.md](docs/adding-a-domain.md)。
+* 安全漏洞不可開公開 issue，回報方式見 [SECURITY.md](SECURITY.md)。
+
 ## 設計紀錄
 
 * [docs/metrology-design.md](docs/metrology-design.md)：`metrology` 領域的設計決策（資料表自建、NumPy 而非 monaco、工具切分粒度）。

@@ -1,0 +1,38 @@
+name: New tool or domain
+description: Propose a tool, or a whole engineering domain. Open this before writing code so the scope and the license are agreed.
+labels: [enhancement]
+body:
+  - type: input
+    id: domain
+    attributes:
+      label: Domain
+      description: An existing domain (for example `fluids`) or the name of a new one. A domain holds at most 6 tools.
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: The engineering task
+      description: What an engineer wants to find out, with one worked example - inputs with units and the expected answer.
+    validations:
+      required: true
+  - type: textarea
+    id: engine
+    attributes:
+      label: Engine and its license
+      description: The library or program that would compute it, and its license. Imported libraries must be permissive (Apache, MIT, BSD, ISC, PSF); GPL programs can only run as a separate process; AGPL and non-commercial code cannot be used.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How the result can be checked independently
+      description: A closed-form solution, a textbook example (book, edition, example number), a standard, or a second engine.
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Who would build it
+      options:
+        - label: I can open the pull request.
