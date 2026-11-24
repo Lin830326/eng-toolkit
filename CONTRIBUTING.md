@@ -46,14 +46,15 @@ list, calls return `engine.unavailable` with the install hint, and their tests s
 | Add a tool to an existing domain | Read that domain's `docs/<domain>/` design notes, then the rules in [docs/adding-a-domain.md](docs/adding-a-domain.md). A domain holds at most 6 tools. |
 | Add a domain | Follow [docs/adding-a-domain.md](docs/adding-a-domain.md). Domains are discovered, so a new one lives in its own files. Open an issue first so the scope and the engine's license are agreed before you write code. |
 | Improve a workflow skill | The Claude Code plugin is in `plugin/`. `tests/` checks every skill and command frontmatter. |
-| Improve the documentation | Fix what misled you. The README is in 繁體中文; design notes are in English or 繁體中文. |
+| Improve the documentation | Fix what misled you. `README.md` is in English and `README.zh-TW.md` in 繁體中文; keep the two in step. The tool reference (`docs/tools/`) is in 繁體中文 for now, and translations are welcome. |
 
 ## Pull requests
 
 1. Branch from `main`. Keep one pull request to one topic.
 2. Run the tests and the doctor locally (commands above). Both must pass before you open the pull request.
 3. If you changed `pyproject.toml`, run `uv lock` and commit `uv.lock`. Never edit `uv.lock` by hand.
-4. Add or update the tool's section in `README.md` and the domain's design note. Say what is not verified.
+4. Add or update the tool's section in `docs/tools/<domain>.md` and the domain's design note. Say what is not verified.
+   A new tool or domain also changes its row in the domain table of `README.md` and `README.zh-TW.md`.
 5. Write the commit subject as one English line that says what changed and why it matters, as the existing history does.
 6. Fill in the pull request template.
 
