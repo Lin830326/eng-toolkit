@@ -12,6 +12,15 @@ import pytest
 
 OCP = pytest.importorskip("OCP")
 
+from eng_toolkit import external as _external  # noqa: E402
+from eng_toolkit.external_catalog import CCX as _CCX, GMSH as _GMSH  # noqa: E402
+
+# fem_mesh and fem_static report a missing program before they read the model (tests/test_fem_gateway.py), so a
+# refusal of the model itself can only be seen where the programs are installed.
+needs_programs = pytest.mark.skipif(
+    _external.locate(_GMSH)[0] is None or _external.locate(_CCX)[0] is None, reason="needs Gmsh and CalculiX"
+)
+
 import cad_fixtures as cad  # noqa: E402
 from fastmcp import Client  # noqa: E402
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing  # noqa: E402
@@ -61,6 +70,7 @@ def models(tmp_path, monkeypatch):
     }
 
 
+@needs_programs
 @pytest.mark.parametrize("tool,extra", [
     ("fem_mesh", {}),
     ("fem_static", dict(youngs_modulus="210 GPa", poisson_ratio=0.3, supports="x = 0 mm", loads="force (0 N, 0 N, -1 kN) on x = 100 mm")),
@@ -77,6 +87,7 @@ def test_not_closed_solids_are_refused_before_meshing(models, tool, extra, which
     assert "Traceback" not in str(result["error"])
 
 
+@needs_programs
 def test_the_loose_face_is_named(models):
     result = _call("fem_mesh", model_path=str(models["loose_face"]), element_size="10 mm")
     assert result["error"]["details"]["loose_face_ids"]  # F<n> numbering of geometry_measure

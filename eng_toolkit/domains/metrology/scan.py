@@ -13,7 +13,13 @@ unsigned.
 
 from __future__ import annotations
 
+import contextlib
 import math
+import os
+import shutil
+import tempfile
+import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -162,12 +168,41 @@ def _check_ply_complete(path: Path) -> None:
         )
 
 
+@contextlib.contextmanager
+def _ascii_alias(path: Path) -> Iterator[Path]:
+    """A path to the same file that Open3D can open.
+
+    Open3D opens files through the ANSI code page on Windows, so a name with characters outside that code page cannot be
+    read: a scan named in Chinese reads on a zh-TW machine and fails on an en-US one.  For a non-ASCII path this gives the
+    file an ASCII name for the duration of the read (a hard link where the volume allows it, otherwise a copy), next to the
+    file or in the temporary directory, whichever has an ASCII path.  With no such place the original path is tried as is.
+    """
+    if str(path).isascii():
+        yield path
+        return
+    folder = next((f for f in (path.parent, Path(tempfile.gettempdir())) if str(f).isascii()), None)
+    if folder is None:
+        yield path
+        return
+    alias = folder / f"eng-toolkit-scan-{uuid.uuid4().hex}{path.suffix.lower()}"
+    try:
+        try:
+            os.link(path, alias)
+        except OSError:
+            shutil.copyfile(path, alias)
+        yield alias
+    finally:
+        with contextlib.suppress(OSError):
+            alias.unlink()
+
+
 def read_scan_points(path: Path, to_mm: float) -> np.ndarray:
     o3d = _open3d()
     if path.suffix.lower() == ".ply":
         _check_ply_complete(path)
     try:
-        cloud = o3d.io.read_point_cloud(str(path))
+        with _ascii_alias(path) as readable:
+            cloud = o3d.io.read_point_cloud(str(readable))
     except Exception as exc:  # noqa: BLE001 - Open3D raises RuntimeError for unreadable files
         raise ToolFailure("input.invalid", f"scan_path: cannot read {str(path)!r}: {exc}", {"path": str(path)}) from exc
     points = np.asarray(cloud.points, dtype=np.float64)
