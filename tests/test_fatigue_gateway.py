@@ -10,6 +10,7 @@ from fastmcp import Client
 from eng_toolkit.domains import all_domains
 from eng_toolkit.gateway.server import gateway
 from tests.fatigue_testing import FM, MT, RF, SL, SN, close, validate, v
+from timing import budget
 
 CASES=[("fatigue_sn",SN),("fatigue_rainflow",RF),("fatigue_strain_life",{**SL,"strain_amplitude":"0.005 dimensionless"}),
        ("fatigue_fracture",FM),("fatigue_material",MT)]
@@ -78,7 +79,7 @@ async def test_hostile_6000_characters_under_second(name,args,param):
         r=await mcp(client,name,{**args,param:"("*6000})
         duration=time.perf_counter()-start
     assert not r.ok
-    assert duration<1,(name,duration)
+    assert duration<budget(1),(name,duration)
 
 
 @pytest.mark.parametrize("name,args",[

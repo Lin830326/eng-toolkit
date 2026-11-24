@@ -18,6 +18,7 @@ from eng_toolkit.domains.geometry import part
 from eng_toolkit.domains.geometry.part import OPS, check_expression, parse_spec
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.units import parse_quantity
+from timing import budget
 
 README = Path(__file__).resolve().parents[1] / "docs" / "tools" / "geometry.md"  # the tool reference of the domain
 DESCRIPTION_LIMIT = 5200  # characters; round 1 had 3900 for nine ops, round 2 adds seven features of the language (docs/geometry-drawing/make-part-round2.md)
@@ -501,7 +502,7 @@ def test_the_guard_runs_before_pint_so_hostile_input_is_rejected_quickly():
     assert done.returncode == 0, done.stderr
     outcomes = json.loads(done.stdout)
     assert [family for family, _ in outcomes] == ["input.invalid"] * len(HOSTILE)
-    assert max(seconds for _, seconds in outcomes) < 1.0
+    assert max(seconds for _, seconds in outcomes) < budget(1.0)
 
 
 @pytest.mark.parametrize(

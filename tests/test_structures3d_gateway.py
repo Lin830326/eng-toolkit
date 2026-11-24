@@ -9,6 +9,7 @@ from fastmcp import Client
 from eng_toolkit.domains import all_domains
 from eng_toolkit.gateway.server import gateway
 from tests.structures3d_testing import FRAME, validate
+from timing import budget
 
 
 PLATE = dict(length="1 m", width="1 m", thickness="10 mm", youngs_modulus="200 GPa")
@@ -102,7 +103,7 @@ async def test_hostile_6000_characters_finishes_under_one_second(name, args):
         result = await mcp(client, name, {**args, param: "("*6000})
         elapsed = time.perf_counter()-start
     assert not result.ok
-    assert elapsed < 1., (name, elapsed)
+    assert elapsed < budget(1.), (name, elapsed)
 
 
 FRAME_REFUSALS = [

@@ -8,6 +8,7 @@ import pytest
 
 from eng_toolkit.domains.optimize._expr import Expression, TrialError
 from eng_toolkit.errors import ToolFailure
+from timing import budget
 
 
 @pytest.mark.parametrize("text,expected", [
@@ -65,7 +66,7 @@ def test_hostile_limits(text):
     with pytest.raises(ToolFailure) as raised:
         Expression(text, ["a"])
     assert raised.value.family == "input.out_of_range"
-    assert time.perf_counter() - start < 1
+    assert time.perf_counter() - start < budget(1)
 
 
 @pytest.mark.parametrize("text", ["10^10^10", "pow(10,100000)", "(-1)^.5", "sqrt(-1)", "log(0)", "1/0", "exp(1000)"])

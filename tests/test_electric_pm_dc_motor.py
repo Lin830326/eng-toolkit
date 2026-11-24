@@ -8,6 +8,7 @@ import pytest
 
 from eng_toolkit.domains.electric.pm_dc_motor import pm_dc_motor
 from tests.electric_testing import call, close, ok, table, v
+from timing import budget
 
 
 DC = dict(voltage="24 V", resistance="2 ohm", torque_constant="0.1 N*m/A")
@@ -197,4 +198,4 @@ def test_pmsm_refusals(change):
 def test_hostile_quantity_is_bounded():
     start = time.perf_counter()
     assert not call(pm_dc_motor, **{**DC, "voltage": "1"*6000+" V"}).ok
-    assert time.perf_counter()-start < 1
+    assert time.perf_counter()-start < budget(1)

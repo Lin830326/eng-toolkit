@@ -11,6 +11,7 @@ from eng_toolkit.domains.plot._common import NUMBER, clean_text, number_token
 from eng_toolkit.domains.plot._decimate import decimate
 from eng_toolkit.domains.plot._svg import esc, fit, num, series_style, text_width
 from eng_toolkit.errors import ToolFailure
+from timing import budget
 
 
 def nice(t: float) -> bool:
@@ -147,7 +148,7 @@ def test_strict_numbers_and_linear_time_on_hostile_tokens():
     for token in ("1" * 6000 + "x", "9" * 6000, "(" * 6000):
         with pytest.raises(ToolFailure):
             number_token(token, "p", "token")
-    assert time.perf_counter() - start < 0.1
+    assert time.perf_counter() - start < budget(0.1)
     with pytest.raises(ToolFailure) as big:
         number_token("1e308", "p", "token")
     assert big.value.family == "input.out_of_range"

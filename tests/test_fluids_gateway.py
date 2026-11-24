@@ -9,6 +9,7 @@ from fastmcp import Client
 from eng_toolkit.domains import all_domains
 from eng_toolkit.gateway.server import gateway
 from tests.fluids_testing import CHANNEL, EXTERNAL, NETWORK, NOZZLE, PUMP, SURGE, validate
+from timing import budget
 
 CASES = [("fluids_pipe_network", NETWORK), ("fluids_pump_system", PUMP),
          ("fluids_open_channel", CHANNEL), ("fluids_compressible", {"mach": 2}),
@@ -85,7 +86,7 @@ async def test_6000_character_hostile_input_under_one_second(name, args, param):
         result = await mcp(client, name, {**args, param: "("*6000})
         elapsed = time.perf_counter()-start
         assert not result.ok
-        assert elapsed < 1, (name, elapsed)
+        assert elapsed < budget(1), (name, elapsed)
 
 
 BAD = [

@@ -13,6 +13,7 @@ from eng_toolkit.contract import ToolResult
 from eng_toolkit.domains import all_domains
 from eng_toolkit.gateway.server import gateway
 from tests.plot_testing import assert_finite, assert_safe_svg, polylines
+from timing import budget
 
 PLOT = {"plot_xy", "plot_panels", "plot_bar"}
 LINE = json.dumps([{"name": "a", "x": [0, 1, 2], "y": [0, 1, 4]}])
@@ -163,7 +164,7 @@ async def test_hostile_requests_are_refused_cleanly(tmp_path):
             assert parsed is not None, (tool, args)
             assert parsed.ok is False and parsed.error.family == family and parsed.error.details["param"] == param, (tool, param, parsed.error)
             assert len(parsed.error.message) < 1500 and parsed.warnings == []
-            assert elapsed < 1.0, (tool, param, elapsed)
+            assert elapsed < budget(1.0), (tool, param, elapsed)
 
 
 @pytest.mark.asyncio

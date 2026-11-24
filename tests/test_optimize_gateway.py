@@ -9,6 +9,7 @@ import pytest
 from eng_toolkit.domains import all_domains
 from eng_toolkit.gateway.server import gateway
 from tests.optimize_testing import validate
+from timing import budget
 
 
 CASES = [
@@ -78,7 +79,7 @@ async def test_expression_refusals_through_client(name, args, param, text):
         elapsed = time.perf_counter()-start
     assert not r.ok
     if len(text)>2000:
-        assert elapsed < 1
+        assert elapsed < budget(1)
 
 
 BAD = [
