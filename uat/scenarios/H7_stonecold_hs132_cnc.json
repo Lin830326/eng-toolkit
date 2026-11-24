@@ -1,0 +1,34 @@
+{
+  "id": "H7_stonecold_hs132_cnc",
+  "set": "holdout",
+  "domains": [
+    "geometry",
+    "dfm",
+    "3d-view"
+  ],
+  "persona": "Jason, 35, co-founder of a hardware start-up in Hsinchu, electronics background, no manufacturing training. He found a small heatsink in the KiCad 3D library and wants 20 prototype pieces machined. Writes short Traditional Chinese messages with English units, knows 'STEP' and 'CNC' but not 'tool axis' or 'internal corner radius'. Wants a plain yes/no, the weight for the material quote, and a coloured picture for the machine shop.",
+  "goal": "The mass of one heatsink in 6063 aluminium, the stock size (bounding box) to order, whether a shop can CNC mill it with a 2 mm end mill and 0.8 mm minimum walls when the spindle points along the length of the part, what exactly is a problem, and a coloured picture or 3D file with the problem faces marked.",
+  "opening": "我們要找 CNC 廠做 20 個這種散熱片 ({part}),材料 6063 鋁。STEP 檔在這。幫我算一下單顆重量,還有要訂多大的料。廠商說他們用 2mm 的銑刀,壁厚不能小於 0.8mm,這個做得出來嗎?有問題的地方可以用顏色標出來給我看嗎?",
+  "facts": {
+    "units": "the file is in millimetres; density of 6063 is 2700 kg/m3 (he says 'about 2.7 g per cubic centimetre').",
+    "file name belief": "he believes the part is 32 x 14 mm in section and, being a catalogue part, 25.4 mm tall (he has not checked: the model is 28.4 mm along its third axis).",
+    "tool": "the shop's smallest end mill is 2 mm DIAMETER (radius 1 mm); he says so if asked whether 2 mm is diameter or radius.",
+    "wall": "the shop wants every wall at least 0.8 mm thick.",
+    "spindle axis": "the shop will clamp the part in a vice and mill it from the end, with the spindle pointing along the 28.4 mm long direction of the model (the model's Z axis), so the 32 x 14 mm profile is cut from above. He does not know the words 'tool axis' and answers only a plain question such as 'from which end will the shop cut it?'",
+    "quantity": "20 pieces, one-off prototype run, he cares about price per piece but only asks for mass and stock size.",
+    "picture": "a picture he can mail to the shop, with the faces that cause trouble in a clear colour; he can open a GLB in the Windows 3D viewer, but a PNG is better.",
+    "what he does not know": "that the part is really an extruded profile, that the corners of the profile have no radius, and that this decides whether a 2 mm end mill can make it"
+  },
+  "files": {
+    "part": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/3dmodels/Heatsink.3dshapes/Heatsink_Stonecold_HS-132_32x14mm_2xFixation1.5mm.step"
+  },
+  "max_turns": 5,
+  "truth": "uat/truth/H7_stonecold_hs132_cnc.py",
+  "expect_picture": true,
+  "tool_check": "In-process on this file: geometry_measure density 2700 kg/m^3 -> volume 5447.03 mm3, mass 0.0147 kg, size 32.0 x 14.0 x 28.4 mm, one 3.2 mm hole depth 3.0 thru (matches the OCP truth). geometry_check_dfm cnc_milling limits {tool_radius 1.0 mm, min_wall 0.8 mm}: tool_axis +z gives 30 errors (cnc.internal_corner_radius, radius 0, material angles 225 x 24, 298 x 2, 307 x 2, 270 x 2; the truth counts the same 30 concave edges parallel to z), smallest_wall 1.4 mm; tool_axis +x and +y give 0 findings (the verdict flips with the axis). geometry_view color_by dfm with the same arguments writes view.glb and view.png (finding_count 30, 39 highlighted faces). If the assistant passes tool_radius '2 mm' (diameter mistaken for radius) every count stays the same here (corners are radius 0) but the stated limit is wrong. Rough edges to watch: default tool_axis if the assistant omits it; whether the assistant asks which end the shop cuts from.",
+  "leak_tokens": [
+    "HS-132",
+    "Stonecold",
+    "5447"
+  ]
+}

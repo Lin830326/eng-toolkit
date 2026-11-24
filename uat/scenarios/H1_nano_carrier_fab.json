@@ -1,0 +1,33 @@
+{
+  "id": "H1_nano_carrier_fab",
+  "set": "holdout",
+  "domains": [
+    "pcb"
+  ],
+  "persona": "Mei, 24, mechatronics master's student building a Nano adapter board for a lab project (not a PCB person). She started from KiCad's own Arduino Nano template, so she trusts it. Writes Traditional Chinese with English tool names, short messages, uses 'DRC' and 'gerber' because a classmate said them. Does not know the difference between a clearance error and an unconnected item.",
+  "goal": "A straight answer whether this board can go to the fab, with DRC status against the fab's 0.2 mm clearance rule, how many layers, the board outline size, what the drill sizes are, and a zip she can upload with gerbers and drill files, plus a picture of the board.",
+  "opening": "學長說這個 Nano 的板子可以直接拿去打樣,叫我先跑 DRC 確認沒問題。這幾個檔案是我從 KiCad 範本複製出來的:\n{file_a}\n{file_b}\n{file_c}\n板廠規定線距至少 0.2mm。可以幫我確認一下能不能送嗎?",
+  "facts": {
+    "fab rules": "the fab's capability sheet: minimum clearance 0.2 mm, minimum track width 0.2 mm, minimum finished drill 0.3 mm, maximum board 100 x 100 mm, 1 to 4 copper layers, 1.6 mm board.",
+    "wrong belief": "she thinks 'DRC 0 errors' means the board is finished and wired, and that a template from KiCad cannot have problems. She does not know the board has no copper tracks yet.",
+    "wants": "a zip with the gerber and drill files to upload, and a picture of the board; yes/no at the end",
+    "what she does not know": "which file is the board (.kicad_pcb), which is the schematic, what a .kicad_pro is",
+    "order": "10 pieces, 1.6 mm thick, she will accept 'not ready, because X' as long as X is stated plainly",
+    "if the assistant reports library or silkscreen warnings": "she asks whether those mean the copper is wrong",
+    "if told the board is unrouted": "she is surprised and asks which connections are missing"
+  },
+  "files": {
+    "file_a": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/template/Arduino_Nano/Arduino_Nano.kicad_pcb",
+    "file_b": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/template/Arduino_Nano/Arduino_Nano.kicad_sch",
+    "file_c": "C:/Users/USER/AppData/Local/Programs/KiCad/10.0/share/kicad/template/Arduino_Nano/Arduino_Nano.kicad_pro"
+  },
+  "max_turns": 5,
+  "truth": "uat/truth/H1_nano_carrier_fab.py",
+  "expect_picture": true,
+  "tool_check": "In-process on the template: pcb_info gives footprint_count 6, net_count 28, copper_layers 2, track_count 0, via_count 0, board 43.18 x 17.78 mm (agrees with kicad-cli stats). pcb_drc min_clearance '0.2 mm' min_track_width '0.2 mm': error_count 0, warning_count 11 (5 silk_edge_clearance, 6 library issues split out), unconnected_count 2 (agrees with kicad-cli: the 4 mounting-hole library warnings and 2 mismatch warnings are library noise).",
+  "leak_tokens": [
+    "Arduino_Nano",
+    "Arduino Nano",
+    "43.18"
+  ]
+}
