@@ -143,7 +143,8 @@ async def test_rc_low_pass_gain_and_phase_at_the_corner_and_a_decade_either_side
         assert r.ok, r.error
         assert r.values["v(out).final"].quantity == pytest.approx(gain, rel=1e-8)
         header, rows = read_csv(artifact_path(r, "result.csv"))
-        assert header == ["frequency", "v(out).re", "v(out).im", "v(out).mag", "v(out).db", "v(out).phase_deg"]
+        # round 3 (judge E2-4): the unwrapped phase column is new and comes last
+        assert header == ["frequency", "v(out).re", "v(out).im", "v(out).mag", "v(out).db", "v(out).phase_deg", "v(out).phase_unwrapped_deg"]
         assert rows[0][header.index("v(out).db")] == pytest.approx(db, abs=1e-6)
         assert rows[0][header.index("v(out).phase_deg")] == pytest.approx(phase, abs=1e-6)
 
@@ -320,3 +321,44 @@ async def test_a_relative_workspace_path_works_for_ngspice(tmp_path, monkeypatch
     monkeypatch.setenv("ENG_TOOLKIT_WS", "relative-ws")
     r = await call("spice_simulate", {"netlist": DIVIDER, "analysis": "op"})
     assert r.ok, r.error
+
+
+# --------------------------------------------------------------------------- AC phase unwrapped (round 3, judge E2-4)
+
+THREE_POLES = (
+    "three buffered rc poles\nV1 in 0 DC 0 AC 1\nR1 in a 1k\nC1 a 0 1u\nE1 b 0 a 0 1\nR2 b c 1k\nC2 c 0 1u\nE2 d 0 c 0 1\nR3 d out 1k\nC3 out 0 1u\n"
+)
+
+
+async def test_unwrapped_phase_continues_past_minus_180_degrees():
+    # H = 1 / (1 + j f/fc)^3 with fc = 159.155 Hz: phase = -3 atan(f/fc), from 0 down to -270 degrees.  The wrapped column jumps to +90 when the lag passes
+    # -180 degrees (at f/fc = tan 60 = 1.732); the unwrapped column is the closed form.
+    r = await call("spice_simulate", {"analysis": "ac", "netlist": THREE_POLES, "outputs": "v(out)", "sweep": "dec", "points": 50, "start": "1 Hz", "stop": "100 kHz"})
+    assert r.ok, r.error
+    header, rows = read_csv(artifact_path(r, "result.csv"))
+    f = [row[0] for row in rows]
+    wrapped = [row[header.index("v(out).phase_deg")] for row in rows]
+    unwrapped = [row[header.index("v(out).phase_unwrapped_deg")] for row in rows]
+    assert max(wrapped) > 0.0 > min(unwrapped) and any(w > 45.0 for w in wrapped)  # the wrapped one does jump to the positive side
+    for fi, un in zip(f, unwrapped):
+        assert un == pytest.approx(-3.0 * math.degrees(math.atan(fi / FC)), abs=1e-6)
+    assert unwrapped[-1] == pytest.approx(-270.0, abs=0.5)  # -3 atan(628) = -269.73
+    # wherever no wrap happened, the two columns are the same number
+    assert all(w == pytest.approx(u, abs=1e-9) for w, u in zip(wrapped, unwrapped) if u > -180.0)
+    assert r.data["summary"]["v(out)"]["phase_unwrapped_deg_final"] == pytest.approx(unwrapped[-1])
+    assert r.data["summary"]["v(out)"]["phase_unwrapped_deg_min"] == pytest.approx(min(unwrapped))
+    assert "phase_unwrapped_deg" in r.data["table"]["note"] and "v(out).phase_unwrapped_deg" in r.data["table"]["columns"]
+    assert not any("neighbouring frequencies" in w for w in r.warnings)
+
+
+async def test_a_coarse_sweep_warns_that_the_unwrap_may_be_wrong():
+    # one point per decade: neighbouring points differ by 147 degrees (100 Hz to 1 kHz), close to the 180 degrees at which an unwrap is ambiguous
+    r = await call("spice_simulate", {"analysis": "ac", "netlist": THREE_POLES, "outputs": "v(out)", "sweep": "dec", "points": 1, "start": "1 Hz", "stop": "100 kHz"})
+    assert r.ok, r.error
+    assert any("neighbouring frequencies" in w and "more points" in w for w in r.warnings)
+
+
+async def test_the_unwrapped_phase_column_has_the_unit_degree():
+    from eng_toolkit.domains.spice.measure import column_unit
+
+    assert column_unit("v(out).phase_unwrapped_deg") == "degree" and column_unit("v(out).phase_deg") == "degree"

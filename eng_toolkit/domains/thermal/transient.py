@@ -7,6 +7,8 @@ Formulas (textbook closed forms; Incropera, Cengel, Carslaw & Jaeger)
     plane wall   z tan z = Bi;       C1 = 4 sin z / (2 z + sin 2z);                shape = cos(z x*);       Q/Q0 = 1 - theta0* sin z / z
     long cylinder z J1(z)/J0(z) = Bi; C1 = 2 J1(z) / (z (J0^2 + J1^2));           shape = J0(z r*);        Q/Q0 = 1 - theta0* 2 J1(z) / z
     sphere       1 - z cot z = Bi;   C1 = 4 (sin z - z cos z) / (2 z - sin 2z);   shape = sin(z r*)/(z r*); Q/Q0 = 1 - theta0* 3 (sin z - z cos z) / z^3
+* lumped capacitance with a heat input Q (W) and the table mode: C dT/dt = Q - h As (T - Tinf), R = 1/(h As), C = rho V cp:
+    T(t) = Tinf + Q R + (Ti - Tinf - Q R) exp(-t/tau)   (Ti = Tinf: T = Tinf + Q R (1 - exp(-t/tau))); steady state Tinf + Q R
 * semi-infinite solid, eta = x / (2 sqrt(alpha t)):
     imposed surface temperature Ts:  (T - Ts)/(Ti - Ts) = erf(eta)
     convective surface:  (T - Ti)/(Tinf - Ti) = erfc(eta) - exp(h x/k + h^2 alpha t/k^2) erfc(eta + h sqrt(alpha t)/k)
@@ -26,6 +28,7 @@ from eng_toolkit.domains.thermal._common import (
     DIM_CP,
     DIM_H,
     DIM_K,
+    DIM_POWER,
     QuantityIn,
     TemperatureIn,
     UnitSystemIn,
@@ -36,13 +39,17 @@ from eng_toolkit.domains.thermal._common import (
     plain,
     plain_number,
     positive_quantity,
+    split_list,
     temperature,
+    whole_number,
 )
 from eng_toolkit.domains.thermal._common import unit_system as units_for
 from eng_toolkit.domains.thermal._server import ENGINE, server
 from eng_toolkit.runner import Computed, JobHandle, run_tool
 from eng_toolkit.units import UnitsError
 
+MAX_TABLE_POINTS = 2000
+DEFAULT_TABLE_POINTS = 101
 MODELS = ("lumped", "plane_wall", "cylinder", "sphere", "semi_infinite")
 SURFACE_CONDITIONS = ("fixed_temperature", "convection", "contact")
 J01 = 2.404825557695773  # first zero of J0
@@ -150,15 +157,40 @@ def semi_infinite_convection(eta: float, beta: float) -> float:
     return math.erfc(eta) - math.exp(-eta * eta) * erfcx(eta + beta)
 
 
+def _in_system(kelvin: float, units: dict[str, str]) -> float:
+    """``kelvin`` expressed in the temperature unit of the output system (degC or degF), for the CSV."""
+    return float(out(kelvin, "temperature", units, label="temperature").quantity)
+
+
+def _csv_text(header: list[str], rows: list[list[float]]) -> str:
+    return ",".join(header) + chr(10) + "".join(",".join(repr(float(x)) for x in row) + chr(10) for row in rows)
+
+
+def _table_times(times_raw: str, t_end_raw: str, points_raw: Any) -> list[float]:
+    """The ascending time list (s) of the table: from 'times', or evenly spaced 0 .. t_end with 'points' rows."""
+    if not is_blank(times_raw):
+        items = split_list(times_raw, name="times")
+        if not 1 <= len(items) <= MAX_TABLE_POINTS:
+            raise UnitsError("input.out_of_range", f"'times' has {len(items)} entries; allowed 1 .. {MAX_TABLE_POINTS}", {"param": "times", "count": len(items), "max": MAX_TABLE_POINTS})
+        seq = [positive_quantity(item, name="times", dimension="time", unit="s", lo=0.0, hi=1e11, allow_zero=True) for item in items]
+        if any(b <= a for a, b in zip(seq, seq[1:])):
+            raise UnitsError("input.invalid", "'times' must be strictly ascending", {"param": "times"})
+        return seq
+    t_end_s = positive_quantity(t_end_raw, name="t_end", dimension="time", unit="s", lo=1e-6, hi=1e11)
+    n = whole_number(points_raw, name="points", lo=2, hi=MAX_TABLE_POINTS)
+    return [t_end_s * i / (n - 1) for i in range(n)]
+
+
 @server.tool(
     name="transient",
     description=(
         "Transient conduction after a sudden change of the surroundings. model='lumped': lumped capacitance with the Biot "
-        "check (warns above 0.1), time constant tau, T(t) or the time to reach a target temperature. model='plane_wall' | "
-        "'cylinder' | 'sphere': one-term (first eigenvalue) series with Biot, Fourier number (warns below 0.2), temperature "
-        "at a position (0 = centre, 1 = surface), energy transferred. model='semi_infinite': T(depth, time) by erf/erfc for "
-        "an imposed surface temperature, a convective surface, or the contact temperature of two bodies (effusivity). "
-        "Temperatures are absolute. Give 'time' (or 'target_temperature' for lumped and the series)."
+        "check (warns above 0.1), time constant tau, T(t), the time to reach a target temperature, and (lumped only) a "
+        "warm-up with a constant 'heat_input' (e.g. '8 W'): give 'times' (list) or 't_end' with 'points' and ONE call returns "
+        "the whole T(t) table (CSV temperature_vs_time.csv, time in s) plus tau and the final temperature. "
+        "model='plane_wall' | 'cylinder' | 'sphere': one-term series (Biot, Fourier number, warns below 0.2). "
+        "model='semi_infinite': T(depth, time) by erf/erfc or contact temperature. Temperatures are absolute. "
+        "Give 'time' or 'target_temperature' (or the table inputs for lumped)."
     ),
 )
 def transient(
@@ -185,9 +217,14 @@ def transient(
     other_density: Annotated[str, Field(description="contact: density of the other body")] = "",
     other_specific_heat: Annotated[str, Field(description="contact: specific heat of the other body")] = "",
     body_thickness: Annotated[str, Field(description="semi_infinite, optional: real thickness of the body, to check the semi-infinite assumption")] = "",
+    heat_input: Annotated[str, Field(description="lumped only: constant heat power into the body, e.g. '8 W' (blank = 0, a pure cool-down). Steady state is Tinf + Q/(h As).")] = "",
+    times: Annotated[str, Field(description="lumped table: list of times, e.g. '0 s; 60 s; 600 s' or a JSON array of such strings. Ascending, <= 2000 entries.")] = "",
+    t_end: Annotated[str, Field(description="lumped table: end time, e.g. '3600 s'; rows are spaced evenly from 0 s to t_end ('points' of them)")] = "",
+    points: Annotated[int, Field(description="lumped table with 't_end': number of rows including 0 s and t_end, 2..2000")] = DEFAULT_TABLE_POINTS,
     unit_system: UnitSystemIn = "metric",
 ) -> ToolResult:
     inputs = {
+        "heat_input": heat_input, "times": times, "t_end": t_end, "points": points,
         "model": model, "initial_temperature": initial_temperature, "ambient_temperature": ambient_temperature,
         "conductivity": conductivity, "density": density, "specific_heat": specific_heat, "h": h, "time": time,
         "target_temperature": target_temperature, "volume": volume, "surface_area": surface_area, "size": size,
@@ -196,7 +233,7 @@ def transient(
         "body_thickness": body_thickness, "unit_system": unit_system,
     }
 
-    def compute(_: JobHandle) -> Computed:
+    def compute(handle: JobHandle) -> Computed:
         units = units_for(unit_system)
         kind = choice(model, name="model", allowed=MODELS)
         notes: list[str] = []
@@ -208,25 +245,29 @@ def transient(
         cp = positive_quantity(specific_heat, name="specific_heat", dimension=DIM_CP, unit="J/kg/K", lo=10.0, hi=1e5, notes=notes)
         alpha = k / (rho * cp)
         have_time, have_target = not is_blank(time), not is_blank(target_temperature)
-        if have_time == have_target:
-            raise UnitsError("input.invalid", "give 'time' or 'target_temperature', not both and not neither", {"param": "time|target_temperature"})
+        have_table = not is_blank(times) or not is_blank(t_end)
+        if not is_blank(times) and not is_blank(t_end):
+            raise UnitsError("input.invalid", "give 'times' or 't_end', not both", {"param": "times|t_end"})
+        if have_table and kind != "lumped":
+            raise UnitsError("input.invalid", "the T(t) table ('times' / 't_end') is available for model='lumped' only; give 'time' for this model", {"param": "times" if not is_blank(times) else "t_end"})
+        if not is_blank(heat_input) and kind != "lumped":
+            raise UnitsError("input.invalid", "'heat_input' is available for model='lumped' only", {"param": "heat_input"})
+        if int(have_time) + int(have_target) + int(have_table) != 1:
+            raise UnitsError(
+                "input.invalid",
+                "give exactly one of 'time', 'target_temperature' or the table inputs ('times' or 't_end')",
+                {"param": "time|target_temperature"},
+            )
         if have_target and kind == "semi_infinite":
             raise UnitsError("input.invalid", "'target_temperature' is not supported for semi_infinite; give 'time'", {"param": "target_temperature"})
         t_s = positive_quantity(time, name="time", dimension="time", unit="s", lo=0.0, hi=1e11, allow_zero=True) if have_time else None
         t_target = temperature(target_temperature, name="target_temperature") if have_target else None
-        theta_i = t_i - t_inf
-        ratio_target = None
-        if t_target is not None:
-            ratio_target = (t_target - t_inf) / theta_i if theta_i != 0.0 else None
-            if ratio_target is None or not 0.0 < ratio_target < 1.0:
-                raise UnitsError(
-                    "input.invalid",
-                    "'target_temperature' must lie strictly between the ambient and the initial temperature (and those two must differ)",
-                    {"param": "target_temperature"},
-                )
-        values: dict[str, QuantityOut] = {}
-        data: dict[str, Any] = {"model": kind, "thermal_diffusivity_m2_per_s": alpha}
-
+        table_times = _table_times(times, t_end, points) if have_table else None
+        q_w = 0.0
+        if not is_blank(heat_input):
+            q_w = positive_quantity(heat_input, name="heat_input", dimension=DIM_POWER, unit="W", lo=0.0, hi=1e9, allow_zero=True)
+        h_ = vol = area = None
+        t_eq = t_inf  # temperature the body approaches: the fluid temperature plus Q R when heat is put in
         if kind == "lumped":
             for name, raw in (("h", h), ("volume", volume), ("surface_area", surface_area)):
                 if is_blank(raw):
@@ -234,6 +275,22 @@ def transient(
             h_ = positive_quantity(h, name="h", dimension=DIM_H, unit="W/m**2/K", lo=1e-2, hi=1e7, notes=notes)
             vol = positive_quantity(volume, name="volume", dimension="volume", unit="m**3", lo=1e-12, hi=1e6)
             area = positive_quantity(surface_area, name="surface_area", dimension="area", unit="m**2", lo=1e-8, hi=1e6)
+            t_eq = t_inf + q_w / (h_ * area)
+        theta_i = t_i - t_eq
+        ratio_target = None
+        if t_target is not None:
+            ratio_target = (t_target - t_eq) / theta_i if theta_i != 0.0 else None
+            if ratio_target is None or not 0.0 < ratio_target < 1.0:
+                between = "initial temperature and the steady-state temperature (ambient + heat_input/(h As))" if q_w > 0.0 else "ambient and the initial temperature"
+                raise UnitsError(
+                    "input.invalid",
+                    f"'target_temperature' must lie strictly between the {between} (and those two must differ)",
+                    {"param": "target_temperature"},
+                )
+        values: dict[str, QuantityOut] = {}
+        data: dict[str, Any] = {"model": kind, "thermal_diffusivity_m2_per_s": alpha}
+
+        if kind == "lumped":
             if area < (36.0 * math.pi) ** (1.0 / 3.0) * vol ** (2.0 / 3.0) * (1.0 - 1e-9):
                 raise UnitsError(
                     "input.invalid",
@@ -243,10 +300,50 @@ def transient(
             lc = vol / area
             bi = h_ * lc / k
             tau = rho * vol * cp / (h_ * area)
+            r_th = 1.0 / (h_ * area)
+            heat_cap = rho * vol * cp
             if t_target is not None:
                 t_s = -tau * math.log(ratio_target)
+            biot_warning = (
+                f"Biot number {bi:.3g} is not below 0.1: the lumped-capacitance model is NOT valid (internal temperature gradients matter); "
+                "use plane_wall, cylinder or sphere with the one-term series"
+            )
+            if table_times is not None:
+                t_end_s = table_times[-1]
+                temps = [t_eq + theta_i * math.exp(-tt / tau) for tt in table_times]
+                unit_label = "degF" if units["temperature"] == "degF" else "degC"
+                csv_rows = [[tt, _in_system(temp_k, units)] for tt, temp_k in zip(table_times, temps)]
+                artifact = handle.write_text("temperature_vs_time.csv", _csv_text(["time_s", f"temperature_{unit_label}"], csv_rows), fmt="csv")
+                values.update(
+                    {
+                        "final_temperature": out(t_eq, "temperature", units, label="final_temperature"),
+                        "temperature_at_t_end": out(temps[-1], "temperature", units, label="temperature_at_t_end"),
+                        "time_constant": out(tau, "time", units, label="time_constant"),
+                        "t_end": out(t_end_s, "time", units, label="t_end"),
+                        "thermal_resistance": out(r_th, "resistance", units, label="thermal_resistance"),
+                        "heat_capacity": QuantityOut(quantity=heat_cap, unit="joule / kelvin"),
+                        "biot": plain(bi, label="biot"),
+                    }
+                )
+                if q_w > 0.0:
+                    values["heat_input"] = out(q_w, "power", units, label="heat_input")
+                data.update(
+                    formula="T(t) = Tinf + Q R + (Ti - Tinf - Q R) exp(-t/tau); R = 1/(h As), tau = rho V cp R; Q = heat_input (0 for a pure cool-down)",
+                    validity="Biot number h (V/As)/k < 0.1; Q constant from t = 0",
+                    assumptions=[
+                        "uniform body temperature (no internal gradient); constant h, k, rho, cp",
+                        "the heat input is switched on at t = 0 and stays constant; heat leaves only through h As (radiation only if included in h)",
+                        "CSV columns: time_s (seconds) and the temperature in the unit of unit_system",
+                    ],
+                    table={"rows": len(csv_rows), "t_end_s": t_end_s, "t_end_over_tau": t_end_s / tau},
+                )
+                if bi >= 0.1:
+                    warnings.append(biot_warning)
+                if t_end_s < 3.0 * tau:
+                    warnings.append(f"the table ends at {t_end_s / tau:.2g} time constants: the final temperature is not reached within it")
+                return Computed(values=values, primary="final_temperature", warnings=warnings + notes, data=check_data(data), artifacts=[artifact])
             frac = math.exp(-t_s / tau)
-            temp = t_inf + theta_i * frac
+            temp = t_eq + theta_i * frac
             values.update(
                 {
                     "temperature": out(temp, "temperature", units, label="temperature"),
@@ -255,21 +352,34 @@ def transient(
                     "biot": plain(bi, label="biot"),
                     "characteristic_length": out(lc, "length", units, label="characteristic_length"),
                     "remaining_fraction": plain(frac, label="remaining_fraction"),
-                    "energy_transferred": out(rho * vol * cp * (t_i - temp), "energy", units, label="energy_transferred"),
-                    "heat_rate_now": out(h_ * area * (t_inf - temp), "power", units, label="heat_rate_now"),
                 }
             )
+            if q_w > 0.0:
+                values.update(
+                    {
+                        "final_temperature": out(t_eq, "temperature", units, label="final_temperature"),
+                        "heat_input": out(q_w, "power", units, label="heat_input"),
+                        "energy_stored": out(heat_cap * (temp - t_i), "energy", units, label="energy_stored"),
+                        "heat_rate_to_ambient": out(h_ * area * (temp - t_inf), "power", units, label="heat_rate_to_ambient"),
+                    }
+                )
+            else:
+                values.update(
+                    {
+                        "energy_transferred": out(heat_cap * (t_i - temp), "energy", units, label="energy_transferred"),
+                        "heat_rate_now": out(h_ * area * (t_inf - temp), "power", units, label="heat_rate_now"),
+                    }
+                )
             primary = "temperature" if have_time else "time"
             data.update(
-                formula="T = Tinf + (Ti - Tinf) exp(-t/tau), tau = rho V cp/(h As)",
+                formula="T = Tinf + (Ti - Tinf) exp(-t/tau), tau = rho V cp/(h As)"
+                if q_w == 0.0
+                else "T = Tinf + Q R + (Ti - Tinf - Q R) exp(-t/tau), R = 1/(h As), tau = rho V cp R",
                 validity="Biot number h (V/As)/k < 0.1",
                 assumptions=["uniform body temperature (no internal gradient)", "constant h, k, rho, cp; no internal heat generation; radiation only if in h"],
             )
             if bi >= 0.1:
-                warnings.append(
-                    f"Biot number {bi:.3g} is not below 0.1: the lumped-capacitance model is NOT valid (internal temperature gradients matter); "
-                    "use plane_wall, cylinder or sphere with the one-term series"
-                )
+                warnings.append(biot_warning)
         elif kind in ("plane_wall", "cylinder", "sphere"):
             for name, raw in (("h", h), ("size", size)):
                 if is_blank(raw):

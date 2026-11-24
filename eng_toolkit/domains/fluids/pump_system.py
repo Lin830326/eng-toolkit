@@ -5,12 +5,65 @@ from typing import Annotated
 
 from pydantic import Field
 
-from ._common import Density, G, Kinematic, Result, Viscosity, bisect, choice, fluid, invalid, number, pipe_loss, q, run
+from ._common import Density, G, Kinematic, Result, Viscosity, bisect, choice, count, csv_text, fluid, invalid, number, pipe_loss, q, run
 from ._model import pump_curves
 from ._server import server
 
 
-@server.tool(description="Pump/system operating point from monotone head/efficiency point interpolation, Darcy-Weisbach or static+KQ^2 system, bracketed intersection. Series/parallel pumps, affinity scaling, NPSHa margin and dimensionless specific speed. No extrapolation; impeller trim ratio 0.9..1.0; constant-efficiency affinity approximation.")
+def add_curve_table(handle, r, curves, combination, system, rho, rows_wanted, flow_op, head_op):
+    """system_curve.csv: flow, system head, pump head, efficiency over 0 .. the end of the pump curve, the operating point inserted as a row.
+
+    ``system(Q)`` is the head the system needs at flow Q, the pump side is the model's own pump curve (single, series: heads added at a common flow;
+    parallel: flows added at a common head, then inverted).  The efficiency is hydraulic power over shaft power of the running pumps (0 at Q = 0).
+    """
+    if combination == "parallel":
+        lo = max(c.heads[-1] for c in curves.values())
+        hi = max(c.heads[0] for c in curves.values())
+
+        def total_flow(h):
+            return sum(c.flow(h) for c in curves.values())
+
+        flow_end = total_flow(lo)
+
+        def pump_state(flow):
+            """(head, shaft power per rho*g) for the total ``flow``."""
+            if flow <= 0:
+                return hi, 0.
+            h = bisect(lambda x: total_flow(x)-flow, lo, hi, "curve_points", rtol=1e-14, atol=0.)
+            shaft = sum(c.flow(h)*h/c.efficiency(c.flow(h)) for c in curves.values() if c.flow(h) > 0)
+            return h, shaft
+    else:
+        flow_end = min(c.flows[-1] for c in curves.values())
+
+        def pump_state(flow):
+            h = sum(c.head(flow) for c in curves.values())
+            shaft = sum(flow*c.head(flow)/c.efficiency(flow) for c in curves.values()) if flow > 0 else 0.
+            return h, shaft
+
+    grid = [flow_end*i/(rows_wanted-1) for i in range(rows_wanted)]
+    if all(abs(flow_op-g) > 1e-12*flow_end for g in grid):
+        grid = sorted([*grid, flow_op])
+    rows = []
+    for flow in grid:
+        pump_head, shaft = pump_state(flow)
+        if shaft > 0:
+            efficiency = flow*pump_head/shaft
+        else:  # no flow, or zero delivered head at the end of the curve: the curve's own efficiency where one pump runs
+            efficiency = next(iter(curves.values())).efficiency(flow) if flow > 0 and len(curves) == 1 else 0.
+        rows.append([flow, system(flow), pump_head, efficiency, 1 if abs(flow-flow_op) <= 1e-12*flow_end else 0])
+    r.artifacts.append(handle.write_text("system_curve.csv", csv_text(
+        ["flow_m3_s", "system_head_m", "pump_head_m", "efficiency", "is_operating_point"], rows), fmt="csv"))
+    hydraulic_over_rho_g = flow_op*head_op
+    shaft_op = pump_state(flow_op)[1]
+    r.data["operating_point"] = {"flow_m3_s": flow_op, "head_m": head_op, "efficiency": hydraulic_over_rho_g/shaft_op if shaft_op > 0 else 0.,
+                                 "system_head_m": system(flow_op), "pump_head_m": pump_state(flow_op)[0]}
+    r.data["curve_table"] = {"artifact": "system_curve.csv", "rows": len(rows), "flow_max_m3_s": flow_end,
+                             "columns": ["flow_m3_s", "system_head_m", "pump_head_m", "efficiency", "is_operating_point"],
+                             "note": "pump head and efficiency are the supplied curves (after speed and trim scaling), system head is static + friction; "
+                                     "they cross at the operating point; efficiency is 0 at zero flow (and for several pumps at zero delivered head); one row is the operating point itself"}
+
+
+@server.tool(description="Pump/system operating point from monotone head/efficiency point interpolation, Darcy-Weisbach or static+KQ^2 system, bracketed intersection. Series/parallel pumps, affinity scaling, NPSHa margin and dimensionless specific speed. No extrapolation; impeller trim ratio 0.9..1.0; constant-efficiency affinity approximation. curve_points writes system_curve.csv (flow, system head, pump head, efficiency) and data.operating_point.")
 def pump_system(
     pump_points: Annotated[str, Field(description="id,Q,H,eta records, e.g. 'p,0 m^3/s,20 m,0;p,0.1 m^3/s,0 m,0.7'; eta 0..1 at Q=0, 0.01..1 above; <=120 points, <=8 pumps.")] = "",
     combination: Annotated[str, Field(description="single, series (sum heads at common flow), or parallel (sum flows at common head with check valves).")]= "single",
@@ -32,12 +85,14 @@ def pump_system(
     density: Density = "1000 kg/m^3",
     dynamic_viscosity: Viscosity = "1 mPa*s",
     kinematic_viscosity: Kinematic = "",
+    curve_points: Annotated[int, Field(description="0 (default) none; 2..500: rows of system_curve.csv over the pump's flow range, the operating point inserted as a row.")] = 0,
 ):
     inputs = dict(locals())
 
-    def compute(_):
+    def compute(handle):
         rho, mu = fluid(density, dynamic_viscosity, kinematic_viscosity)
         choice(combination, "combination", ("single", "series", "parallel"))
+        rows_wanted = 0 if (curve_points == 0 and curve_points is not False) else count(curve_points, "curve_points", 2, 500)
         speed = number(speed_ratio, "speed_ratio", .2, 3)
         trim = number(diameter_ratio, "diameter_ratio", .9, 1)
         curves = pump_curves(pump_points, speed, trim)
@@ -112,6 +167,8 @@ def pump_system(
         r.add("hydraulic_power", hydraulic, "W")
         r.add("shaft_power", shaft, "W")
         r.add("efficiency", hydraulic/shaft)
+        if rows_wanted:
+            add_curve_table(handle, r, curves, combination, system, rho, rows_wanted, flow, head)
         r.data["pumps"] = [{"id": name, "flow_m3_s": flows[name], "head_m": heads[name],
                              "efficiency": c.efficiency(flows[name]), "check_valve_closed": flows[name] == 0} for name, c in curves.items()]
         r.data["affinity_factors"] = {"flow": speed*trim, "head": (speed*trim)**2, "power": (speed*trim)**3}

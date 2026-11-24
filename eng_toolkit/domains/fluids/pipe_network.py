@@ -7,7 +7,9 @@ from typing import Annotated
 import numpy as np
 from pydantic import Field
 
-from ._common import Density, G, Kinematic, Result, Viscosity, bisect, choice, count, fields, fluid, identifier, invalid, pipe_loss, q, records, run, scalar
+from eng_toolkit.units import UnitsError
+
+from ._common import Density, G, Kinematic, Result, Viscosity, bisect, choice, count, csv_text, fields, fluid, identifier, invalid, pipe_loss, q, records, run, scalar
 from ._model import Curve, curve
 from ._server import server
 
@@ -105,7 +107,62 @@ def link_flow(edge, dh, model, rho, mu):
     return math.copysign(flow, dh), 1/slope
 
 
-@server.tool(description="Steady incompressible looped pipe network by damped node-head Newton, Colebrook-White Darcy or Hazen-Williams. Fixed heads, demands, pumps/check valves and pipe valves. Smooth Re 2000..4000 blend. <=200 nodes, 400 pipes, 40 pumps, 100 iterations; convergence requires mass residual and head change.")
+def add_system_curve(handle, r, links, demands, fixed, solve, ids, rows_wanted):
+    """system_curve.csv for a network with exactly one pump: the head the rest of the network needs at each flow, next to the pump curve.
+
+    The pump is taken out and its flow Q is prescribed instead (a demand of Q at its suction node, an inflow of Q at its discharge node);
+    the solved head difference between the two nodes is the head the pump has to deliver, the system head at Q.  The pump curve is the
+    model's own.  Where a flow cannot be solved the table stops there and says so.
+    """
+    pumps = [edge for edge in links if edge.pump]
+    if len(pumps) != 1:
+        r.warnings.append(f"curve_points: a system curve needs exactly one pump; this network has {len(pumps)}, no table was written")
+        return
+    pump = pumps[0]
+    rest = [edge for edge in links if edge is not pump]
+    if not rest:
+        r.warnings.append("curve_points: the pump is the only link, so there is no system to draw a curve for")
+        return
+    if pump.points is not None:
+        flow_end = pump.points.flows[-1]
+        pump_head = pump.points.head
+    else:
+        flow_end = 2*pump.h0/(pump.a+math.sqrt(pump.a*pump.a+4*pump.b*pump.h0)) if pump.b else pump.h0/pump.a
+
+        def pump_head(flow):
+            return pump.h0-pump.a*flow-pump.b*flow*flow
+    record = next(p for p in r.data["pumps"] if p["id"] == pump.name)
+    flow_op, head_op = record["flow_m3_s"], record["head_gain_m"]
+
+    def system_head(flow):
+        shifted = list(demands)
+        shifted[pump.i] += flow
+        shifted[pump.j] -= flow
+        heads = solve(rest, shifted)[0]
+        return float(heads[pump.j]-heads[pump.i])
+
+    grid = [flow_end*i/(rows_wanted-1) for i in range(rows_wanted)]
+    if 0 < flow_op < flow_end and all(abs(flow_op-g) > 1e-12*flow_end for g in grid):
+        grid = sorted([*grid, flow_op])
+    rows = []
+    for flow in grid:
+        try:
+            system = system_head(flow)
+        except (UnitsError, ArithmeticError, ValueError) as exc:
+            r.warnings.append(f"curve_points: the table stops at {flow:.6g} m^3/s, where the network cannot be solved ({getattr(exc, 'message', str(exc))})")
+            break
+        rows.append([flow, system, pump_head(flow), 1 if abs(flow-flow_op) <= 1e-12*flow_end else 0])
+    if not rows:
+        return
+    r.artifacts.append(handle.write_text("system_curve.csv", csv_text(["flow_m3_s", "system_head_m", "pump_head_m", "is_operating_point"], rows), fmt="csv"))
+    r.data["operating_point"] = {"flow_m3_s": flow_op, "head_m": head_op, "system_head_m": system_head(flow_op) if flow_op <= flow_end else None, "pump_head_m": pump_head(flow_op) if flow_op <= flow_end else None}
+    r.data["curve_table"] = {"artifact": "system_curve.csv", "rows": len(rows), "flow_max_m3_s": flow_end, "pump": pump.name,
+                             "columns": ["flow_m3_s", "system_head_m", "pump_head_m", "is_operating_point"],
+                             "note": "system head = head difference the rest of the network needs between the pump's two nodes at that flow (pump removed, its flow prescribed); "
+                                     "pump head = the pump curve; they cross at the operating point; no efficiency column: pipe_network has no efficiency data (use pump_system)"}
+
+
+@server.tool(description="Steady incompressible looped pipe network by damped node-head Newton, Colebrook-White Darcy or Hazen-Williams. Fixed heads, demands, pumps/check valves and pipe valves. Smooth Re 2000..4000 blend. <=200 nodes, 400 pipes, 40 pumps, 100 iterations; convergence requires mass residual and head change. curve_points (one pump): system_curve.csv, system head vs pump head over flow.")
 def pipe_network(
     nodes: Annotated[str, Field(description="id,elevation,demand|head,value, e.g. 'r,0 m,head,20 m;j,0 m,demand,1 L/s'; <=200 nodes, fixed head required.")] = "",
     pipes: Annotated[str, Field(description="id,start,end,L,D,roughness_or_C,K, e.g. 'p,r,j,10 m,50 mm,0 mm,0'; <=400 pipes; C is a bare coefficient.")] = "",
@@ -118,13 +175,15 @@ def pipe_network(
     density: Density = "1000 kg/m^3",
     dynamic_viscosity: Viscosity = "1 mPa*s",
     kinematic_viscosity: Kinematic = "",
+    curve_points: Annotated[int, Field(description="0 (default) none; 2..200: with exactly one pump, rows of system_curve.csv over its flow range (operating point inserted).")] = 0,
 ):
     inputs = dict(locals())
 
-    def compute(_):
+    def compute(handle):
         rho, mu = fluid(density, dynamic_viscosity, kinematic_viscosity)
         model = choice(headloss_model, "headloss_model", ("darcy_weisbach", "hazen_williams"))
         limit = count(max_iterations, "max_iterations", 1, 100)
+        rows_wanted = 0 if (curve_points == 0 and curve_points is not False) else count(curve_points, "curve_points", 2, 200)
         if model == "hazen_williams" and not (995 <= rho <= 1001 and .00089 <= mu <= .00152):
             invalid("headloss_model", "Hazen-Williams requires caller water properties within the documented 5..25 C envelope")
         ids, elevation, demands, fixed = [], [], [], {}
@@ -208,77 +267,83 @@ def pipe_network(
             invalid("pipes", "at least one pipe or pump is required")
         connected(len(ids), links)
         unknown = [i for i in range(len(ids)) if i not in fixed]
-        incidence = np.zeros((len(ids), len(links)))
-        for k, edge in enumerate(links):
-            incidence[edge.i, k], incidence[edge.j, k] = 1., -1.
-        b = incidence[unknown, :]
-        h = np.full(len(ids), sum(fixed.values())/len(fixed))
-        for i, value in fixed.items():
-            h[i] = value
-        demand = np.array(demands)[unknown]
-        demand_scale = float(np.sum(np.abs(demand)))
 
-        def mass_tolerance(flows):
-            return 1e-9*max(demand_scale, float(np.max(np.abs(flows))))
+        def solve(link_set, demand_values):
+            """Damped Newton on the node heads of ``link_set`` with the prescribed demands; returns the converged state or raises."""
+            incidence = np.zeros((len(ids), len(link_set)))
+            for k, edge in enumerate(link_set):
+                incidence[edge.i, k], incidence[edge.j, k] = 1., -1.
+            b = incidence[unknown, :]
+            h = np.full(len(ids), sum(fixed.values())/len(fixed))
+            for i, value in fixed.items():
+                h[i] = value
+            demand = np.array(demand_values)[unknown]
+            demand_scale = float(np.sum(np.abs(demand)))
 
-        def evaluate(heads):
-            pairs = [link_flow(edge, heads[edge.i]-heads[edge.j], model, rho, mu) for edge in links]
-            flows = np.array([p[0] for p in pairs])
-            slopes = np.array([p[1] for p in pairs])
-            return flows, slopes, b@flows+demand
+            def mass_tolerance(flows):
+                return 1e-9*max(demand_scale, float(np.max(np.abs(flows))))
 
-        def anchored(slopes):
-            adjacency = [set() for _ in ids]
-            for edge, slope in zip(links, slopes):
-                if slope > 0:
-                    adjacency[edge.i].add(edge.j)
-                    adjacency[edge.j].add(edge.i)
-            seen, pending = set(fixed), list(fixed)
-            while pending:
-                for j in adjacency[pending.pop()]:
-                    if j not in seen:
-                        seen.add(j)
-                        pending.append(j)
-            return len(seen) == len(ids)
+            def evaluate(heads):
+                pairs = [link_flow(edge, heads[edge.i]-heads[edge.j], model, rho, mu) for edge in link_set]
+                flows = np.array([p[0] for p in pairs])
+                slopes = np.array([p[1] for p in pairs])
+                return flows, slopes, b@flows+demand
 
-        last_change = 0.
-        for iteration in range(1, limit+1):
-            flows, slopes, residual = evaluate(h)
-            if not anchored(slopes):
-                invalid("pumps", "closed check valves leave an unanchored head component")
+            def anchored(slopes):
+                adjacency = [set() for _ in ids]
+                for edge, slope in zip(link_set, slopes):
+                    if slope > 0:
+                        adjacency[edge.i].add(edge.j)
+                        adjacency[edge.j].add(edge.i)
+                seen, pending = set(fixed), list(fixed)
+                while pending:
+                    for j in adjacency[pending.pop()]:
+                        if j not in seen:
+                            seen.add(j)
+                            pending.append(j)
+                return len(seen) == len(ids)
+
+            last_change = 0.
+            for iteration in range(1, limit+1):
+                flows, slopes, residual = evaluate(h)
+                if not anchored(slopes):
+                    invalid("pumps", "closed check valves leave an unanchored head component")
+                norm = float(np.max(np.abs(residual))) if unknown else 0.
+                tolerance = mass_tolerance(flows)
+                if norm <= tolerance and last_change <= 1e-8*max(1., float(np.max(np.abs(h)))):
+                    break
+                jac = (b*slopes)@b.T
+                diag = np.diag(jac)
+                if np.any(diag <= 0):
+                    invalid("pumps", "closed check valves isolate a demand node; no supported forward-flow solution")
+                scale = np.sqrt(diag)
+                step = np.linalg.solve(jac/scale[:, None]/scale[None, :], -residual/scale)/scale
+                if not np.all(np.isfinite(step)):
+                    invalid("nodes", "node-head system is numerically indeterminate", "input.out_of_range")
+                for backtrack in range(25):
+                    fraction = .5**backtrack
+                    trial = h.copy()
+                    trial[unknown] += fraction*step
+                    trial_flows, trial_slopes, trial_residual = evaluate(trial)
+                    trial_norm = float(np.max(np.abs(trial_residual)))
+                    if anchored(trial_slopes) and (trial_norm < norm*(1-1e-4*fraction) or trial_norm <= mass_tolerance(trial_flows)):
+                        h = trial
+                        last_change = float(np.max(np.abs(fraction*step)))
+                        break
+                else:
+                    invalid("nodes", "node-head line search cannot resolve the mass residual", "input.out_of_range")
+            else:
+                invalid("max_iterations", "network failed mass/head convergence within the iteration cap", "input.nonconvergence")
+            flows, _, residual = evaluate(h)
             norm = float(np.max(np.abs(residual))) if unknown else 0.
             tolerance = mass_tolerance(flows)
-            if norm <= tolerance and last_change <= 1e-8*max(1., float(np.max(np.abs(h)))):
-                break
-            jac = (b*slopes)@b.T
-            diag = np.diag(jac)
-            if np.any(diag <= 0):
-                invalid("pumps", "closed check valves isolate a demand node; no supported forward-flow solution")
-            scale = np.sqrt(diag)
-            step = np.linalg.solve(jac/scale[:, None]/scale[None, :], -residual/scale)/scale
-            if not np.all(np.isfinite(step)):
-                invalid("nodes", "node-head system is numerically indeterminate", "input.out_of_range")
-            for backtrack in range(25):
-                fraction = .5**backtrack
-                trial = h.copy()
-                trial[unknown] += fraction*step
-                trial_flows, trial_slopes, trial_residual = evaluate(trial)
-                trial_norm = float(np.max(np.abs(trial_residual)))
-                if anchored(trial_slopes) and (trial_norm < norm*(1-1e-4*fraction) or trial_norm <= mass_tolerance(trial_flows)):
-                    h = trial
-                    last_change = float(np.max(np.abs(fraction*step)))
-                    break
-            else:
-                invalid("nodes", "node-head line search cannot resolve the mass residual", "input.out_of_range")
-        else:
-            invalid("max_iterations", "network failed mass/head convergence within the iteration cap", "input.nonconvergence")
-        flows, _, residual = evaluate(h)
-        norm = float(np.max(np.abs(residual))) if unknown else 0.
-        tolerance = mass_tolerance(flows)
-        if norm > tolerance:
-            invalid("nodes", "final network mass residual exceeds the flow-scaled tolerance", "input.out_of_range")
-        if np.max(np.abs(h)) > 1e6 or np.max(np.abs(flows)) > 1e6:
-            invalid("nodes", "solved head or flow exceeds 1e6 in SI units", "input.out_of_range")
+            if norm > tolerance:
+                invalid("nodes", "final network mass residual exceeds the flow-scaled tolerance", "input.out_of_range")
+            if np.max(np.abs(h)) > 1e6 or np.max(np.abs(flows)) > 1e6:
+                invalid("nodes", "solved head or flow exceeds 1e6 in SI units", "input.out_of_range")
+            return h, flows, norm, tolerance, last_change, iteration, incidence
+
+        h, flows, norm, tolerance, last_change, iteration, incidence = solve(links, demands)
         r = Result({"network": "B Q(H)+d=0; J=B diag(dQ/dDeltaH) B^T; scaled numpy solve and damped Newton",
                     "Darcy-Weisbach": "h=(f L/D+K) v|v|/(2g); Colebrook 1/sqrt(f)=-2 log10(eps/(3.7D)+2.51/(Re sqrt(f)))",
                     "Hazen-Williams": "h=kSI L Q|Q|^0.852/(C^1.852 D^4.871)+K v|v|/(2g); kSI=4.727*0.3048^(4.871-3*1.852)",
@@ -322,6 +387,8 @@ def pipe_network(
                 r.warnings.append(f"Pipe {edge.name}: flow reverses the record's orientation.")
             if model == "darcy_weisbach" and 2000 <= re < 4000:
                 r.warnings.append(f"Pipe {edge.name}: friction uses the documented transition blend.")
+        if rows_wanted:
+            add_system_curve(handle, r, links, demands, fixed, solve, ids, rows_wanted)
         r.add("mass_balance_residual", norm, "m^3/s")
         r.add("head_change", last_change, "m")
         r.add("iterations", iteration)

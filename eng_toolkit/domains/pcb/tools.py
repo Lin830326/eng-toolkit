@@ -71,12 +71,14 @@ ERC_DESCRIPTION = (
 )
 
 EXPORT_DESCRIPTION = (
-    "Export from a copy of a .kicad_pcb with kicad-cli (user-installed). export is one of 'gerbers' (one file per layer plus a job "
-    "file, and gerbers.zip), 'drill' (Excellon, mm), 'pos' (CSV of footprint positions, mm, y pointing UP, both sides), 'pdf' or 'svg' "
-    "(one page, the chosen layers on top of each other). layers is a comma-separated list of the board's layer names, e.g. 'F.Cu,Edge.Cuts' "
-    "(names are checked against the board's own layer table; empty = all copper layers and Edge.Cuts, or for gerbers every copper, mask, "
-    "silk, paste and Edge.Cuts layer). Returns file_count, and data.files with name, bytes and sha256 of every file; the files are "
-    "artifacts. No 3D, STEP or VRML export, and nothing is edited. Needs kicad-cli."
+    "Export from a copy of a .kicad_pcb with kicad-cli (user-installed). export is one of 'gerbers' (one file per layer, the job file "
+    "and the Excellon drill file, all named after the board, plus <board>-gerbers.zip holding all of them: one upload for a fabricator), "
+    "'drill' (Excellon, mm), 'pos' (CSV of footprint positions, mm, y pointing UP, both sides), 'pdf' or 'svg' (the board fills the page: "
+    "svg is cropped to the board outline, pdf autoscaled; the chosen layers on top of each other, or one file per layer with "
+    "per_layer=true, Edge.Cuts on each). layers is a comma-separated list of the board's layer names, e.g. 'F.Cu,Edge.Cuts' (names are "
+    "checked against the board's own layer table; empty = all copper layers and Edge.Cuts, or for gerbers every copper, mask, silk, paste "
+    "and Edge.Cuts layer). Returns file_count, and data.files with name, bytes and sha256 of every file; the files are artifacts. "
+    "No 3D, STEP, VRML or PNG export, and nothing is edited. Needs kicad-cli."
 )
 
 
@@ -154,14 +156,15 @@ def export(
     board_path: Annotated[str, Field(description="Path to a .kicad_pcb file, at most 50 MB")],
     export: Annotated[str, Field(description="'gerbers', 'drill', 'pos', 'pdf' or 'svg'")],
     layers: Annotated[str, Field(description="Comma-separated layer names of this board for gerbers, pdf and svg, e.g. 'F.Cu,B.Cu,Edge.Cuts'; empty = default set")] = "",
+    per_layer: Annotated[bool, Field(description="pdf and svg: one file per layer (Edge.Cuts drawn on each) instead of all layers overlaid on one page")] = False,
 ) -> ToolResult:
-    inputs = {"board_path": board_path, "export": export, "layers": layers}
+    inputs = {"board_path": board_path, "export": export, "layers": layers, "per_layer": per_layer}
     return run_tool(
         tool_name="pcb_export",
         engine=ENGINE_EXPORT,
         version=__version__,
         inputs=inputs,
-        compute=lambda job: compute.export(job, board_path=board_path, export=export, layers=layers),
+        compute=lambda job: compute.export(job, board_path=board_path, export=export, layers=layers, per_layer=per_layer),
         standing_warnings=("Exported files are unreviewed: a fabricator's own checks and a qualified engineer must review them before anything is ordered.",),
     )
 

@@ -479,10 +479,33 @@ def _layers(raw: str, board: dict[str, Any], kind: str) -> tuple[list[str], list
     return seen, []
 
 
-def export(handle: JobHandle, *, board_path: str, export: str, layers: str) -> Computed:
+_STANDARD_PAPER = re.compile(r'\(paper\s+"(?:A[0-5]|B[0-5]|USLetter|USLegal|USLedger|A|B|C|D|E)"(?:\s+portrait)?\s*\)')
+
+
+def _orient_paper(staged: Path, extents: dict[str, float] | None) -> str | None:
+    """Turn the page of the staged COPY of the board to the board's shape (portrait for a tall board) so that kicad-cli's autoscale fills more of it.
+
+    Only a standard paper name is touched, never a custom size; the caller's own file is not changed.  Returns what was done, else ``None``.
+    """
+    if not extents or extents["width"] <= 0 or extents["height"] <= 0:
+        return None
+    text = staged.read_bytes().decode("utf-8", errors="surrogateescape")
+    match = _STANDARD_PAPER.search(text[:4000])
+    if match is None:
+        return None
+    tall = extents["height"] > extents["width"]
+    paper = match.group(0).split()[1].rstrip(")").rstrip()
+    replacement = f"(paper {paper}{' portrait' if tall else ''})"
+    staged.write_bytes((text[: match.start()] + replacement + text[match.end() :]).encode("utf-8", errors="surrogateescape"))
+    return "portrait" if tall else "landscape"
+
+
+def export(handle: JobHandle, *, board_path: str, export: str, layers: str, per_layer: bool = False) -> Computed:
     kind = (export or "").strip().lower()
     if kind not in EXPORTS:
         raise _bad(f"export must be one of {list(EXPORTS)}", export=str(export)[:40], param="/export")
+    if not isinstance(per_layer, bool):
+        raise _bad("per_layer must be true or false", param="/per_layer", per_layer=str(per_layer)[:40])
 
     def check(copy: Path) -> tuple[dict[str, Any], list[str]]:
         board = _read_board(copy, 0)
@@ -493,26 +516,53 @@ def export(handle: JobHandle, *, board_path: str, export: str, layers: str) -> C
                 raise _bad("the board has no layer to plot", param="/board_path")
         return board, chosen
 
-    prep = program.prepare(handle, board_path, kind="pcb", use_project_files=False, validate=check)
+    stem = program.safe_stem(board_path)
+    prep = program.prepare(handle, board_path, kind="pcb", use_project_files=False, validate=check, stage_as=stem)
     board, plot_layers = prep.checked
     warnings = list(prep.warnings)
     if kind not in ("gerbers", "pdf", "svg") and layers and layers.strip():
         warnings.append(f"layers is ignored for the {kind} export")
+    if per_layer and kind not in ("pdf", "svg"):
+        warnings.append(f"per_layer is ignored for the {kind} export (it applies to pdf and svg)")
+        per_layer = False
     out = prep.work / "out"
     out.mkdir(exist_ok=True)
     base: list[Any] = ["pcb", "export"]
+    # --common-layers: Edge.Cuts is drawn on every page / file of a per-layer export, so each one shows the layer inside the board outline
+    common = ["--common-layers", "Edge.Cuts"] if "Edge.Cuts" in plot_layers and len(plot_layers) > 1 else []
+    own_layers = [n for n in plot_layers if n != "Edge.Cuts"] if common else list(plot_layers)
+    page: str | None = None
+    drill_args = [*base, "drill", "-o", out, "--format", "excellon", "--excellon-units", "mm", prep.file]
+    records = []
     if kind == "gerbers":
-        args = [*base, "gerbers", "-o", out, "--layers", ",".join(plot_layers), prep.file]
+        records.append(program.run_cli(prep, [*base, "gerbers", "-o", out, "--layers", ",".join(plot_layers), prep.file]))
+        records.append(program.run_cli(prep, drill_args))
     elif kind == "drill":
-        args = [*base, "drill", "-o", out, "--format", "excellon", "--excellon-units", "mm", prep.file]
+        records.append(program.run_cli(prep, drill_args))
     elif kind == "pos":
-        args = [*base, "pos", "--format", "csv", "--units", "mm", "--side", "both", "-o", out / "positions.csv", prep.file]
+        records.append(program.run_cli(prep, [*base, "pos", "--format", "csv", "--units", "mm", "--side", "both", "-o", out / "positions.csv", prep.file]))
     elif kind == "pdf":
-        args = [*base, "pdf", "--mode-single", "-o", out / "board.pdf", "--layers", ",".join(plot_layers), prep.file]
+        # kicad-cli has no fit-to-board page mode for pdf (only svg has --page-size-mode): turn the page of the copy to the board's shape and let
+        # --scale 0 (autoscale) fit the board to it
+        page = _orient_paper(prep.file, (board.get("outline") or {}).get("extents_mm"))
+        if per_layer:
+            args = [*base, "pdf", "--mode-separate", "--scale", "0", "-o", out, *common, "--layers", ",".join(own_layers), prep.file]
+        else:
+            args = [*base, "pdf", "--mode-single", "--scale", "0", "-o", out / f"{stem}.pdf", "--layers", ",".join(plot_layers), prep.file]
+        records.append(program.run_cli(prep, args))
     else:
-        args = [*base, "svg", "--mode-single", "--page-size-mode", "2", "-o", out / "board.svg", "--layers", ",".join(plot_layers), prep.file]
-    record = program.run_cli(prep, args)
-    produced = sorted((f for f in record.files if f.name.startswith("out/")), key=lambda f: f.name)
+        if per_layer:
+            args = [*base, "svg", "--mode-multi", "--page-size-mode", "2", "-o", out, *common, "--layers", ",".join(own_layers), prep.file]
+        else:
+            args = [*base, "svg", "--mode-single", "--page-size-mode", "2", "-o", out / f"{stem}.svg", "--layers", ",".join(plot_layers), prep.file]
+        records.append(program.run_cli(prep, args))
+    record = records[-1]
+    seen: dict[str, Any] = {}
+    for rec in records:
+        for f in rec.files:
+            if f.name.startswith("out/"):
+                seen[f.name] = f
+    produced = sorted(seen.values(), key=lambda f: f.name)
     if not produced:
         raise ToolFailure("engine.failure", f"kicad-cli finished without producing any {kind} file", {"stdout_tail": record.stdout_tail})
     formats = {".gtl": "gerber", ".gbl": "gerber", ".drl": "excellon", ".csv": "csv", ".pdf": "pdf", ".svg": "svg", ".gbrjob": "json", ".rpt": "text"}
@@ -526,6 +576,7 @@ def export(handle: JobHandle, *, board_path: str, export: str, layers: str) -> C
         artifact = handle.write_bytes(name, payload, fmt=fmt)
         artifacts.append(artifact)
         files.append({"name": name, "bytes": f.bytes, "sha256": f.sha256, "format": fmt})
+    zip_name = None
     if kind == "gerbers":
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -534,16 +585,34 @@ def export(handle: JobHandle, *, board_path: str, export: str, layers: str) -> C
                 info_.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(info_, (prep.work / "out" / f["name"]).read_bytes())
         payload = buffer.getvalue()
-        artifacts.append(handle.write_bytes("gerbers.zip", payload, fmt="zip"))
-        files.append({"name": "gerbers.zip", "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(), "format": "zip"})
-        warnings.append("gerbers.zip holds the plotted layers and the .gbrjob job file; drill files are a separate export (export='drill')")
+        zip_name = f"{stem}-gerbers.zip"
+        artifacts.append(handle.write_bytes(zip_name, payload, fmt="zip"))
+        files.append({"name": zip_name, "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(), "format": "zip"})
+        if not any(f["format"] == "excellon" for f in files):
+            warnings.append("the board has no drilled hole: there is no drill file in the zip")
     data = {
         "export": kind,
         "layers": plot_layers,
+        "board_name": stem,
         "files": files,
-        "kicad": {"version": prep.version, "seconds": round(record.seconds, 3)},
-        "output": "gerbers use KiCad's default plot options with X2 attributes on; positions are millimetres with y UP (a position file's convention); pdf and svg are one page with the chosen layers on top of each other",
+        "kicad": {"version": prep.version, "seconds": round(sum(r.seconds for r in records), 3)},
+        "output": "gerbers use KiCad's default plot options with X2 attributes on; positions are millimetres with y UP (a position file's convention); "
+        "pdf and svg are one page with the chosen layers on top of each other (per_layer=true: one file per layer, Edge.Cuts on each)",
     }
+    if kind == "gerbers":
+        data["package"] = {
+            "zip": zip_name,
+            "contains": [f["name"] for f in files if f["name"] != zip_name],
+            "note": "one upload for a fabricator: plotted layers, the .gbrjob job file and the Excellon drill file (PTH and NPTH merged in one file), all named after the board",
+        }
+    if kind in ("pdf", "svg"):
+        data["page"] = (
+            {"mode": "board area only (kicad-cli --page-size-mode 2): the page is cropped to the board outline"}
+            if kind == "svg"
+            else {"mode": "autoscale (kicad-cli --scale 0) on the board's own page, turned " + (page or "as in the file") + " to the board's shape"}
+        )
+        if per_layer:
+            data["per_layer"] = [f["name"] for f in files]
     values = {"file_count": _count(len(produced))}
     return Computed(values=values, primary="file_count", warnings=warnings, data=data, artifacts=artifacts)
 

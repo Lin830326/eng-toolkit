@@ -17,8 +17,8 @@ The formulas (``y`` is the chosen column, ``x`` the first column; every crossing
                     3 dB on that side within the table) is an error that names the other corner.
 * ``value_at``      ``y`` at the x given in ``at``, interpolated linearly.
 
-Units follow the column: ``v(...)`` volt, ``i(...)`` ampere, but ``.db`` decibel and ``.phase_deg`` degree.  On an ac table a bare name such as ``v(out)``
-means ``v(out).mag`` (the magnitude per unit source) for every measurement; ask for ``v(out).db`` or ``v(out).phase_deg`` explicitly.
+Units follow the column: ``v(...)`` volt, ``i(...)`` ampere, but ``.db`` decibel and ``.phase_deg`` / ``.phase_unwrapped_deg`` degree.  On an ac table a bare name such as ``v(out)``
+means ``v(out).mag`` (the magnitude per unit source) for every measurement; ask for ``v(out).db``, ``v(out).phase_deg`` (wrapped to +-180) or ``v(out).phase_unwrapped_deg`` explicitly.
 
 These are properties of the sampled table, not of the circuit: a coarse time grid or a few ac points per decade limits them (the interpolation
 error is the second difference of the curve over the step, about step^2 / 8 times its curvature).
@@ -93,7 +93,7 @@ def column_unit(name: str) -> str:
     low = name.lower()
     if low.endswith(".db"):
         return "decibel"
-    if low.endswith(".phase_deg"):
+    if low.endswith(".phase_deg") or low.endswith(".phase_unwrapped_deg"):
         return "degree"
     return "volt" if low.startswith("v(") else "ampere" if low.startswith("i(") else "dimensionless"
 

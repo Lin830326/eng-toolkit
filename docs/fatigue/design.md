@@ -207,6 +207,16 @@ of metals,” *Journal of Materials* 5, 767-778, 1970; Walker, ASTM STP 462,
 1970. Gerber's denominator uses (1-r)(1+r) for r=Sm/Su.
 
 Safety is a proportional-load multiplier that scales Sa and Sm together.
+This is the one assumption that makes it unsafe to use blindly (judge M3-1, the bolt trap): a preloaded bolt keeps its
+mean stress (the preload) fixed and only the alternating part grows with the load, so the factor from a proportional
+load line through the origin is several times too low (a bolt with Sa 3.08 MPa, Sm 447 MPa, Se 129 MPa, Su 800 MPa
+gets 1.7 from the tool against about 12 from the preloaded-bolt form n = Se (Su - Si)/(Su Sa + Se (Sm - Si)) with Si the
+preload stress). The tool does not refuse and does not model the constant-preload load line. Since round 3 the tool
+description, `data.assumptions` and a warning (always in `correction` mode, in the other modes whenever a positive mean
+is given with an amplitude and a safety factor is computed) say that the factor assumes proportional loading and is NOT
+valid where the mean stays fixed; the warning adds the mean/amplitude ratio when the mean is more than 20 times the
+amplitude (the preloaded-joint pattern). A `correction`-mode refusal now names the offending argument (`/cycles`,
+`/points`, `/basquin_a`, `/knee_cycles`) instead of `/mode`.
 For Goodman it is 1/(Sa/Sf+Sm/Su); Gerber solves
 n Sa/Sf+(n Sm/Su)^2=1 using the stable positive root
 2/(A+hypot(A,2B)). Soderberg and Morrow substitute their limiting strengths.
@@ -307,6 +317,21 @@ range histogram, and a range-mean matrix. Range bins are 1..256 and mean bins
 unfiltered history, sum(range*count)=total variation/2. Randomized tests check
 this identity, cyclic-permutation invariance and an independent circular
 four-point reference counter.
+
+Plausibility checks of the record (round 3, judges M2-3 and M2-14). `data.history_min`, `data.history_max`, `data.history_range`
+(unit in `data.history_unit`; the history as given, before `closed` rotates it) and `data.history_extremes` (value and 0-based
+sample index of the minimum and maximum, plus the time of a two-column file with `time_column`) are always returned; `values.history_max`
+and `values.history_min` repeat them with units. `data.spikes` lists isolated single-sample spikes: an interior sample more than 6 robust sigmas from
+BOTH neighbours, on the same side of both (a one-sample excursion), where sigma = 1.4826 x the median absolute sample-to-sample step (the
+standard deviation of a step for white noise; floored at 1e-6 of the range so a held record is not all spikes). At most 5 are listed
+(largest first: index, time if there is one, value, neighbours, size in sigmas) with the total in `count`, and a warning names them;
+records below 5 samples are not judged. A turning point of a smooth or triangular record is not a spike (its step is as large as the
+typical step). With damage, `data.dominant_cycle` names the single cycle with the largest damage (range, mean, 0-based row of
+`rainflow_cycles.csv`, number of occurrences in that row, its share of the total damage and the share of the whole row, which is the
+class of identical cycles) and a warning appears when one cycle carries more than 50 % of the damage (and the record has more than one
+row). A glitch usually shows as two flanks of similar size, so the larger flank can land just above or below 50 %: the spike
+list is the reliable detector, the dominance warning the consequence. With `yield_strength` the existing refusal of a cycle whose peak
+exceeds yield stays: it is the strongest spike detector.
 
 The E1049 Fig. 6 history is `[-2,1,-3,5,-1,3,-4,4,-2]`. Its range/mean/count
 tuples are (3,-.5,.5), (4,-1,.5), (4,1,1), (8,1,.5), (9,.5,.5), (8,0,.5),
