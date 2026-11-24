@@ -31,6 +31,8 @@ import numpy as np
 __all__ = [
     "ColourBar",
     "EXTRA_VIEWS",
+    "Focus",
+    "FocusLabel",
     "LegendItem",
     "LineSet",
     "Marker",
@@ -70,6 +72,8 @@ LIGHT = (-0.25, 0.45, 0.85)  # in camera space: x right, y up, z towards the vie
 MAX_FRAGMENTS = 1_000_000  # fragments held at once
 MAX_PAIRS = 2_000_000  # (triangle, pixel row) pairs held at once
 MAX_CANVAS = (2400, 3200)
+CROP_MARGIN = 0.2  # a close-up keeps this fraction of the framed size free on each side
+CROP_MIN_FRACTION = 0.01  # ... but the framed size is at least this fraction of the model's diagonal (a flat face has no depth)
 BACKGROUND = (255, 255, 255)
 PANEL_BORDER = (200, 204, 210)
 INK = (24, 24, 28)
@@ -94,6 +98,25 @@ class Marker:
     point_mm: np.ndarray  # (3,)
     label: str
     rgb: tuple[int, int, int] = (0, 0, 0)
+    draw_hidden: bool = False  # a marker no view can see is drawn thin in the isometric panel (a point inside the material)
+
+
+@dataclass(frozen=True)
+class FocusLabel:
+    point_mm: np.ndarray  # (3,) on the surface of a face, or (k, 3): candidates, the first one the view can see is used
+    text: str  # e.g. "F12"
+
+
+@dataclass(frozen=True)
+class Focus:
+    """A close-up panel under the other views: the model framed on ``box_mm`` (plus :data:`CROP_MARGIN` of its size on each
+    side), with a scale bar in millimetres and the ``labels`` of the faces that can be seen.  The view is the isometric one
+    (from above, from behind, from below or from below behind) in which most pixels belong to ``triangles``."""
+
+    box_mm: np.ndarray  # (2, 3): min and max corner of the faces to enlarge
+    triangles: np.ndarray  # indices into Mesh.triangles of the triangles of those faces
+    caption: str = "CLOSE-UP"
+    labels: tuple[FocusLabel, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -141,6 +164,7 @@ class SheetSpec:
     notes: tuple[str, ...] = ()
     views: tuple[str, ...] = ("iso",)  # 'iso' first, then any of 'front', 'top', 'right' as small views
     back_view_for_markers: bool = False  # add an isometric view from the back when a marker is hidden in the first one
+    focus: Focus | None = None  # a close-up panel below the views
     ss: int = 0  # supersampling per axis; 0 = chosen from the triangle count
 
 
@@ -157,6 +181,9 @@ class PreviewResult:
     markers_view: tuple[str | None, ...]  # per marker: the first view that shows it
     group_pixels_all: dict[int, int]  # legend group index -> pixels in all views together
     size_mm: tuple[float, float, float]
+    # per marker: (view, x, y, drawn_hidden) with the pixel of the ring centre in the PNG, or None when it was not drawn
+    markers_px: tuple[tuple[str, float, float, bool] | None, ...] = ()
+    focus: dict[str, Any] | None = None  # the close-up: view, zoom, scale, scale bar, panel rectangle, labels drawn
 
 
 # --------------------------------------------------------------------------- the bitmap font
@@ -490,18 +517,33 @@ def _srgb_pack(rgb01: np.ndarray) -> np.ndarray:
 
 
 def _render_view(
-    mesh: Mesh, view: str, width: int, height: int, ss: int, check: Check | None, *, margin: int = 10, top: int = 0
+    mesh: Mesh, view: str, width: int, height: int, ss: int, check: Check | None, *, margin: int = 10, top: int = 0,
+    crop: np.ndarray | None = None, points: Sequence[np.ndarray] = (), focus_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """One view of ``mesh`` as an (height, width, 3) uint8 image on a white panel, plus facts about it."""
+    """One view of ``mesh`` as an (height, width, 3) uint8 image on a white panel, plus facts about it.
+
+    ``crop`` (2, 3) frames the view on that box of model space (plus :data:`CROP_MARGIN` on each side) instead of the whole
+    model; the depth still spans the whole model.  ``points`` are visibility-tested like the markers (they follow them in
+    ``facts['markers']``); ``focus_mask`` (one flag per triangle) counts the pixels those triangles cover."""
     basis = _basis(view)
     verts = np.asarray(mesh.vertices, dtype=np.float64)
     screen = verts @ basis.T  # (n, 3): right, up, toward
     lo, hi = screen.min(axis=0), screen.max(axis=0)
     extent = np.maximum(hi - lo, 1e-9)
+    fit_lo, fit_extent = lo, extent
+    if crop is not None:
+        box = np.asarray(crop, dtype=np.float64).reshape(2, 3)
+        corners = np.array([[box[i, 0], box[j, 1], box[k, 2]] for i in (0, 1) for j in (0, 1) for k in (0, 1)])
+        projected = corners @ basis.T
+        diagonal = float(np.linalg.norm(verts.max(axis=0) - verts.min(axis=0)))
+        size = np.maximum(projected.max(axis=0) - projected.min(axis=0), CROP_MIN_FRACTION * diagonal)
+        centre = (projected.max(axis=0) + projected.min(axis=0)) / 2.0
+        fit_extent = size * (1.0 + 2.0 * CROP_MARGIN)
+        fit_lo = centre - fit_extent / 2.0
     # the fit uses the surface and keeps ``top`` pixels free for a caption
-    scale = min((width - 2 * margin) * ss / extent[0], (height - top - 2 * margin) * ss / extent[1])
-    cx = width * ss / 2.0 - (lo[0] + extent[0] / 2.0) * scale
-    cy = (top + height) * ss / 2.0 + (lo[1] + extent[1] / 2.0) * scale  # y down: sy = cy - up * scale
+    scale = min((width - 2 * margin) * ss / fit_extent[0], (height - top - 2 * margin) * ss / fit_extent[1])
+    cx = width * ss / 2.0 - (fit_lo[0] + fit_extent[0] / 2.0) * scale
+    cy = (top + height) * ss / 2.0 + (fit_lo[1] + fit_extent[1] / 2.0) * scale  # y down: sy = cy - up * scale
     sx = screen[:, 0] * scale + cx
     sy = cy - screen[:, 1] * scale
     depth_range = max(extent[2], 1e-9)
@@ -577,8 +619,8 @@ def _render_view(
 
     # markers: is the point visible from here?
     marker_xy: list[tuple[float, float, bool]] = []
-    for marker in mesh.markers:
-        pt = np.asarray(marker.point_mm, dtype=np.float64) @ basis.T
+    for point in [m.point_mm for m in mesh.markers] + [np.asarray(q) for q in points]:
+        pt = np.asarray(point, dtype=np.float64) @ basis.T
         mx, my = pt[0] * scale + cx, cy - pt[1] * scale
         mz = (pt[2] - lo[2]) / depth_range
         ix, iy = int(np.clip(math.floor(mx), 0, W - 1)), int(np.clip(math.floor(my), 0, H - 1))
@@ -599,6 +641,7 @@ def _render_view(
         "group_counts": {int(g): float(c) / (ss * ss) for g, c in enumerate(np.bincount(groups)) if c} if len(groups) else {},
         "markers": marker_xy,
         "scale": scale / ss,  # pixels per mm
+        "focus_pixels": 0.0 if focus_mask is None else float(np.asarray(focus_mask, dtype=bool)[buf.tri[covered]].sum()) / (ss * ss),
         "extent_mm": (float(extent[0]), float(extent[1])),
         "screen_origin": (cx / ss, cy / ss),
     }
@@ -748,6 +791,22 @@ RIGHT_W = SHEET_WIDTH - RIGHT_X - MARGIN
 LEFT_W = RIGHT_X - 2 * MARGIN
 
 
+def _nice_length(target_mm: float) -> float:
+    """The largest of 1, 2, 5 x 10^k not above ``target_mm`` (a scale bar that reads at a glance)."""
+    if not target_mm > 0.0 or not math.isfinite(target_mm):
+        return 1.0
+    exponent = math.floor(math.log10(target_mm))
+    for step in (5.0, 2.0, 1.0):
+        value = step * 10.0**exponent
+        if value <= target_mm * (1.0 + 1e-9):
+            return float(f"{value:.12g}")
+    return float(f"{10.0 ** exponent:.12g}")
+
+
+def _length_label(value_mm: float) -> str:
+    return f"{value_mm:.0f} mm" if value_mm >= 1 else f"{value_mm:.3g} mm"
+
+
 def _choose_ss(triangles: int, requested: int) -> int:
     if requested:
         return max(1, min(4, requested))
@@ -800,6 +859,7 @@ def render_sheet(mesh: Mesh, spec: SheetSpec, *, check: Check | None = None) -> 
             if score == sum(1 for m in facts["markers"] if not m[2]):
                 break
     group_all: dict[int, float] = dict(facts["group_counts"])
+    marker_px: list[tuple[str, float, float, bool] | None] = [None] * len(mesh.markers)
 
     def add_groups(found: dict[int, float]) -> None:
         for g, c in found.items():
@@ -811,31 +871,66 @@ def render_sheet(mesh: Mesh, spec: SheetSpec, *, check: Check | None = None) -> 
         _frame(canvas, x0, y0, w, h, PANEL_BORDER)
         draw_text(canvas, x0 + 8, y0 + 6, caption, MUTED, scale)
 
-    def mark(x0: int, y0: int, w: int, found: list[tuple[float, float, bool]]) -> None:
-        for marker, (mx, my, visible) in zip(mesh.markers, found):
-            if not visible:
-                continue
+    def mark(
+        x0: int, y0: int, w: int, found: list[tuple[float, float, bool]], name: str = "iso", radius: float = 9.0, labelled: bool = True,
+        h: int | None = None,
+    ) -> None:
+        shown: list[tuple[int, float, float]] = []
+        for k, (marker, (mx, my, visible)) in enumerate(zip(mesh.markers, found)):
+            if not visible or (h is not None and not (radius <= mx <= w - radius and 24 <= my <= h - radius)):
+                continue  # not seen, or (in a close-up) outside the panel
             cx, cy = x0 + mx, y0 + my
-            _ring(canvas, (cx, cy), 9.0, (255, 255, 255), 6.0)
-            _ring(canvas, (cx, cy), 9.0, marker.rgb, 3.0)
-            label = marker.label
-            lx = int(cx + 14)
-            if lx + text_width(label, 2) > x0 + w - 6:
-                lx = int(cx - 14 - text_width(label, 2))
-            ly = int(cy - 9)
-            _fill(canvas, lx - 3, ly - 2, text_width(label, 2) + 6, 22, (255, 255, 255))
-            draw_text(canvas, lx, ly, label, marker.rgb, 2)
+            _ring(canvas, (cx, cy), radius, (255, 255, 255), radius * 2.0 / 3.0)
+            _ring(canvas, (cx, cy), radius, marker.rgb, radius / 3.0)
+            if marker_px[k] is None:
+                marker_px[k] = (name, float(cx), float(cy), False)
+            shown.append((k, cx, cy))
+        if not labelled:
+            return
+        # markers closer than a ring radius share one label ("D1 D26"); a label that would cover an earlier one is tried on the
+        # other side of its ring and dropped when that is taken too
+        clusters: list[list[tuple[int, float, float]]] = []
+        for item in shown:
+            for cluster in clusters:
+                if math.hypot(item[1] - cluster[0][1], item[2] - cluster[0][2]) <= radius:
+                    cluster.append(item)
+                    break
+            else:
+                clusters.append([item])
+        taken: list[tuple[int, int, int, int]] = []
+        for cluster in clusters:
+            names = [mesh.markers[k].label for k, _, _ in cluster if mesh.markers[k].label]
+            if not names:
+                continue
+            label = " ".join(names[:3]) + (f" +{len(names) - 3}" if len(names) > 3 else "")
+            rgb = mesh.markers[cluster[0][0]].rgb
+            cx, cy = cluster[0][1], cluster[0][2]
+            tw, th = text_width(label, 2) + 6, 22
+            right = int(cx + radius + 5) - 3
+            left = int(cx - radius - 5 - text_width(label, 2)) - 3
+            if right + tw > x0 + w - 3:
+                right, left = left, right
+            for lx in (right, left):
+                ly = int(cy - 9) - 2
+                if lx < x0 + 2 or lx + tw > x0 + w - 2:
+                    continue
+                if any(lx < ox + ow and ox < lx + tw and ly < oy + oh and oy < ly + th for ox, oy, ow, oh in taken):
+                    continue
+                taken.append((lx, ly, tw, th))
+                _fill(canvas, lx, ly, tw, th, (255, 255, 255))
+                draw_text(canvas, lx + 3, ly + 2, label, rgb, 2)
+                break
 
     place(MARGIN, top, LEFT_W, iso_h, image, VIEW_CAPTION["iso"])
     _axis_triad(canvas, (MARGIN + 52, top + iso_h - 52), 36.0)
-    mark(MARGIN, top, LEFT_W, facts["markers"])
-    seen_in: list[str | None] = [("iso" if m[2] else None) for m in facts["markers"]]
+    mark(MARGIN, top, LEFT_W, facts["markers"][: len(mesh.markers)])
+    seen_in: list[str | None] = [("iso" if m[2] else None) for m in facts["markers"][: len(mesh.markers)]]
     left_bottom = top + iso_h
     if back is not None:
         back_image, back_facts, back_h, back_name = back
         back_y = top + iso_h + 12
         place(MARGIN, back_y, LEFT_W, back_h, back_image, VIEW_CAPTION[back_name])
-        mark(MARGIN, back_y, LEFT_W, back_facts["markers"])
+        mark(MARGIN, back_y, LEFT_W, back_facts["markers"], back_name)
         seen_in = [first or (back_name if m[2] else None) for first, m in zip(seen_in, back_facts["markers"])]
         add_groups(back_facts["group_counts"])
         left_bottom = back_y + back_h
@@ -848,8 +943,112 @@ def render_sheet(mesh: Mesh, spec: SheetSpec, *, check: Check | None = None) -> 
             image_small, small_facts = _render_view(mesh, view, w, small_h, max(1, ss - 1), check, margin=8, top=20)
             place(sx0, small_y, w, small_h, image_small, VIEW_CAPTION[view], 1 if w < 200 else 2)
             add_groups(small_facts["group_counts"])
+            if mesh.markers:
+                mark(sx0, small_y, w, small_facts["markers"], view, radius=5.0, labelled=False)
+                seen_in = [first or (view if m[2] else None) for first, m in zip(seen_in, small_facts["markers"])]
         left_bottom = small_y + small_h
+        if spec.back_view_for_markers and any(view is None for view in seen_in):
+            back_h = 300
+            back_y = left_bottom + 12
+            best = -1
+            for candidate in EXTRA_VIEWS:  # as above: the view that shows most of the markers no earlier view shows
+                picture, found = _render_view(mesh, candidate, LEFT_W, back_h, ss, check, top=22)
+                score = sum(1 for first, m_new in zip(seen_in, found["markers"]) if first is None and m_new[2])
+                if score > best:
+                    best, back = score, (picture, found, back_h, candidate)
+            if back is not None and best > 0:
+                back_image, back_facts, back_h, back_name = back
+                place(MARGIN, back_y, LEFT_W, back_h, back_image, VIEW_CAPTION[back_name])
+                mark(MARGIN, back_y, LEFT_W, back_facts["markers"], back_name)
+                seen_in = [first or (back_name if m[2] else None) for first, m in zip(seen_in, back_facts["markers"])]
+                add_groups(back_facts["group_counts"])
+                left_bottom = back_y + back_h
+    for k, marker in enumerate(mesh.markers):  # a point inside the material: thin, in the isometric panel, labelled
+        if marker.draw_hidden and seen_in[k] is None:
+            mx, my, _ = facts["markers"][k]
+            cx, cy = MARGIN + mx, top + my
+            _ring(canvas, (cx, cy), 8.0, (255, 255, 255), 4.0)
+            _ring(canvas, (cx, cy), 8.0, marker.rgb, 1.5)
+            lx = int(cx + 13)
+            if lx + text_width(marker.label, 2) > MARGIN + LEFT_W - 6:
+                lx = int(cx - 13 - text_width(marker.label, 2))
+            draw_text(canvas, lx, int(cy - 9), marker.label, marker.rgb, 2)
+            marker_px[k] = ("iso", float(cx), float(cy), True)
     markers_visible = [view is not None for view in seen_in]
+
+    focus_data = None
+    if spec.focus is not None and len(spec.focus.triangles):
+        focus = spec.focus
+        focus_h = 440
+        focus_y = left_bottom + 12
+        mask = np.zeros(len(mesh.triangles), dtype=bool)
+        mask[np.asarray(focus.triangles, dtype=np.int64)] = True
+        candidates = [np.atleast_2d(np.asarray(lab.point_mm, dtype=np.float64)) for lab in focus.labels]
+        label_points = [point for group in candidates for point in group]
+        first_of = np.concatenate([[0], np.cumsum([len(group) for group in candidates])]).astype(int)
+        view_name, best_pixels = "iso", -1.0
+        for candidate in ("iso",) + EXTRA_VIEWS:  # the isometric view unless another shows 15 % more of the faces
+            _, trial = _render_view(mesh, candidate, LEFT_W // 2, 220, 1, check, top=22, crop=focus.box_mm, focus_mask=mask)
+            if trial["focus_pixels"] > max(best_pixels * 1.15, 0.0) or best_pixels < 0:
+                view_name, best_pixels = candidate, trial["focus_pixels"]
+        close, close_facts = _render_view(mesh, view_name, LEFT_W, focus_h, ss, check, top=22, crop=focus.box_mm, points=label_points, focus_mask=mask)
+        scale_px = close_facts["scale"]
+        zoom = scale_px / facts["scale"] if facts["scale"] > 0 else 0.0
+        caption = f"{focus.caption} - {VIEW_CAPTION[view_name]} - x{zoom:.3g}"
+        place(MARGIN, focus_y, LEFT_W, focus_h, close, caption)
+        _fill(canvas, MARGIN + 1, focus_y + 1, text_width(caption, 2) + 16, 22, (255, 255, 255))  # the model may run under the caption
+        draw_text(canvas, MARGIN + 8, focus_y + 6, caption, MUTED, 2)
+        close_markers = close_facts["markers"]
+        mark(MARGIN, focus_y, LEFT_W, close_markers[: len(mesh.markers)], view_name, radius=9.0, h=focus_h)
+        drawn_labels: list[str] = []
+        hidden_labels: list[str] = []
+        taken: list[tuple[int, int, int, int]] = []
+        found_points = close_markers[len(mesh.markers) :]
+        for index, lab in enumerate(focus.labels):
+            seen = [
+                (lx, ly)
+                for lx, ly, visible in found_points[first_of[index] : first_of[index + 1]]
+                if visible and 0 <= lx < LEFT_W and 24 <= ly < focus_h
+            ]
+            if not seen:
+                hidden_labels.append(lab.text)
+                continue
+            lx, ly = seen[0]
+            tw, th = text_width(lab.text, 2) + 6, 22
+            x0, y0 = int(MARGIN + lx - tw / 2), int(focus_y + ly - th / 2)
+            for _ in range(8):  # slide a label down while it covers another one
+                if any(x0 < tx + tww and tx < x0 + tw and y0 < ty + thh and ty < y0 + th for tx, ty, tww, thh in taken):
+                    y0 += th + 2
+                else:
+                    break
+            x0 = max(MARGIN + 2, min(x0, MARGIN + LEFT_W - tw - 2))
+            y0 = max(focus_y + 24, min(y0, focus_y + focus_h - th - 24))
+            taken.append((x0, y0, tw, th))
+            _fill(canvas, x0, y0, tw, th, (255, 255, 255))
+            _frame(canvas, x0, y0, tw, th, INK)
+            draw_text(canvas, x0 + 3, y0 + 2, lab.text, INK, 2)
+            drawn_labels.append(lab.text)
+        bar_mm = _nice_length(0.3 * LEFT_W / scale_px) if scale_px > 0 else 1.0
+        bar_px = bar_mm * scale_px
+        bx, by = MARGIN + 16, focus_y + focus_h - 22
+        _fill(canvas, bx - 2, by - 26, int(bar_px) + 4 + text_width(_length_label(bar_mm), 2) + 12, 36, (255, 255, 255))
+        _fill(canvas, bx, by, int(round(bar_px)), 3, INK)
+        _fill(canvas, bx, by - 5, 2, 13, INK)
+        _fill(canvas, bx + int(round(bar_px)) - 2, by - 5, 2, 13, INK)
+        draw_text(canvas, bx + int(round(bar_px)) + 10, by - 8, _length_label(bar_mm), INK, 2)
+        draw_text(canvas, bx, by - 22, "scale in the picture plane", MUTED, 1)
+        left_bottom = focus_y + focus_h
+        focus_data = {
+            "view": view_name,
+            "zoom": float(f"{zoom:.4g}"),
+            "scale_px_per_mm": float(f"{scale_px:.6g}"),
+            "scale_bar_mm": bar_mm,
+            "panel": {"x": MARGIN, "y": focus_y, "width": LEFT_W, "height": focus_h},
+            "labels_drawn": drawn_labels,
+            "labels_not_drawn": hidden_labels,
+            "focus_pixels": int(round(close_facts["focus_pixels"])),
+            "box_mm": [[float(f"{v:.6g}") for v in row] for row in np.asarray(focus.box_mm, dtype=np.float64).reshape(2, 3)],
+        }
 
     # the right column
     y = top
@@ -922,4 +1121,6 @@ def render_sheet(mesh: Mesh, spec: SheetSpec, *, check: Check | None = None) -> 
         markers_view=tuple(seen_in),
         group_pixels_all=group_pixels_all,
         size_mm=size,  # type: ignore[arg-type]
+        markers_px=tuple(marker_px),
+        focus=focus_data,
     )

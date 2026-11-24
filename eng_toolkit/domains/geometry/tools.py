@@ -561,8 +561,9 @@ def check_dfm(
         ),
     ] = "",
     tool_axis: Annotated[
-        str, Field(description="cnc_milling: the spindle axis, one of +x -x +y -y +z -z; internal corners are judged along it")
-    ] = "+z",
+        str,
+        Field(description="cnc_milling: spindle axis, one of +x -x +y -y +z -z; give the shop's setup. Empty = +z, with a warning"),
+    ] = "",
     max_findings: Annotated[
         int, Field(description="Findings listed in data, 1 to 500. The summary counts and dfm_findings.json cover all of them")
     ] = 100,
@@ -593,7 +594,8 @@ def check_dfm(
         if name not in dfm.PROCESSES:
             raise dfm.unsupported_process(process)
         unit_obj, unit, per_mm = _numeric.output_scale(output_unit)
-        axis_name = tool_axis.strip().lower()
+        axis_defaulted = not tool_axis.strip()
+        axis_name = tool_axis.strip().lower() or dfm.DEFAULT_TOOL_AXIS
         if axis_name not in dfm.AXES:
             raise _invalid_param("tool_axis", f"{tool_axis!r} is not one of {list(dfm.AXES)}", allowed=list(dfm.AXES))
         if not 1 <= max_findings <= MAX_INVENTORY_LIMIT:
@@ -630,6 +632,9 @@ def check_dfm(
         deadline("rules")
 
         warnings = list(report.warnings)
+        tool_axis_defaulted = axis_defaulted and name == "cnc_milling"
+        if tool_axis_defaulted:
+            warnings.append(dfm.TOOL_AXIS_DEFAULTED_WARNING)
         if solid.solids > 1:
             warnings.append(
                 f"The file holds {solid.solids} solids: they are checked together as one body, so a wall between two separate "
@@ -668,15 +673,7 @@ def check_dfm(
                 "source": "default" if key in used else "caller",
                 "meaning": description,
             }
-        summary = {
-            "errors": counts["error"],
-            "warnings": counts["warn"],
-            "info": counts["info"],
-            "total": len(ordered),
-            "by_rule": by_rule,
-            "exact_findings": sum(1 for f in ordered if f.exact),
-            "heuristic_findings": sum(1 for f in ordered if not f.exact),
-        }
+        summary = dfm.summarise(ordered, counts, by_rule)
         measurements = dict(report.measurements)
         artifact = job.write_json(
             "dfm_findings.json",
@@ -704,6 +701,7 @@ def check_dfm(
             "process": name,
             "supported_processes": list(dfm.PROCESSES),
             "tool_axis": axis_name if name == "cnc_milling" else None,
+            "tool_axis_defaulted": tool_axis_defaulted,
             "solids": solid.solids,
             "faces_total": len(inv.faces),
             "holes_total": len(inv.holes),
@@ -951,13 +949,13 @@ def convert(
 
 VIEW_DESCRIPTION = (
     "Write a solid 3D CAD file (.step .stp .iges .igs .brep, mm) as a coloured GLB for 3D viewers and, by default, a PNG picture "
-    "of the same colours (isometric plus front, top, right views, legend, size in mm) for a mail: hand over the PNG first. GLB: one "
-    "material per colour, each primitive's extras list its face ids (F<n>, as in geometry_measure) with triangle ranges; B-rep "
+    "of the same colours (isometric + front, top, right, legend, size in mm) for a mail: hand over the PNG first. GLB: one "
+    "material per colour, each primitive's extras list its face ids (F<n>, as in geometry_measure); B-rep "
     "edges as lines if show_edges. color_by: 'none' (grey), 'face_kind' (plane, cylinder, cone, sphere, torus, bspline, other), "
     "'dfm' (worst geometry_check_dfm finding per face: error red, warn orange, info blue; process, tool_axis, limits as there) or "
     "'highlight' (faces in highlight, 'F3,F7', or named groups with a colour each: 'bends: F5,F12; holes: F3-F4'). GLB is metres, "
-    "+Y up. Also writes view.json. Returns triangle_count, face_count, highlighted_face_count, finding_count. Shells, loose faces "
-    "and .stl are refused. "
+    "+Y up. 'focus': close-up panel of faces; 'dfm' rings mark findings. Also writes view.json. Returns "
+    "triangle_count, face_count, highlighted_face_count, finding_count. Shells, loose faces and .stl are refused. "
     f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')})."
 )
 
@@ -971,7 +969,9 @@ def view(
         Field(description="color_by 'highlight' only: face ids 'F3,F7' (range F14-F19), or colour groups 'bends: F5,F12; holes: F3-F4' (up to 8)"),
     ] = "",
     process: Annotated[str, Field(description="color_by 'dfm' only: 'cnc_milling' or 'sheet_metal', as in geometry_check_dfm")] = "cnc_milling",
-    tool_axis: Annotated[str, Field(description="color_by 'dfm', cnc_milling: spindle axis, one of +x -x +y -y +z -z")] = "+z",
+    tool_axis: Annotated[
+        str, Field(description="color_by 'dfm', cnc_milling: spindle axis, one of +x -x +y -y +z -z. Empty = +z, with a warning")
+    ] = "",
     limits: Annotated[
         str, Field(description='color_by \'dfm\' only: JSON limits as in geometry_check_dfm, e.g. {"min_wall": "1 mm"}. Empty = defaults')
     ] = "",
@@ -987,6 +987,10 @@ def view(
         str,
         Field(description="'png' (default): also write a PNG picture, isometric + front, top, right views and legend; 'iso': isometric only; 'none'"),
     ] = "png",
+    focus: Annotated[
+        str,
+        Field(description="Close-up panel in the PNG on these faces: 'F3,F7' (F14-F19), a highlight group name, or a DFM finding 'D2'. Empty = none"),
+    ] = "",
 ) -> ToolResult:
     deadline = dfm.Deadline(max(1, min(max_seconds, 600)))
     inputs = {
@@ -1001,6 +1005,7 @@ def view(
         "name": name,
         "show_edges": show_edges,
         "preview": preview,
+        "focus": focus,
     }
 
     def compute(job: JobHandle) -> Computed:
@@ -1019,6 +1024,7 @@ def view(
                 show_edges=show_edges,
                 deadline=deadline,
                 preview=preview,
+                focus=focus,
             )
         except ToolFailure as exc:  # every refusal names its parameter as a JSON pointer
             details = {**exc.details, "param": viewer.pointer(exc.details, exc.family)}

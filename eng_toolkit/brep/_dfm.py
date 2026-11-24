@@ -89,6 +89,9 @@ class FacingPair:
     outer_radius_mm: float | None = None
     span_rad: float | None = None
     face_area_mm2: float | None = None  # plane pairs: the smaller of the two face areas (an upper bound of the overlap)
+    axis_offset_mm: float | None = None  # cylinder pairs: distance between the two axes (0 when they share one line)
+    axis_tolerance_mm: float | None = None  # cylinder pairs: the tolerance that accepted the pair
+    relaxed: bool = False  # cylinder pairs: accepted only by the relaxed tolerance (axes further apart than coaxial_tolerance_mm)
 
 
 @dataclass(frozen=True)
@@ -412,7 +415,7 @@ def _axis_aligned(normal: np.ndarray) -> int | None:
 
 def facing_pairs(
     solid: Solid, inv: Inventory, cylinders: tuple[CylinderFact, ...], *, max_gap_mm: float,
-    deadline: Callable[[str], None] | None = None,
+    relaxed_axis_mm: float | None = None, deadline: Callable[[str], None] | None = None,
 ) -> PairSearch:
     """Pairs of faces with material between them closer than ``max_gap_mm``.
 
@@ -421,7 +424,10 @@ def facing_pairs(
       material, meets nothing before the second face.
     * Cylinders: a concave and a convex cylinder face on one axis with overlapping axial and angular ranges; the gap is the
       difference of the radii, confirmed by a radial ray that meets exactly those two surfaces first.  "One axis" and the
-      ray allow :func:`coaxial_tolerance_mm` of the gap (axes from rounded 3-point arcs are 7e-5 mm apart).
+      ray allow :func:`coaxial_tolerance_mm` of the gap (axes from rounded 3-point arcs are 7e-5 mm apart).  With
+      ``relaxed_axis_mm`` a pair whose axes are further apart, up to that distance, is kept too and marked
+      ``relaxed`` (arcs through via points written to 3 decimals are 3e-3 mm off-axis, to 2 decimals 4e-2 mm).  Every
+      cylinder pair carries the axis offset that was measured.
     """
     _occ.load()
     from OCP.BRepClass3d import BRepClass3d_SolidClassifier
@@ -520,8 +526,13 @@ def facing_pairs(
                 continue
             tolerance = coaxial_tolerance_mm(gap)
             offset = np.array(outer.start_mm) - base
-            if np.linalg.norm(offset - (offset @ axis) * axis) > tolerance:
-                continue
+            off_axis = float(np.linalg.norm(offset - (offset @ axis) * axis))
+            relaxed = False
+            if off_axis > tolerance:
+                if relaxed_axis_mm is None or off_axis > max(relaxed_axis_mm, tolerance):
+                    continue
+                tolerance = max(relaxed_axis_mm, tolerance)
+                relaxed = True
             ends = sorted(float((np.array(p) - base) @ axis) for p in (inner.start_mm, inner.end_mm))
             outer_ends = sorted(float((np.array(p) - base) @ axis) for p in (outer.start_mm, outer.end_mm))
             low, high = max(ends[0], outer_ends[0]), min(ends[1], outer_ends[1])
@@ -553,6 +564,9 @@ def facing_pairs(
                         inner_radius_mm=_r(inner.radius_mm),
                         outer_radius_mm=_r(outer.radius_mm),
                         span_rad=_r(span),
+                        axis_offset_mm=_r(off_axis),
+                        axis_tolerance_mm=_r(tolerance),
+                        relaxed=relaxed,
                     )
                 )
                 break
