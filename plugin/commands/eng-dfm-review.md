@@ -3,6 +3,8 @@ description: DFM review of a STEP/IGES/BREP part for CNC milling or sheet metal
 argument-hint: <path to the CAD file> [cnc_milling|sheet_metal] [shop limits]
 ---
 
+First load the `eng-dfm-review` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-dfm-review` skill (and `eng-toolkit` for the unit and reporting rules) to review this part for manufacturability with the eng-toolkit tools `geometry_measure` and `geometry_check_dfm`:
 
 $ARGUMENTS

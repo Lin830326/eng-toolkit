@@ -3,6 +3,8 @@ description: Structural check (strength, deflection, buckling, vibration) with t
 argument-hint: <describe the structure, supports, loads and what to check>
 ---
 
+First load the `eng-structural-check` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-structural-check` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this structural problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS

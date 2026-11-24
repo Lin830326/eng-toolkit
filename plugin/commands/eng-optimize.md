@@ -3,6 +3,8 @@ description: Optimization, linear programs, root finding, curve fitting, uncerta
 argument-hint: <describe the objective, variables, constraints or data and what to compute>
 ---
 
+First load the `eng-optimize` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-optimize` skill (and `eng-toolkit` for the unit and reporting rules) to solve this problem with the eng-toolkit `optimize_*` tools:
 
 $ARGUMENTS

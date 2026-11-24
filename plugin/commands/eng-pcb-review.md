@@ -3,6 +3,8 @@ description: Review a KiCad board and schematic for fabrication with DRC, ERC, b
 argument-hint: <path to .kicad_pcb and .kicad_sch, the fab's capability sheet>
 ---
 
+First load the `eng-pcb-review` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-pcb-review` skill (and `eng-toolkit` for the unit and reporting rules) to review this KiCad design with the eng-toolkit MCP tools:
 
 $ARGUMENTS

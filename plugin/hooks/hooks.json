@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'eng-toolkit reminder: if this request needs an engineering number (structures, fluids, thermal, machine elements, signals, circuits, CAD/DFM, tolerances), load the eng-toolkit skill (several workflow skills exist: choose by its routing list). Numbers that decide a result come from an mcp__eng-toolkit__ tool call (search with ToolSearch if deferred); say which tool produced each. Simple unit scaling and sums of tool outputs are allowed but label them my arithmetic; never present a hand number as a tool result; label values from memory as from memory, not a tool result. If an input that decides the answer is missing (datasheet value, limit, factor, load), ask first in one short list; never invent it or state a verdict before it is known.'"
+            "command": "echo 'eng-toolkit reminder: if this request needs an engineering number (structures, fluids, thermal, machine elements, signals, circuits, CAD/DFM, tolerances), load the eng-toolkit skill and the matching eng-* workflow skill (choose by its routing list) before the first mcp__eng-toolkit__ tool call. Numbers that decide a result come from an mcp__eng-toolkit__ tool call (search with ToolSearch if deferred); say which tool produced each. Simple unit scaling and sums of tool outputs are allowed but label them my arithmetic; never present a hand number as a tool result; label values from memory as from memory, not a tool result. If an input that decides the answer is missing (datasheet value, limit, factor, load), ask first in one short list; never invent it or state a verdict before it is known.'"
           }
         ]
       }

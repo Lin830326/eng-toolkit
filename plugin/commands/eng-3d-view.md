@@ -3,6 +3,8 @@ description: Build a part or make a picture of it (PNG to paste into a mail, plu
 argument-hint: <describe the part or give a CAD/FEM file, and what the picture should show>
 ---
 
+First load the `eng-3d-view` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-3d-view` skill (and `eng-toolkit` for the unit and reporting rules) to produce this 3D view with the eng-toolkit tools `geometry_make_part`, `geometry_view`, `geometry_convert` and the FEM chain `fem_static` / `fem_view`:
 
 $ARGUMENTS

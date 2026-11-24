@@ -3,6 +3,8 @@ description: Pump and system curve, branch flow split, pipe losses and other flu
 argument-hint: <describe the fluid, pump curve points, pipes, fittings, valves and what to find>
 ---
 
+First load the `eng-flow-network` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-flow-network` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this fluid-flow problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS

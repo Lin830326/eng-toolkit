@@ -3,6 +3,8 @@ description: Lint Verilog, get gate counts and check whether two Verilog designs
 argument-hint: <Verilog text or files, top module, the claim to check>
 ---
 
+First load the `eng-digital-synthesis` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-digital-synthesis` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this Verilog with the eng-toolkit MCP tools:
 
 $ARGUMENTS

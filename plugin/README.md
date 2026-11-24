@@ -56,22 +56,22 @@ artifacts preserve nonfinite inputs as quoted text. See the
 
    ```
    /eng-structural-check 4 m steel cantilever (E 200 GPa, A 10000 mm2, I 1e8 mm4), 10 kN tip load: tip deflection and bending stress
-   /eng-dfm-review C:\parts\bracket.step cnc_milling tool radius 3 mm, min wall 1.5 mm
+   /eng-dfm-review C:\parts\bracket.step cnc_milling tool radius 2 mm, min wall 2 mm, spindle from the top
    /eng-fatigue-check 30 mm machined shaft, Su 690 MPa, bending 110 MPa amplitude with 60 MPa mean: infinite life?
    /eng-motor-drive-sizing 10:1 reducer, 0.8 kg*m^2 load, 12 rad/s in 0.6 s, hold 1.8 s: peak and RMS motor torque
    /eng-optimize fit T = Tinf + A*exp(-t/tau) to these cooling data with a 95 % interval on tau
    /eng-plot-results Bode plot of the filter just designed
    /eng-3d-view C:\parts\bracket.step colour by DFM findings
-   /eng-thermal-check IRF540N 8 W on a 3 K/W heatsink in a 45 C box, Tj rule 90 C: fan needed? warm-up of the 200 g sink
-   /eng-control-tuning Maxon RE 40 velocity loop, 50 ms rise, <10 % overshoot, 1 kHz controller: gains and difference equation
-   /eng-signal-analysis accel.csv at 10 kHz, motor 1480 rpm: spectrum peaks, are 1x and 2x there, decimate by 4
-   /eng-flow-network cooling loop DN40 60 m, plate exchanger, two branches, pump curve points: operating point and split
-   /eng-drawing C:\parts\pico.step A3 drawing with top, front, right and iso views, PNG and PDF, plus a hole list
-   /eng-pcb-review C:\boards\hub.kicad_pcb and hub.kicad_sch: can I send this to a fab that allows 0.15 mm tracks?
-   /eng-circuit-sim 2N2222 common-emitter amplifier, 12 V, 47k/10k bias, 2.2k collector, 470 ohm emitter with 100 uF: bias, gain, Bode
-   /eng-digital-synthesis is my cnt8_opt counter equivalent to cnt8? gate counts for both
-   /eng-machine-design output shaft of a helical gearbox, 30 kW at 1470 rpm: shaft diameter, key length, bearing life
-   /eng-tolerancing 6205 bearing on a 25 mm shaft in an aluminium housing: shaft and housing fits and the end float stack-up
+   /eng-thermal-check TO-220 regulator, 5 W on a catalogue 6 K/W heatsink in a 40 C box, Tj rule 88 C: fan needed? warm-up of the 120 g sink
+   /eng-control-tuning 24 V brushed motor velocity loop, 80 ms rise, <5 % overshoot, 2 kHz controller: gains and difference equation
+   /eng-signal-analysis vib.csv at 8 kHz, motor 1750 rpm, 17-tooth pinion: spectrum peaks, are 1x and 2x there, decimate by 4
+   /eng-flow-network chilled loop DN50 40 m, plate exchanger, two branches, pump curve points: operating point and split
+   /eng-drawing C:\parts\plate.step A3 drawing with top, front, right and iso views, PNG and PDF, plus a hole list
+   /eng-pcb-review C:\boards\main.kicad_pcb and main.kicad_sch: can I send this to a fab that allows 0.2 mm tracks?
+   /eng-circuit-sim NPN common-emitter amplifier, 15 V, 68k/12k bias, 3.3k collector, 680 ohm emitter with 220 uF: bias, gain, Bode
+   /eng-digital-synthesis is my lean terminal-count counter equivalent to the reference one? gate counts for both
+   /eng-machine-design output shaft of a helical gearbox, 18 kW at 960 rpm: shaft diameter, key length, bearing life
+   /eng-tolerancing 6207 bearing on a 35 mm shaft in an aluminium housing: shaft and housing fits and the end float stack-up
    ```
 
 ## Does it help? (Claude Haiku, `scripts/eval_plugin.py`)
