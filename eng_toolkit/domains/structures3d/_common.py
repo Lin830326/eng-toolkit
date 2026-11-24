@@ -6,6 +6,7 @@ import csv
 import io
 import math
 import re
+from contextvars import ContextVar
 from typing import Annotated, Any
 
 import numpy as np
@@ -60,8 +61,74 @@ _UNIT_FACTOR = re.compile(r"[A-Za-zµμ°%_]+(?:\^[+-]?[0-9]{1,2})?", re.ASCII)
 _ID = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,31}", re.ASCII)
 
 
+# ---------------------------------------------------------------- record grammar shown in every refusal
+# A refusal inside a record names the record kind, the number of the record (and its line when the text has several lines), what was received
+# (clipped) and the grammar with an example.  ``records`` remembers the rows of this call; ``invalid`` finds the row from the JSON pointer.
+_TRACE: ContextVar[dict | None] = ContextVar("structures_record_trace", default=None)
+GRAMMAR: dict[str, dict[str, tuple[str, tuple[str, ...]]]] = {
+    "*": {
+        "nodes": ("id,x,y,z", ("a,0 m,0 m,0 m",)),
+        "members": (
+            "id,start,end,E,G,A,Iy,Iz,J[,roll | ,vx,vy,vz]",
+            ("e,a,b,200 GPa,80 GPa,1e-3 m^2,1e-6 m^4,2e-6 m^4,1e-6 m^4",),
+        ),
+        "orientations": ("member,roll,angle | member,vector,vx,vy,vz", ("e,roll,30 deg", "e,vector,0,1,0")),
+        "shear_properties": ("member,Asy,Asz", ("e,800 mm^2,600 mm^2",)),
+        "releases": ("member,start|end,rx+ry+rz (any of the three, joined by +)", ("e,start,ry+rz",)),
+        "supports": (
+            "node,fixed | node,pinned | node,roller_x|roller_y|roller_z | node,ux+uy+uz+rx+ry+rz (any subset) | "
+            "node,spring,axis,k[,rest] | node,settlement,axis,value",
+            ("a,fixed", "a,ux+rz", "c,spring,ux,1 kN/m,0 m", "d,settlement,uy,-5 mm"),
+        ),
+        "loads": ("node,Fx,Fy,Fz,Mx,My,Mz (all six, every field with a unit)", ("b,1 kN,0 N,0 N,0 N*m,0 N*m,0 N*m",)),
+        "member_loads": (
+            "member,uniform,local|global,qx,qy,qz | member,point,local|global,a,Fx,Fy,Fz (a is the distance from the start node)",
+            ("e,uniform,local,0 N/m,1 kN/m,0 N/m", "e,point,global,1 m,0 N,1 kN,0 N"),
+        ),
+        "thermal": ("member,alpha,dT", ("e,12e-6 1/K,20 K",)),
+        "member_masses": ("member,mass_per_length", ("e,12 kg/m",)),
+        "nodal_masses": ("node,m,J | node,mx,my,mz,Jx,Jy,Jz", ("b,10 kg,0 kg*m^2",)),
+    },
+    "foundation": {"point_loads": ("x,force,moment", ("5 m,20 kN,0 N*m",))},
+    "plate": {"point_loads": ("x,y,P", ("0.4 m,0.6 m,100 N",))},
+}
+
+
+def _trace() -> dict:
+    trace = _TRACE.get()
+    if trace is None:
+        trace = {"tool": None, "rows": {}}
+        _TRACE.set(trace)
+    return trace
+
+
+def _clip(text: str, width: int = 80) -> str:
+    text = re.sub(r"[^ -~]", "?", text)
+    return text if len(text) <= width else text[: width - 3] + "..."
+
+
+def record_note(path: str) -> str:
+    """The context appended to a refusal at JSON pointer ``path``: record kind and number, what was received, the grammar and an example."""
+    trace = _trace()
+    segments = path.strip("/").split("/")
+    for take in (1, 2):
+        key = "/".join(segments[:take])
+        if key in trace["rows"] and len(segments) > take and segments[take].isdigit() and int(segments[take]) < len(trace["rows"][key]):
+            index = int(segments[take])
+            raw, line = trace["rows"][key][index]
+            break
+    else:
+        return ""
+    where = f"{key} record {index + 1}" + (f" (line {line})" if line is not None else "")
+    grammar = GRAMMAR.get(trace["tool"] or "", {}).get(segments[0]) or GRAMMAR["*"].get(segments[0])
+    if grammar is None:
+        return f" [{where}: received '{_clip(raw.strip())}']"
+    forms, examples = grammar
+    return f" [{where}: received '{_clip(raw.strip())}'; expected {forms}; e.g. " + " or ".join(f"'{e}'" for e in examples) + "]"
+
+
 def invalid(param: str, message: str, family: str = "input.invalid") -> None:
-    raise UnitsError(family, message, {"param": "/" + param.lstrip("/")})
+    raise UnitsError(family, message + record_note(param), {"param": "/" + param.lstrip("/")})
 
 
 def choice(raw: str, param: str, choices: tuple[str, ...]) -> str:
@@ -145,22 +212,32 @@ def records(text: str, param: str, cap: int, *, required: bool = False) -> list[
         if required:
             invalid(param, "at least one record is required", "input.missing")
         return []
-    parts = text.replace("\r\n", "\n").replace("\n", ";").split(";")
-    if len(parts) > cap:
+    entries, current, line, start = [], [], 1, 1
+    for ch in text.replace("\r\n", "\n") + ";":
+        if ch in ";\n":
+            entries.append(("".join(current), start))
+            current, start = [], line + (ch == "\n")
+        else:
+            current.append(ch)
+        line += ch == "\n"
+    multiline = "\n" in text
+    _trace()["rows"][param] = [(part, number if multiline else None) for part, number in entries]
+    if len(entries) > cap:
         invalid(param, f"record cap is {cap}", "input.out_of_range")
-    result = []
-    for i, part in enumerate(parts):
+    for i, (part, _) in enumerate(entries):
         if len(part) > 1000:
             invalid(f"{param}/{i}", "record exceeds 1000 characters", "input.out_of_range")
         if not part.strip():
-            invalid(f"{param}/{i}", "empty record")
-        result.append([v.strip() for v in part.split(",")])
-    return result
+            invalid(f"{param}/{i}", "empty record (blank line or doubled or trailing ';')")
+    return [[v.strip() for v in part.split(",")] for part, _ in entries]
 
 
 def fields(row: list[str], allowed: tuple[int, ...], path: str) -> None:
-    if len(row) not in allowed or any(not x for x in row):
-        invalid(path, f"expected {allowed} nonempty comma-separated fields")
+    if len(row) not in allowed:
+        invalid(path, f"expected {' or '.join(map(str, allowed))} comma-separated fields but got {len(row)}")
+    for k, value in enumerate(row):
+        if not value:
+            invalid(path, f"field {k + 1} is empty")
 
 
 def identifier(raw: str, path: str) -> str:
@@ -222,6 +299,7 @@ class Result:
 
 def run(name: str, inputs: dict, compute):
     def guarded(handle):
+        _TRACE.set({"tool": name, "rows": {}})
         try:
             with np.errstate(over="raise", divide="raise", invalid="raise"):
                 return compute(handle)

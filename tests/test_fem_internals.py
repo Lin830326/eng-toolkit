@@ -153,16 +153,18 @@ def test_the_two_pieces_of_a_mesh_are_counted():
 
 
 def test_the_element_estimate_and_the_limits():
-    # a 10 x 10 x 100 bar (V = 10000 mm^3) at 5 mm: 6 sqrt(2) * 10000 / 125 = 678.82 elements
-    assert M.estimate_elements(10000.0, 5.0) == pytest.approx(678.8225, abs=1e-3)
+    # a 10 x 10 x 100 bar (V = 10000 mm^3, A = 2 (1000 + 1000 + 100) = 4200 mm^2) at 5 mm: 4 * 10000 / 125 + 1.7 * 4200 / 25 = 320 + 285.6 elements
+    assert M.estimate_elements(10000.0, 5.0, 4200.0) == pytest.approx(605.6, abs=1e-3)
+    assert M.estimate_elements(10000.0, 5.0) == pytest.approx(320.0, abs=1e-3)  # no surface term without an area
     bbox = ((0.0, 0.0, 0.0), (100.0, 10.0, 10.0))
-    assert M.check_before_meshing(10000.0, *bbox, 5.0) == pytest.approx(678.8225, abs=1e-3)
+    assert M.check_before_meshing(10000.0, *bbox, 5.0) == pytest.approx(605.6, abs=1e-3)  # the bounding box surface stands in for the area
+    assert M.check_before_meshing(10000.0, *bbox, 5.0, 4200.0) == pytest.approx(605.6, abs=1e-3)
     with pytest.raises(ToolFailure) as caught:
         M.check_before_meshing(10000.0, *bbox, 1e-9)
     assert caught.value.family == "input.too_large" and caught.value.details["param"] == "/element_size"
     assert "1/1000" in caught.value.message  # reject the size before evaluating h**3
     with pytest.raises(ToolFailure) as caught:
-        M.check_before_meshing(10000.0, *bbox, 0.5)  # 6 sqrt(2) * 10000 / 0.125 = 679 000 elements
+        M.check_before_meshing(10000.0, *bbox, 0.5)  # 4 * 10000 / 0.125 = 320 000 elements and more
     assert caught.value.family == "input.too_large" and caught.value.details["estimated_elements"] > M.MAX_ELEMENTS
     with pytest.raises(ToolFailure) as caught:
         M.check_before_meshing(0.01, (0.0, 0.0, 0.0), (1000.0, 0.01, 0.01), 0.09)  # few elements by volume, but 0.09 < diagonal / 1000

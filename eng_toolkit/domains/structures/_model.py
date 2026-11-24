@@ -80,7 +80,7 @@ def parse_nodes(text, dimension=2, cap=MAX_NODES):
 
 def reference(name, ids, path):
     if name not in ids:
-        invalid(path,f"unknown reference {name!r}")
+        invalid(path,f"unknown reference {name!r}; known ids: {', '.join(ids[:12])}"+(", ..." if len(ids) > 12 else ""))
     return ids.index(name)
 
 
