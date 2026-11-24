@@ -1,0 +1,164 @@
+{
+ "id": "H5_fan_motor_bearing_envelope",
+ "verdict": "PASS",
+ "one_line": "Right verdict at the first reply (outer-race defect: BPFO 106.4 Hz with 2x..12x harmonics in the 2.5-5 kHz envelope spectrum, no BPFI/BSF/FTF claim), the 268 Hz misconception explained, two readable pictures; marred by a false 'one impact per shaft turn' explanation in turn 4 that the person had to catch, bearing geometry used from memory before he gave it, and a 'no need to stop now' call without a severity measure.",
+ "goal_met": true,
+ "turns": 5,
+ "holdout": true,
+ "answers": [
+  {
+   "item": "Shaft frequency",
+   "truth": "29.83 Hz",
+   "assistant_said": "29.83 Hz",
+   "result": "right"
+  },
+  {
+   "item": "BPFO",
+   "truth": "106.45 Hz",
+   "assistant_said": "106.4 Hz theory, 106.43 Hz measured",
+   "result": "right"
+  },
+  {
+   "item": "BPFI / BSF / FTF",
+   "truth": "162.05 / 68.95 / 11.83 Hz",
+   "assistant_said": "162.1 / 68.9 / 11.8 Hz, BPFI not seen in the spectrum",
+   "result": "right"
+  },
+  {
+   "item": "Envelope spectrum peaks",
+   "truth": "106.4, 212.8, 319.2, 425.8 Hz at 0.055, 0.052, 0.044, 0.0375 g",
+   "assistant_said": "106.43 Hz 0.0584 g, 212.9, 319.3, 425.7 ... 12 harmonics (band 2.5-5 kHz instead of 2-6 kHz)",
+   "result": "right"
+  },
+  {
+   "item": "Raw spectrum peaks",
+   "truth": "29.8 Hz 0.294 g, 59.6, 208.8 (blade pass), 120",
+   "assistant_said": "29.84 Hz 0.301 g; 208.8 Hz = 7 x fr (blade pass once told 7 blades); 120 Hz near 2x mains",
+   "result": "right"
+  },
+  {
+   "item": "Verdict and part",
+   "truth": "outer-race (BPFO) defect; raw FFT alone does not show it",
+   "assistant_said": "'有外圈缺陷的證據 ... 不是最終判定' based on the envelope",
+   "result": "right"
+  },
+  {
+   "item": "How sure (peak to floor)",
+   "truth": "BPFO peak 68x median floor, 2x 64x, 3x 55x; kurtosis 3.6 raw, 15.0 band-passed",
+   "assistant_said": "qualitative only ('明顯峰', 'possibility very high but not confirmed'); RMS 0.294 g and crest 6.49 quoted",
+   "result": "unverifiable"
+  },
+  {
+   "item": "Persona's belief (9 x fr = 268 Hz)",
+   "truth": "BPFO = 3.57 x fr",
+   "assistant_said": "268.5 = 9 x fr is not a bearing frequency; BPFO = 4.5 x fr x (1 - Bd/Pd) = 106.4 Hz",
+   "result": "right"
+  },
+  {
+   "item": "Stop the fan now?",
+   "truth": "not specified (conditional advice acceptable)",
+   "assistant_said": "'建議安排近期停機更換，不必立即停機' with stop-now conditions (temperature, noise, vibration, metal in the grease)",
+   "result": "unverifiable"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "Calling a fault from the raw FFT alone / expecting a peak at 268 Hz",
+   "caught": true
+  },
+  {
+   "trap": "BPFO taken as 9 x fr",
+   "caught": true
+  },
+  {
+   "trap": "Reporting BPFI, BSF or FTF as present",
+   "caught": true
+  },
+  {
+   "trap": "Blade pass 208.8 Hz or 120 Hz mains taken for bearing frequencies",
+   "caught": true
+  },
+  {
+   "trap": "Envelope tool chain (intermediate CSVs, column name)",
+   "caught": true
+  },
+  {
+   "trap": "Plain-language physical explanation of the envelope peak",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 4 told the technician, and gave him a sentence for his manager, that the outer race gets 'one impact per shaft turn, about 106 per second': physically wrong (3.57 per turn = 9 balls x cage 11.8 Hz). The person caught it with arithmetic; turn 5 corrected it clearly.",
+   "severity": "medium"
+  },
+  {
+   "issue": "6206 geometry (Z 9, Bd 9.525, Pd 46) taken 'from memory' and used before asking the person; labelled as recalled and confirmed by him two turns later. The recalled values were right, so the match 106.4 vs 106.43 partly confirms the assistant's own assumption.",
+   "severity": "low"
+  },
+  {
+   "issue": "'不必立即停機' with no severity evidence (first record, no baseline, no ISO 10816 comparison); softened by the stop-now conditions and 'severity cannot be judged'.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Unneeded speculation that Chinese characters may show blank on some machines; they render correctly in the delivered PNGs.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 5 wording on FTF is muddled ('量測中有 11.8 Hz 的理論頻率，但頻譜中未確認').",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T170331Z-0c99be9e-plot_xy_plot.png",
+   "score": 3,
+   "notes": "Envelope spectrum 0-1300 Hz in g vs Hz, dashed lines BPFO 1x/2x/3x/4x on the peaks, harmonics to 12x visible, Chinese title states the conclusion. Ready for a manager; the peak value could be labelled. Person saw it: the harness lists every PNG in rendered/ to the persona (scripts/uat_run.py, PICTURES SHOWN TO YOU); the tool result carries an inline ImageContent block (re-run in-process: plot_xy format=both returns TextContent + ImageContent); the PNG path was handed over in words."
+  },
+  {
+   "file": "rendered/20261124T170329Z-98781660-plot_xy_plot.png",
+   "score": 2,
+   "notes": "Raw spectrum 0-4 kHz: 1x clearly largest, 2x and the 208.8 Hz blade-pass line visible; the 3.5-3.8 kHz peak group in the title is almost invisible at 0.007 g on a 0.3 g axis; no peak labels. Person saw it: the harness lists every PNG in rendered/ to the persona (scripts/uat_run.py, PICTURES SHOWN TO YOU); the tool result carries an inline ImageContent block (re-run in-process: plot_xy format=both returns TextContent + ImageContent); the PNG path was handed over in words."
+  }
+ ],
+ "problems": [
+  {
+   "id": "H5-1",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Plain-language explanation said one impact per shaft turn, contradicting the 3.57 x fr it had computed; copied into the suggested manager script.",
+   "evidence": "Turn 4 '軸承外圈每轉一圈，會有一次撞擊，撞擊的節奏是每秒約 106 次'; person: '轉一圈才 1/30 秒 ... 怎麼會是 106 次'.",
+   "fix": "eng-signal-analysis: a three-line plain template for envelope results ('each ball passing the damaged spot is one hit; hits per second = balls x cage speed')."
+  },
+  {
+   "id": "H5-2",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "The skill lists bearing-defect formulas as outside the toolkit but gives no hand recipe, no envelope chain and no instruction to ask for bearing geometry. The assistant used recalled geometry before asking and did not ask about sensor resonance or the front end (skill section 1 asks in the first reply).",
+   "evidence": "skill section 1 'sensor resonance'; 'Order tracking ... bearing-defect formulas ... Say so.'; turn 1 ran 9 tool calls before any question.",
+   "fix": "eng-signal-analysis: 'Bearing fault: ask Z, Bd, Pd, contact angle, rpm first; BPFO = Z/2 fr (1 - Bd cos(a)/Pd), hand arithmetic labelled; chain dsp_filter_apply bandpass -> dsp_correlate envelope=true -> dsp_spectrum column=envelope; quote peak / median floor and band-passed kurtosis' (general, no scenario numbers)."
+  },
+  {
+   "id": "H5-3",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "No single call for the envelope spectrum and no defect-frequency tool; the chain needs two intermediate CSV paths and the first dsp_spectrum on envelope.csv was refused (4 columns).",
+   "evidence": "'samples_file line 2: 4 columns (index, time_s, x, envelope); name the one to analyse with column'. Recovered on the next call.",
+   "fix": "dsp_envelope_spectrum(band, order) returning the peaks and peak/floor ratios, or a column hint in the manifest of tool-written CSVs."
+  },
+  {
+   "id": "H5-4",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "No quantitative confidence although the person asked how sure it is.",
+   "evidence": "Words only ('明顯峰', 'possibility very high'); truth peak/floor 68x.",
+   "fix": "same skill sentence as H5-2: report peak / median floor."
+  }
+ ],
+ "what_worked": [
+  "Skills loaded before the first tool call; the correct envelope chain came from the model's own knowledge (the skill has no recipe and the leak tokens 106.45 and 3.568 are not in it) plus tool output.",
+  "Recovered from the one refused dsp_spectrum call; named 208.8 Hz as 7 x fr and 120 Hz as 2 x mains; noticed the 106 Hz spacing in the 3.5-3.8 kHz resonance peaks (truth 3512.8 / 3619.2 / 3731.6 Hz).",
+  "Answered the 268 Hz misconception correctly and kept 'not confirmed, no severity' wording for the manager; asked for history and proposed a weekly trend routine."
+ ],
+ "holdout_note": "Right because of tool output plus the model's general bearing-diagnostics knowledge; the skill gave only the file-layout hint and an ask list, so H5 is not skill leakage. Partly luck: the recalled 6206 geometry equals the person's catalogue values exactly."
+}

@@ -1,0 +1,61 @@
+{
+ "id": "H2_irfp4568_diecast_box",
+ "holdout": true,
+ "verdict": "PASS",
+ "one_line": "Final answer matches the truth within 1 K on all four numbers (bare wall 107.6 C / Tj 139.5 C: fail; black paint 81.6 C / 113.5 C: pass), identifies radiation/emissivity as the lever and delivers a legible bar chart against 125 C; but turn 2 had omitted radiation (Tj 146 C, wall 114 C) and ranked fins as the cheapest fix until the person pushed back.",
+ "goal_met": true,
+ "turns": 3,
+ "skills_loaded": ["eng-thermal-check", "eng-toolkit (both before the first tool call)"],
+ "answers": [
+  {"item": "as-built box wall temperature (bare, e 0.1)", "truth": "107.8 C (rise 67.8 K, tol 15 %)", "assistant_said": "turn 2: 114 C (no radiation); turn 3: 107.6 C", "result": "right"},
+  {"item": "as-built Tj", "truth": "139.8 C, fails 125 (tol 8 K)", "assistant_said": "turn 2: 146 C; turn 3: 139.5 C, 14.5 K over", "result": "right"},
+  {"item": "painted black wall / Tj", "truth": "80.8 C / 112.9 C, pass with about 12 K margin", "assistant_said": "81.6 C / 113.5 C, margin 11.5 K; e 0.9 labelled 'from memory'; e 0.8 would add about 2 K", "result": "right"},
+  {"item": "verdict and cheapest fix", "truth": "fails; paint is the cheap fix; radiation decides", "assistant_said": "fails; turn 2 recommended fins first ('cheapest'), paint second; turn 3: 'paint is the lowest cost'; explains that bare aluminium radiates little", "result": "right"},
+  {"item": "person's h = 10 rule", "truth": "about 99 C wall / 131 C Tj (fails by luck)", "assistant_said": "turn 3: 81 C if all 0.116 m2 at h 10; 99 C / 131 C with only the 0.0808 m2 free area (my arithmetic); notes the bottom on the bench does not convect", "result": "right"},
+  {"item": "pad resistance", "truth": "0.377 K/W", "assistant_said": "0.375 K/W (thermal_conduction)", "result": "right"},
+  {"item": "bar chart Tj for as-built and fix vs 125 C", "truth": "a chart", "assistant_said": "plot_bar PNG with three bars 139.5 / 113.5 / 117.1 and a dashed 125 C line; path given; values labelled 'my arithmetic'", "result": "right"},
+  {"item": "fin option (not in truth)", "truth": "n/a", "assistant_said": "wall 85.2 C / Tj 117.1 C with 16 fins, natural_channel h 7.96, efficiency 0.98 (k 200 from memory), no fin radiation: unverified estimate", "result": "unverifiable"}
+ ],
+ "traps": [
+  {"trap": "stop at the h = 10 W/m2K model and not separate convection from radiation", "caught": true},
+  {"trap": "ignore that the bottom face sits on the bench", "caught": true},
+  {"trap": "emissivity of bare cast aluminium (0.05-0.1) not considered", "caught": true},
+  {"trap": "use the datasheet 175 C or RthCS 0.24 K/W instead of the company rule and the pad", "caught": true},
+  {"trap": "use RthJC 0.45 recalled from memory instead of the datasheet 0.29", "caught": true},
+  {"trap": "radiation left out of the first complete answer (turn 2)", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 2 states the model is 'no radiation' in the table header and gives Tj 146 C as a result with a fix list; the omission is disclosed, so not hidden, but the headline number is 6 K high and the ranking of fixes was wrong because of it. Turn 3 admits 'my earlier calculation had no radiation and a too high h'.", "severity": "medium"},
+  {"issue": "Turn 3: 'I checked the radiation with a hand formula, it agrees with the tool': plausible (tool h_r about 7.6 at e 0.9 matches 0.9 x 4 sigma T^3) but no number is shown.", "severity": "low"},
+  {"issue": "'PNG Chinese text needs a CJK font on the target machine, otherwise blank' is wrong for a rasterised PNG (labels are already drawn; the PNG shows Chinese correctly).", "severity": "low"},
+  {"issue": "RthJC recalled as 0.45 K/W in turn 1 was explicitly labelled 'from memory, not a tool result' and replaced by the datasheet 0.29 when the person corrected it; epsilon 0.1 / 0.9 labelled 'from memory'; every hand number labelled 'my arithmetic'. Heat spreading in the 3 mm wall (+3 to 6 K) is covered only by 'assumes an isothermal wall'.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T170205Z-6afd668c-plot_bar_plot.png", "score": 3, "notes": "Title with conditions, three bars with values (139.5, 113.5, 117.1), dashed 125 C limit line with label, y axis 0-150 C with unit, Chinese labels render, option names state emissivity. Minor: all bars the same blue (no pass/fail colour), the 117.1 label sits close to the dashed line, the unverified fin bar is not marked 'estimate' in the picture."}
+ ],
+ "problems": [
+  {"id": "H2-1", "kind": "skill_gap", "severity": "medium", "what": "eng-thermal-check has no guidance for a part cooled through an enclosure wall or any bare surface: it does not say that natural convection and radiation are both needed, that bare metal has e about 0.05-0.1 (from memory) so almost nothing radiates, that paint is the cheapest first fix, or that the face on a bench does not convect. The right answer in turn 3 came from the model's own knowledge and the person's hint ('you said bare aluminium radiates poorly, painting is fine'), not from the skill.", "evidence": "turn 2 table header '熱阻鏈（平放、無風扇、無輻射）', Tj 146 C, fins ranked first; skill section 3 mentions radiation only for fins facing each other", "fix": "eng-thermal-check: new section 'Enclosure or bare wall as the heatsink': Tj = Ts + P (Rjc + Rcs); Ts from P = sum A (h_conv + h_rad)(Ts - Ta) with thermal_convection for the sides, an approximated top and thermal_radiation with e; give e values labelled from memory (bare Al 0.05-0.1, painted 0.85-0.95); bracket Ts by hand; 'ask the surface finish before a verdict'; 'cheapest fix first: finish, then area, then fan'."},
+  {"id": "H2-2", "kind": "tool_gap", "severity": "medium", "what": "Hand iteration needed: there is no horizontal-plate (top face) correlation and no tool that solves the wall temperature from P = sum A (h_conv + h_rad)(Ts - Ta). The assistant made 8 tool calls (convection and radiation at 90 and 100 C for two cases) and interpolated by hand, using a top-face factor of 1.11 times the vertical-plate h 'not checked by a tool'. It landed within 1 K of the truth, but this is the error-prone step a person would trust.", "evidence": "turn 3 tools: thermal_convection x4, thermal_radiation x4, plot_bar; text '頂面 h 取直立面的 1.11 倍，手算比例，未用工具核對'", "fix": "thermal_convection: add correlation natural_horizontal_plate_up / _down (Lloyd-Moran / McAdams); add thermal_enclosure_balance (faces, e, P, ambient, optional adiabatic bottom) returning Ts and the convection/radiation split."},
+  {"id": "H2-3", "kind": "model_error", "severity": "medium", "what": "The first complete answer (turn 2) left radiation out although thermal_radiation is in the skill's tool table, gave a Tj 6 K above the truth and recommended fins as the cheapest fix; paint was only hand-estimated ('110-115 C') and ranked second. The person's own question about 114 C produced the correct analysis.", "evidence": "turn 2: '最便宜的改法（依性價比排序） 1. 在裝 MOSFET 的那面牆外側加鰭片（建議）'; turn 3: paint is the lowest-cost option", "fix": "see H2-1; also a server-instruction line: 'cheapest fix' means finish or coating before geometry."},
+  {"id": "H2-4", "kind": "model_error", "severity": "low", "what": "Ask-first was applied in turn 1 (pad k and area, RthJC, orientation, duty, other heat sources; recalled 0.45 labelled) but did not ask the one input that decides the outcome here, the surface finish/emissivity; it also asked for things the person had stated (ambient, bench). The persona volunteered 'bare cast surface' in turn 2 (harness leniency).", "evidence": "turn 1 list items 1-5; turn 2 person adds 'die-cast 鋁，沒有噴漆，就是裸的鑄造表面'", "fix": "covered by the H2-1 sentence 'ask the surface finish'."},
+  {"id": "H2-5", "kind": "model_error", "severity": "low", "what": "The fin option (Tj 117.1 C) sits in the chart on equal footing with the verified paint case although it rests on an unverified fin efficiency (k 200 from memory), a single-wall natural_channel h, ignored fin radiation and unquantified cost; the chart carries no 'estimate' marker; fins are not 'cheap'.", "evidence": "turn 3 limits list '鰭片效率 0.98 是手算 ... 鰭片的輻射未計入'; plot_bar series includes 117.1", "fix": "eng-plot-results: 'mark unverified bars in the label, e.g. (est.)'."}
+ ],
+ "general_vs_luck": {
+  "right_for_general_guidance": ["load the domain skill first", "ask-first list", "label recalled values", "read the whole result", "unreviewed wording", "pad kept, not paste", "'enclosure natural convection' is listed as outside the toolkit, so the hand approximation is labelled"],
+  "right_from_tool_output_alone": ["pad resistance 0.375 K/W (thermal_conduction)", "vertical-plate h about 7.2 (thermal_convection)", "radiation W (thermal_radiation)"],
+  "right_by_model_knowledge_or_luck": ["radiation/emissivity insight and the choice of paint", "bottom face adiabatic", "the person's h = 10 model corrected", "bare Al e = 0.1"],
+  "leak_tokens_check": "no development-scenario numbers appear; the thermal skill's example numbers (7 W, 4.0 K/W) were not reused"
+ },
+ "what_worked": [
+  "Final numbers within 1 K of an independent energy balance for both the bare and the painted case.",
+  "Clear explanation of why the person's h = 10 estimate is optimistic (bottom face on the bench, h about 7 not 10) and what the same rule gives for the free area (99 C / 131 C, equal to the truth note).",
+  "Recalled RthJC (0.45) labelled and dropped when the datasheet value (0.29) came; datasheet RthCS 0.24 not used with a pad.",
+  "Bar chart PNG with the limit line delivered and described; the person finished in 3 turns."
+ ],
+ "picture_handover_check": {
+  "person_saw_tool_png": "yes: rendered/ holds the plot_bar PNG; the persona ended 'chart ready for the design review'",
+  "inline_in_reply": "plot_bar returns ImageContent (in-process re-run); the assistant cites chart content but nothing that only the image shows",
+  "png_path_in_words": "yes, full path plus plot_data.json"
+ },
+ "false_pass": "none"
+}

@@ -1,0 +1,176 @@
+{
+ "id": "H7_stonecold_hs132_cnc",
+ "verdict": "PASS",
+ "holdout": true,
+ "one_line": "Mass 14.71 g, stock 32 x 14 x 28.4 mm (bar 35 x 17 x 30 mm), 30 internal-corner errors with the spindle along z, walls fine (1.4 mm), a red PNG the person saw, a GLB and a PDF drawing are all right; it did not ask for the spindle axis before running (assumed +z, which happened to be right), never showed that cutting from the side is clean, and recommends R1.2 although its own tool says the narrowest slot is 2.0 mm.",
+ "vs_round2": "hold-out: no earlier round",
+ "holdout_leakage": {
+  "why_right": "General guidance plus tool output. eng-dfm-review says to measure first, to pass tool_radius as a RADIUS ('a 10 mm cutter is 5 mm'), to state which tool_axis was used and why, and to quote the not_performed list; the assistant did all of these. It used geometry_measure's bounding box to pick +z (the skill says to use it 'to choose the spindle axis'), geometry_check_dfm for the corners and geometry_view color_by dfm with identical arguments for the picture. No skill sentence quotes this part (leak tokens HS-132 / Stonecold / 5447 are not under plugin/).",
+  "luck_or_trap": "Partly luck: +z is the right axis because the part is a z-extrusion and the person confirmed it later; the skill sentence 'ask the milling spindle axis BEFORE geometry_check_dfm ... if unknown, run once per axis and show each' was not followed. Passing '+z' explicitly set tool_axis_defaulted to false, so the tool's 'defaulted to +z' warning could not fire. Trap fallen into: R1.2 recommended for a 2.0 mm slot (below). Traps avoided: diameter 2 mm halved to radius 1 mm (and stated), the 28.4 mm height explained as 25.4 mm body plus 3 mm pins."
+ },
+ "goal_met": true,
+ "turns": 4,
+ "new_checks": {
+  "picture_seen": "Yes. In turn 4 the persona says it can see the red picture (it only asks for a desktop copy and a GLB). hs132_dfm.png exists in rendered/ and its full path was given in words in turns 1, 3 and 4; inline_image true was requested explicitly (57 kB, so the image block was attached). The two drawing PNGs (page renders of the PDF) are also in rendered/.",
+  "domain_skill_before_first_tool": "Yes: eng-toolkit and eng-dfm-review in turn 1 before the first tool call (no eng-3d-view, no eng-drawing; the picture still followed the colour_by dfm recipe). One skill sentence misled by omission: it says to ask or run per axis, and the assistant instead chose +z from the bounding box and passed it explicitly.",
+  "ask_before_computing": "Mostly no. The spindle axis (the deciding input) was assumed and asked afterwards; the cutter size '2 mm' was read as a diameter and stated as 'radius 1 mm' but not asked (the skill says 'ask which the shop means'). Recalled values were labelled: density 2700 'from memory'; bar size 'my estimate, supplier sizes not checked'; arithmetic tagged 'my arithmetic'.",
+  "false_pass": "None on the verdict. Weak point: 'R1.2 will do' (turn 1 fix, repeated in the drawing note 'design change to R1.2 requested (2 mm cutter, R >= 1 mm)') while its own check reports narrowest_slot_mm 2.0 and the assistant itself says 'a 2 mm cutter in a 2 mm slot has no clearance'. Two R1.2 fillets cannot fit across a 2.0 mm slot; for those slots the answer is R1.0 exactly (a full cutter radius) or a wider slot. The assistant raised the slot width as a question to the shop but never reconciled it with the R1.2 it asked the designer to implement."
+ },
+ "answers": [
+  {
+   "item": "volume / mass in 6063",
+   "truth": "5447 mm3 / 14.71 g",
+   "assistant_said": "5447.03 mm3, 0.014707 kg (14.71 g), 20 pieces 0.294 kg; density 2700 labelled 'from memory'",
+   "result": "right"
+  },
+  {
+   "item": "bounding box / stock",
+   "truth": "32.0 x 14.0 x 28.4 mm",
+   "assistant_said": "32 x 14 x 28.4 mm; bar 35 x 17 mm, length 30 mm incl. pins (27 mm if the pins are inserted); 650 mm for 20 pieces; labelled estimate",
+   "result": "right"
+  },
+  {
+   "item": "can the shop make it with a 2 mm end mill, spindle along z",
+   "truth": "no: 30 sharp internal corners (z); x or y: no finding",
+   "assistant_said": "'cannot be made': 30 errors, all cnc.internal_corner_radius, radius 0, uncut 0.08-1.26 mm; walls pass (1.4 mm vs 0.8 mm). A -z re-run gives the same. It never ran or showed x / y",
+   "result": "right"
+  },
+  {
+   "item": "wall problem",
+   "truth": "none (smallest wall >= 1.4 mm; 2.0 by rays)",
+   "assistant_said": "none; 1.4 mm from the tool",
+   "result": "right"
+  },
+  {
+   "item": "what exactly is the problem",
+   "truth": "the profile corners have no radius; the part is an extruded profile",
+   "assistant_said": "fin-root concave corners at R0 running the full 25.4 mm, explained in plain words in turn 3; no mention that the part is an extrusion profile (wire EDM appears once as a costly alternative)",
+   "result": "right"
+  },
+  {
+   "item": "coloured picture / file for the shop",
+   "truth": "PNG or GLB with the problem faces marked",
+   "assistant_said": "red PNG (39 faces) in turn 1; GLB path and PDF/DXF drawing in turn 4; could not copy to the Desktop (the harness gave only MCP tools and Read)",
+   "result": "right"
+  },
+  {
+   "item": "spindle axis stated or asked",
+   "truth": "must ask or state; the verdict depends on it",
+   "assistant_said": "stated '+z, assumed' in turn 1 and asked; confirmed in turn 2",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "diameter 2 mm taken as radius",
+   "caught": true
+  },
+  {
+   "trap": "verdict without a spindle axis / default axis",
+   "caught": true
+  },
+  {
+   "trap": "30 errors presented without saying that 24 of them are 45 degree kinks with a 0.08 mm residual",
+   "caught": false
+  },
+  {
+   "trap": "the 28.4 mm includes the 3 mm fixation pins (the person believes 25.4 mm)",
+   "caught": true
+  },
+  {
+   "trap": "R1.2 recommended for a 2.0 mm slot",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "In turn 1 the assistant writes tool_axis_defaulted: false next to '+z'. That flag is false only because the assistant passed +z itself; it does not say the shop uses +z. 'Other axes give a different result' was written without running x or y.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 2 speculates 'if the pins are inserted, the body needs a 25 mm deep 1.4 mm hole (depth ratio 18, above 10)'. The model shows 3 mm pins standing on the base; the 25 mm figure is invented, although marked 'my inference, unverified'. It produces a question for the shop that has no basis in the file.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 4 says the '16' and 'Ø3.2' dimensions overlap; in the drawing the 16 collides with the overall width 32, not with Ø3.2. '21,3' (comma decimal) is left, and the first sheet's title overflowed into the part-number box (fixed in the second sheet). The assistant removed its own unrequested ISO 2768-m and said so.",
+   "severity": "low"
+  },
+  {
+   "issue": "Reported honestly: the tool's 'unreviewed' status, the not_performed list (pocket-floor radius, tool length, undercuts), the Temp-folder warning, 'I cannot copy files or send mail'.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T170610Z-c6a77d5e-geometry_view_hs132_dfm.png",
+   "score": 2,
+   "notes": "Large isometric (Z up, pins down) plus front, top and right insets, a legend (red = DFM error flagged, 39 faces; grey = no finding, 40 faces), 30 rings with D<n> labels (3 labelled), axes, size, and the tool's own warning that colour means 'flagged by a rule of thumb, not a verdict'. Clear red/grey contrast, usable to mail. Weaknesses: the red marks whole faces (the web face and the fin side faces), not the 30 corner edges, so a layperson may read 'the base is wrong'; the rings merge into two overlapping strings; the subtitle is cut at the right border ('colour = DFM finding (rules of'); the 6 sharp-angle corners (127 / 118 degrees), which matter most, are not singled out."
+  },
+  {
+   "file": "rendered/20261124T170905Z-c2ba87e0-drawing_make_views_drawing_p1.png",
+   "score": 1,
+   "notes": "A4 third-angle sheet with top, front, right and iso views, dimensions 32, 14, 28.4, 21.3 and Ø3.2 THRU, four notes (milling axis Z, R0 corners, R1.2 requested, pin question) and an 'UNREVIEWED' title block with GENERAL TOLERANCE left empty. Not shop-ready: no fin pitch, slot width, fin thickness or pin dimensions (the features at issue); '16' overprints '32'; decimal comma '21,3'; the iso view is a dense dashed jumble; tiny views on a big sheet. Acceptable as an overview; its notes repeat the R1.2 instruction that conflicts with the 2.0 mm slot."
+  },
+  {
+   "file": "rendered/20261124T170856Z-bddc5422-drawing_make_views_drawing_p1.png",
+   "score": 1,
+   "notes": "First sheet (superseded): the title overflows into the part-number box ('6063 A|HS-132...') and ISO 2768-m was added on the assistant's own initiative; the assistant noticed both and regenerated."
+  }
+ ],
+ "problems": [
+  {
+   "id": "H7-1",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "The spindle axis was not asked before running geometry_check_dfm; an explicit '+z' removes the tool's 'defaulted' warning, so the safety net does not trigger.",
+   "evidence": "geometry_check_dfm input tool_axis '+z'; result tool_axis '+z', tool_axis_defaulted false; transcript turn 1 'tool_axis_defaulted: false'; skill line 22: 'Ask the milling spindle axis ... if unknown, run once per axis and show each'.",
+   "fix": "Tool: geometry_check_dfm accepts tool_axis 'all' (runs +-x, +-y, +-z and returns a table) and warns 'checked from one axis only; findings change with the axis' when one axis is run. Skill: 'never pass a tool_axis you chose yourself without writing \"assumed\"; if the person has not said, run all three axes in turn 1'."
+  },
+  {
+   "id": "H7-2",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Recommends R1.2 fillets although the tool says the narrowest slot is 2.0 mm (the cutter diameter).",
+   "evidence": "DFM result measurements.narrowest_slot_mm 2.0; turn 1 'R1 equals the limit, recommend R1.2'; turn 3 'design to R1.2'; drawing note 3 'design change to R1.2 requested'.",
+   "fix": "eng-dfm-review/SKILL.md: 'when you recommend an internal radius, compare it with half of data.measurements.narrowest_slot_mm; a radius cannot exceed half the slot width: say the largest radius that fits'. Tool: 'max_fitting_radius_mm' per finding."
+  },
+  {
+   "id": "H7-3",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "All 30 findings are one severity ('error') although 24 are 45 degree kinks with 0.08 mm uncut depth that most shops accept; the person is told 'cannot be made' for all 30 without that nuance.",
+   "evidence": "uncut_depth_mm 0.08 (45 degree turn) vs 1.26 (127 degree turn); truth corner angles 45 x 24, 90 x 2, 118 x 2, 127 x 2.",
+   "fix": "geometry_check_dfm: optional limit 'min_uncut_depth' (default 0.05 mm) below which a finding is 'info'; group findings by uncut depth; geometry_view colours by severity."
+  },
+  {
+   "id": "H7-4",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "A person who cannot read a deep Temp path cannot send the picture; tools write only into the job directory and the assistant (harness: MCP tools + Read) cannot copy files. In Claude Code the assistant has Bash/Write; in a plain chat client it has nothing.",
+   "evidence": "Persona turn 4: 'the path is so long, I do not know how to send it, please save it to the desktop'; assistant: 'I cannot copy files'.",
+   "fix": "geometry_view, plot_*, drawing_make_views, fem_view: optional export_to (a folder the user names) that copies the PNG/GLB/PDF there and lists them in data.deliverables. The assistant's lack of Bash is a harness artifact; the persona's request is realistic."
+  },
+  {
+   "id": "H7-5",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "No guidance that a constant-section part with R0 corners is an extrusion profile, so 'cut an extrusion to length and add holes' (or wire EDM) is the cheaper route for a quote; the person asked about 20 prototypes and price.",
+   "evidence": "Truth interpretation; the assistant mentioned wire EDM and a smaller tool only as an aside.",
+   "fix": "eng-dfm-review/SKILL.md: 'if every finding is an edge parallel to one axis, the part is a prismatic profile: say so and name extrusion, wire EDM or milling from the side as options and what each does to the verdict'."
+  },
+  {
+   "id": "H7-6",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "drawing_make_views 'auto' dimensions give the overall size and holes only; the features that matter in this review (slot widths, fin pitch, pin diameter and length) are not dimensioned, and '16' overlaps '32'.",
+   "evidence": "Drawing PNG: dimensions 14, 21,3, 28.4, 32, 16 and Ø3.2 only.",
+   "fix": "drawing_make_views: 'auto' also dimensions pins (Ø1.4 x 3) and slot widths of the profile; do not place ordinate labels on top of overall-dimension labels."
+  }
+ ],
+ "what_worked": [
+  "Measured first and used the tool's volume and size; the mass arithmetic was repeated by hand ('my arithmetic') and equal.",
+  "Explained 'R0 internal corner' in the person's words with the physical reason (a round cutter leaves material in a sharp corner), using tool numbers.",
+  "Explained the difference between 25.4 and 28.4 mm as the 3 mm pins, and turned the unknown (pin milled or inserted) into a question for the shop that changes the stock length.",
+  "Said what it could not do (copy files, send mail) and listed the DFM checks the tool does not perform."
+ ]
+}

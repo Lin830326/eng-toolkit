@@ -1,0 +1,72 @@
+{
+ "id": "E1_stickhub_fab_ready",
+ "verdict": "FAIL",
+ "one_line": "Every measured fact is right (board file, 2 layers not 4, 94 parts, 47 nets, 16.5 x 40 mm, DRC 0 errors at 0.15 mm, library warnings explained, 11-file Gerber zip with drill) but the final answer is a flat 'cannot send' built on two invented blockers (finished-vs-drill diameter of the 0.3 mm vias; '2 or 4 layers' although the file has 2 and the fab accepts 2), against the skill's own rule and the truth (yes with caveats); the person left with no verdict, no zip he could open and no inline picture.",
+ "goal_met": false,
+ "turns": 4,
+ "skills_loaded": ["eng-pcb-review", "eng-toolkit (both before the first tool call)"],
+ "answers": [
+  {"item": "which file is board / schematic / others", "truth": "StickHub.kicad_pcb, .kicad_sch, .kicad_pro rules, .kicad_sym library", "assistant_said": "turn 1 table: pcb = board (16.5x40, 2 layers, 94 parts, 47 nets), sch = schematic, pro = project rules, sym = symbol library; adds 'these are KiCad's demo files, confirm with the colleague'", "result": "right"},
+  {"item": "DRC at 0.15 mm / project rules", "truth": "0 errors, 0 unconnected; 94 lib warnings are noise", "assistant_said": "error 0, design warnings 0, unconnected 0; 94 lib_footprint_issues 'library not visible, nothing to do with the board' (also with refill_zones true)", "result": "right"},
+  {"item": "ERC", "truth": "0 errors, 234 library warnings", "assistant_said": "error 0, 234 library warnings (140 symbol, 94 footprint link)", "result": "right"},
+  {"item": "footprints / nets", "truth": "94 / 47", "assistant_said": "94 / 47", "result": "right"},
+  {"item": "copper layers (colleague says 4)", "truth": "2", "assistant_said": "2 (F.Cu, B.Cu); the colleague's claim does not match the file", "result": "right"},
+  {"item": "board size", "truth": "16.5 x 40.0 mm", "assistant_said": "16.5 x 40 mm, cross-checked with KiCad 10.0.6", "result": "right"},
+  {"item": "fab sheet rows (clearance 0.15, track 0.15, drill 0.3, board <= 100x100, 2 or 4 layers)", "truth": "all met; no margin at 0.15 (min track 0.15, 857 segments at 0.15)", "assistant_said": "turn 2 table: all five pass (drill row marked 'values agree, finished diameter not verified'); '857 segments exactly 0.15, no margin'", "result": "right"},
+  {"item": "does the layout really sit on 0.15 mm (0.2 mm test)", "truth": "499 errors at 0.2 mm", "assistant_said": "not run this round; only the 857-segments-at-limit statement", "result": "missing"},
+  {"item": "gerber + drill set", "truth": "9 layer files + job + one Excellon drill (+ zip)", "assistant_said": "StickHub-gerbers.zip holds 11 files incl. StickHub.drl and the job file (I verified: the zip lists 9 layers + job + drl, named StickHub-*)", "result": "right"},
+  {"item": "plain verdict", "truth": "yes with caveats (2 layers not 4; library warnings are noise; zero margin; written fab rules are met; a value equal to the limit passes)", "assistant_said": "turn 4: '現在是「不能送」'; conditions: confirm 2 vs 4 layers, confirm 0.3 mm is drill not finished, confirm copper-to-edge distance. Turn 2: 'do not send until 1-3 are done'", "result": "wrong"},
+  {"item": "board picture the person can look at", "truth": "a picture of the board", "assistant_said": "PDF paths only; 'cannot paste the image into the chat'; the assistant itself read the PDF (Read) and described it", "result": "missing"}
+ ],
+ "traps": [
+  {"trap": "believe the colleague's '4-layer board'", "caught": true},
+  {"trap": "assume KiCad DRC knows the fab's rules", "caught": true},
+  {"trap": "report the 94 / 234 library warnings as board problems", "caught": true},
+  {"trap": "let the colleague's layer claim block a board whose file has 2 layers and the fab accepts 2", "caught": false},
+  {"trap": "ask for the fab sheet before a verdict (skill rule)", "caught": true},
+  {"trap": "a value equal to the limit passes (skill: inclusive minimum, margin 0)", "caught": false},
+  {"trap": "demo-folder path leads to a wrong verdict (round 1)", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "FALSE DOMAIN CLAIM, not labelled as memory: 'the fab's finished (成品) hole is usually the plated hole, the drill has to be larger; if so the 81 vias with 0.3 mm drill fail'. In KiCad the via/pad drill value is the finished hole size and the Excellon file lists finished sizes, so 0.3 mm drill = 0.3 mm finished: the row passes. The assistant turned an invented ambiguity into a high-severity risk and a blocker. (My knowledge of KiCad conventions; not re-run in a tool.)", "severity": "high"},
+  {"issue": "Final verdict 'cannot send' contradicts its own tables (every fab row passes) and the skill ('ready with caveats only when caveats are listed and none is a failing row'). The person, who had said he accepts risk, was told 'no' twice.", "severity": "high"},
+  {"issue": "Turn 3 tells a person who does not use KiCad to regenerate Gerbers with File > Plot, and turn 4 tells him to ask the fab for a copper-to-edge distance the project rule sets to 0 mm; it also suggests widening traps to 0.2 mm, impossible by tomorrow. Honestly labelled but unhelpful.", "severity": "medium"},
+  {"issue": "'我看過這份 PDF' is true (it used Read on the PDF) and the description (silk text 'StickHub', 'USB1..USB7') matches the render; no false claim of work done. It said plainly it cannot paste a picture or write to the Desktop.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T164921Z-402224ee-pcb_export_StickHub-F_Cu_p1.png (harness render of F_Cu.pdf)", "score": 2, "notes": "Single copper layer plus Edge.Cuts: clear red copper, outline, slot; but the board is about 340 px of a 954 px A4 page (35 % of the width), no title, scale, layer name or legend."},
+  {"file": "rendered/20261124T164921Z-402224ee-pcb_export_StickHub-B_Cu_p1.png (B_Cu.pdf)", "score": 1, "notes": "Blue copper fill with white tracks, same small A4 layout, no labels; hard to read for a non-designer."},
+  {"file": "rendered/20261124T165021Z-eded2881-pcb_export_StickHub_p1.png (all layers overlaid, pdf; out_*.png are identical copies)", "score": 1, "notes": "Front and back copper, silkscreen, mask and paste overlaid: cyan/pink pads, mirrored silk text from both sides, red/blue tracks on top of each other; recognisable as a board but not interpretable; same small A4 placement."},
+  {"file": "pcb_export svg", "score": 0, "notes": "Not used. The tool's svg is now cropped to the board outline (re-checked in-process: 'board area only (kicad-cli --page-size-mode 2)') but the assistant chose pdf, which autoscales on one page, and neither format is a PNG, so nothing can appear in the reply."}
+ ],
+ "problems": [
+  {"id": "E1-r3-1", "kind": "model_error", "severity": "high", "what": "False 'not OK' verdict with two invented blockers and a wrong KiCad domain claim (drill vs finished). Skill section 6 already says a fab minimum is inclusive and that 'ready with caveats' is allowed; the assistant ignored it after raising its own doubts, and the person gave up. Round-2 problem E1-8 (over-hedged verdict) repeated and worsened: round 2 ended in a yes.", "evidence": "turn 4: '直接答案：現在是「不能送」 ... 層數（2 層或 4 層）未確認 ... 若是成品孔徑，81 個過孔會不合格'; pcb_info vias drill_mm min 0.3 count 81, copper_layers 2, fab sheet '2 或 4 層'", "fix": "see E1-r3-2. Also add to the server instructions: 'a verdict must follow your own checklist table: if every row passes, say ready with caveats'."},
+  {"id": "E1-r3-2", "kind": "skill_gap", "severity": "high", "what": "eng-pcb-review lacks the two domain facts the assistant got wrong: (a) KiCad drill sizes (vias, pads, Excellon) are finished hole diameters, so compare 'min finished drill' directly with pcb_info drill_mm; (b) the layer count in the .kicad_pcb is the truth, a colleague's chat claim is a note, and if the file's count is in the fab's allowed set the row passes. It also does not forbid turning a passing row into a precondition for sending.", "evidence": "section 4.3 says only 'compare the fab sheet with measured values by hand (annular ring = (via size - drill) / 2)'; section 6 has no sentence about clarifying questions", "fix": "eng-pcb-review section 4.3: add 'KiCad's drill values are finished (plated) sizes; compare them directly'; section 6: add 'Questions for the fab go into the caveat list; they do not turn a passing row into a block. A person who accepts risk gets ready / not ready in the first line, then the caveats.'"},
+  {"id": "E1-r3-3", "kind": "tool_gap", "severity": "high", "what": "Still no board picture that can be shown in the reply: pcb_export writes pdf or svg only (re-run: svg returns TextContent only, artifacts json+svg), so no ImageContent, and the pdf autoscale puts the board at 35 % of an A4 page. The person asked in four turns and never got a picture in the chat; the assistant said 'I cannot paste the image'. One of his four stated deliverables.", "evidence": "pcb_export result.data.page: 'autoscale (kicad-cli --scale 0) on the board's own page'; no png in ws/*pcb_export; call_tool content types ['TextContent']", "fix": "pcb_export export='png' (render the board-cropped svg to a 1600 px PNG, front and back with silk and mask in standard colours) returned as ImageContent plus path; eng-pcb-review section 5: use the svg/png 'board area only' rather than pdf, and replace 'No PNG export'."},
+  {"id": "E1-r3-4", "kind": "tool_gap", "severity": "medium", "what": "Round-2 E1-5 largely fixed: gerbers.zip now holds 9 layers + job + drill and is named StickHub-*. Still, outputs exist only in the toolkit's temp workspace; there is no output_dir/copy_to, so the person 'cannot open the path' (harness) and the assistant can only give manual steps that need KiCad.", "evidence": "zip namelist: 9 layer files, StickHub-job.gbrjob, StickHub.drl; turn 4 'I cannot put the file on your desktop'", "fix": "pcb_export: optional output_dir inside an allowed root, or return the folder as one absolute path line; eng-pcb-review: hand over the zip path first as one complete absolute path."},
+  {"id": "E1-r3-5", "kind": "model_error", "severity": "medium", "what": "Turn 1 ordering was right (measured values, verdict open, ask for the fab sheet) and the person's sheet fully answered it in turn 2, yet turn 2 still answered 'cannot decide' and listed pre-conditions; a plain yes/no after the sheet arrives is the skill's contract. The 0.2 mm sensitivity test that proves 'sits exactly on the limit' (round 2: 499 errors) was not run, so 'no margin' rests on the track-width histogram only.", "evidence": "turn 2 headline '結論：不能直接判定可以送' after all five rows were marked ✓", "fix": "eng-pcb-review section 6: 'after the sheet is given, answer ready / not ready in the first line; run pcb_drc once at limit + 0.05 mm to show the margin'."},
+  {"id": "E1-r3-6", "kind": "harness_artifact", "severity": "low", "what": "The persona says 'I still cannot see the board picture' in turn 4 although rendered/ held a PNG render of the full-board PDF (turn 3) in its picture list, and says it cannot open any path while the harness runs on the same machine; it also has no KiCad, yet the assistant's only fallback is KiCad. The product gap (no inline PNG) is real, but the persona's total failure to see anything exaggerates it.", "evidence": "rendered/20261124T165021Z-eded2881-pcb_export_StickHub_p1.png exists; turn 4 person: '板子圖我也看不到'", "fix": "harness: tell the persona which pictures are 'in the chat' and which are only a path; keep the rule that a path is not a picture."},
+  {"id": "E1-r3-7", "kind": "tool_gap", "severity": "low", "what": "pcb_drc still has no overrides for drill, annular ring or copper-to-edge (only clearance and track width); the assistant did these by hand ('ring 0.1 mm, my arithmetic'), which is fine, but this is exactly the area where it then invented blockers.", "evidence": "skill section 4.3: 'only min_clearance and min_track_width can be passed in'", "fix": "pcb_drc: add min_drill, min_annular_ring, min_copper_edge_clearance so a complete fab sheet maps to rule rows."}
+ ],
+ "what_worked": [
+  "Skills loaded before the first tool call; the ask-for-the-fab-sheet-first rule was followed in turn 1 (measured values, verdict open).",
+  "All facts and DRC/ERC counts correct; library warnings separated from design warnings in every message and explained in plain words (footprint library = parts catalogue).",
+  "The colleague's '4 layers' was refuted from the file, not believed.",
+  "The export set is now a real fab upload: 9 layers + job + Excellon drill in one zip named after the board (round-2 gap closed).",
+  "Honest about what it cannot do (no Desktop copy, no inline picture)."
+ ],
+ "vs_round2": {
+  "verdict_before": "PARTIAL",
+  "verdict_now": "FAIL",
+  "fixed": ["E1-6 (skill loaded first)", "E1-5 mostly (zip includes drill, correct names)"],
+  "still_open": ["E1-2 (no inline PNG of the board)", "E1-7 (harness)"],
+  "new": ["E1-r3-1/2 (wrong final verdict, wrong drill claim)", "E1-r3-5 (no 0.2 mm margin test)"],
+  "regressed": ["E1-8: round 2 ended in an honest 'yes by the written rules'; round 3 ended in 'no'"]
+ },
+ "picture_handover_check": {
+  "person_saw_tool_png": "the tool makes none; the harness renders the PDFs to PNG and lists them, the persona nevertheless says it sees nothing (harness artifact)",
+  "inline_in_reply": "no (pcb_export returns TextContent only)",
+  "png_path_in_words": "n/a: PDF paths in words (turns 2, 3), full absolute temp paths"
+ },
+ "false_pass": "none. It is a FALSE FAIL: tool output all pass (DRC 0, ERC 0, sheet rows pass, 2 layers), the assistant concluded 'cannot send', the truth says yes with caveats."
+}

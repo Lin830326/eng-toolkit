@@ -1,0 +1,150 @@
+{
+ "id": "S4_exhaust_stack_modes",
+ "verdict": "PASS",
+ "one_line": "All frequencies, the 50 Hz resonance of mode 2 (49.49 Hz), the fixed-free Euler load 15.35 kN with K = 2, the useless top-mass change and the 2 in pipe fix (63.3 Hz) are right in 3 turns with a mode-shape PNG the person looked at; faults: it twice says a hanging load puts the pipe in tension, it suggests a thicker wall as a fix without testing it, and the modes in the picture are not scaled against each other.",
+ "vs_round2": "PASS -> PASS, fewer turns (5 -> 3) and the person now has a real picture. Round 2: the PNG never reached the person, ASCII substitutes, spring and brace cases explored. Round 3: PNG in rendered/ and the person's reply reads the curve ('the tip swings the other way in mode 2'), no ASCII art. Not better: no brace or clamp-stiffness case; a physics slip about tension and an untested 'thicker wall' suggestion are new.",
+ "goal_met": true,
+ "turns": 3,
+ "holdout": false,
+ "new_checks": {
+  "picture_seen": "Yes, the strongest evidence of the four: the persona's turn-2 message says it saw the picture and that in mode 2 the tip swings opposite, which is a reading of the actual curve; the assistant confirmed it from the CSV numbers (tip -0.075, peak 0.51 at 1.1-1.2 m). The PNG path was given in words (full path) in turn 1; the tool result had the inline image (plot_xy, 116 kB). The plot was made by the assistant from structures_modal's mode_shapes.csv (there is no mode-shape tool).",
+  "domain_skill_before_first_tool": "Yes: eng-toolkit and eng-structural-check in turn 1 before any tool call. The skill's rule 6 (every frequency in values, shapes in mode_shapes.csv) was followed and found the resonance. Rule 3 (rerun modal with elements 4 -> 10 for convergence) was not followed: one 10-element run, no 4-element comparison; the hand check of f1 (3EI/(m_eff L^3), 4.12 Hz) was done and labelled. No skill sentence misled it.",
+  "ask_before_computing": "Acceptable. Catalogue pipe data (48.26 x 3.68, E 193 GPa, rho 8000) were supplied by the assistant and marked 'from memory, not a tool result', as the scenario expects. The two deciding unknowns (motor poles, and whether the 1.5 kN is compression) were computed first (compression assumed) and asked at the end of turn 1; the answers (2-pole, downward) did not change a number.",
+  "false_pass": "None on frequencies. One conditional false statement on buckling (S4-1): 'if the 1.5 kN hangs from the top, the pipe is in tension and cannot buckle'. A weight hanging from the top of a vertical pipe that stands on the floor pushes down on it: compression, the same case the Euler check treats. The final number (SF 9.03 for 1.70 kN; truth 10.2 for 1.5 kN alone) is right; the 118 N blower weight and 81 N pipe weight were added and labelled."
+ },
+ "answers": [
+  {
+   "item": "first natural frequency",
+   "truth": "4.12 Hz (3 % tolerance)",
+   "assistant_said": "4.116 Hz; hand check 4.12 Hz",
+   "result": "right"
+  },
+  {
+   "item": "second natural frequency and the 50 Hz verdict",
+   "truth": "49.49 Hz, within 1 % of 50 Hz: resonance risk",
+   "assistant_said": "49.49 Hz, 'ratio 0.99, resonance', mode 3 at 156.5 Hz far away; marked unverified because the model has a rigid clamp and no rotary inertia",
+   "result": "right"
+  },
+  {
+   "item": "fixed-free buckling load and K",
+   "truth": "15.35 kN (K = 2); K = 1 (61.4 kN) is wrong",
+   "assistant_said": "15,347 N from the tool, 15.35 kN by hand; explained K = 2 vs her K = 1 (61.4 kN, factor (2/1)^2 = 4)",
+   "result": "right"
+  },
+  {
+   "item": "safety factor against 1.5 kN",
+   "truth": "about 10.2",
+   "assistant_said": "9.03 for 1.70 kN (1.5 kN + 118 N + 81 N self-weight, labelled)",
+   "result": "right"
+  },
+  {
+   "item": "tip-mass change (8 / 15 kg) effect on mode 2",
+   "truth": "8 kg 50.29 Hz, 15 kg 49.15 Hz: does not help",
+   "assistant_said": "8 kg 50.30 Hz, 15 kg 49.15 Hz: mode 2 moves less than 1 Hz",
+   "result": "right"
+  },
+  {
+   "item": "what clears 50 Hz",
+   "truth": "2 in sch40 about 63.25 Hz; a brace is the other lever",
+   "assistant_said": "2 in sch40 63.27 Hz (OD and wall from memory, labelled), Euler 33.0 kN (hand), brace location and stiffness asked",
+   "result": "right"
+  },
+  {
+   "item": "mode-shape picture",
+   "truth": "shape against height for modes 1 and 2",
+   "assistant_said": "PNG from the tool CSV; node near 1.9 m, peak at 1.1-1.2 m, tip reverses",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "only the first frequency reported (misses the 49.5 Hz mode)",
+   "caught": true
+  },
+  {
+   "trap": "pi^2 EI / L^2 with L = 2 m (pinned) for the buckling",
+   "caught": true
+  },
+  {
+   "trap": "top-mass change as the fix",
+   "caught": true
+  },
+  {
+   "trap": "'hanging' load read as tension instead of compression",
+   "caught": false
+  },
+  {
+   "trap": "thicker wall as a fix (sch80 gives 48.7 Hz, lower)",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turns 1 and 2 say that a load hanging from the top puts the pipe in tension; with the person's own clarification ('along the axis, downward, pressing') it is compression. The statement is physically wrong and contradicts the assistant's own next sentence. A person who believed it could drop the buckling check.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 1 'next step' says a thicker-wall pipe would move mode 2 'above 60 Hz (about 1.2 x)'. It was not computed; the truth script's sch80 (48.3 x 5.08) gives 48.68 Hz, lower, so no help. Only the 2 in pipe was ever tested (turn 3).",
+   "severity": "medium"
+  },
+  {
+   "issue": "The turn 1 headline 'the pipe will resonate in this mode when the motor starts, matching your shaking' is stronger than the evidence (a 1 % margin in a model with a rigid clamp and no rotary inertia). The same answer lists those limits and marks the resonance 'unverified', so the whole is honest, but the first sentence over-claims. No tap test or measurement is recommended.",
+   "severity": "low"
+  },
+  {
+   "issue": "Mode 4 (291 Hz) is listed as 'a y-direction mode, no x participation'; it is the axial mode (EA/L with the tip mass), never named as such; a lay reader cannot interpret it.",
+   "severity": "low"
+  },
+  {
+   "issue": "The tip rotation 1.08 is compared with the tip displacement -0.075 as if both had the same unit ('mainly rotation'); the conclusion is plausible but the numbers are not comparable.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T171358Z-95d33607-plot_xy_plot.png",
+   "score": 2,
+   "notes": "Height 0-2 m on x, lateral ux on y, mode 1 solid blue (4.116 Hz), mode 2 dashed orange (49.49 Hz), zero line, legend; data identical to mode_shapes.csv; the mode-2 node near 1.93 m and the reversed tip are visible. Weaknesses: title and axis labels in English for a Chinese-writing person; amplitudes are mass-normalised so mode 1 (0.27) and mode 2 (0.51) are not comparable and the y axis says only 'relative'; 11 points joined by straight lines show kinks; no sketch of the pipe, the clamp and the 12 kg mass. Readable and correct, not report-ready."
+  }
+ ],
+ "problems": [
+  {
+   "id": "S4-1",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Says a hanging load means tension and no buckling.",
+   "evidence": "Turn 1: '如果 1.5 kN 是從頂端向下吊掛，管子承受的是拉力，不會挫屈'; turn 2: '如果重物是「掛在」吊環上，拉力會向上，管子承受拉力，不會挫屈。目前的結論只適用於重物向下壓在頂端的情況。'",
+   "fix": "eng-structural-check/SKILL.md section 1: 'a load hanging from the top of a column that stands on its base is compression; tension only if the load pulls the top up'. Haiku-level slip; low value to fix in tools."
+  },
+  {
+   "id": "S4-2",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Suggests a remedy that was not tested and is wrong (thicker wall).",
+   "evidence": "Turn 1 step 3: '改用較厚壁管，把第二模態移到 60 Hz 以上（約 1.2 倍）' vs the truth script's sch80: 48.68 Hz.",
+   "fix": "eng-structural-check/SKILL.md reporting: 'suggest only changes you ran; otherwise say untested' (a variant of 'label recalled values')."
+  },
+  {
+   "id": "S4-3",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "No mode-shape picture tool; the assistant must read the CSV and call plot_xy (it did, correctly). The CSV is mass-normalised, so two modes are incomparable and say nothing about amplitude to a lay person.",
+   "evidence": "plot title 'mass-normalized, relative'; mode 1 tip 0.268, mode 2 peak 0.511.",
+   "fix": "structures_modal: write mode_shapes.png (height vs shape, each mode scaled to max |ux| = 1, undeformed axis, mass marker) and return it inline; or add a max-scaled column in mode_shapes.csv."
+  },
+  {
+   "id": "S4-4",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "The convergence rerun (elements 4 -> 10) was skipped for the modal result the verdict rests on. Harmless here (49.52 vs 49.49 Hz in the builder check), but the person was not told that mode 2 had not been checked.",
+   "evidence": "One structures_modal call with elements_per_member 10 and no second element count.",
+   "fix": "Already in eng-structural-check section 4 item 3; make it 'convergence check before quoting a frequency within 5 % of a forcing frequency'."
+  }
+ ],
+ "what_worked": [
+  "Read data.modes instead of the headline first_frequency and found the 49.49 Hz mode by itself.",
+  "K = 2 explained to a person who used K = 1: the factor 4 shown with her own EI number.",
+  "Top-mass question answered with three tool runs (8, 12, 15 kg) and the reason (tip near a node of mode 2), then a real fix tested with the tool (2 in sch40, 63.27 Hz) with a stated 20 % margin called 'my judgement'.",
+  "Recalled catalogue data (OD, wall, E, density) were marked 'from memory' every time they were used."
+ ]
+}

@@ -1,0 +1,156 @@
+{
+ "id": "M2_crane_hook_strain_fatigue",
+ "verdict": "PASS",
+ "one_line": "Right numbers (D 9.574e-6 per record, 58,026 h, 47,026 h = 26.1 years remaining) from the tool on the despiked file; the three EMI spikes found and named with time and value and never used for a life; the histogram is readable but dominated by the noise bin.",
+ "goal_met": true,
+ "turns": 3,
+ "holdout": false,
+ "vs_round2": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": [
+   "M2-14 no 'remaining life 0 h' headline: turn 1 says not final, quotes the spike damage as unusable",
+   "M2-7 tool PNG now reaches the person (person: 直方圖我看了,可以用)",
+   "M2-3 tool now lists spikes and extremes in warnings and data.spikes"
+  ],
+  "still_open": [
+   "M2-12 no despike option (the person had to supply the logger's despiked copy)",
+   "M2-15 six questions in turn 1, several already answered by 'FAT 63'"
+  ],
+  "new": [
+   "M2-r3-1"
+  ],
+  "regressed": []
+ },
+ "answers": [
+  {
+   "item": "Damage per record (despiked)",
+   "truth": "9.58e-6",
+   "assistant_said": "9.574e-6",
+   "result": "right"
+  },
+  {
+   "item": "Hours to failure",
+   "truth": "57,991 h",
+   "assistant_said": "58,026 h",
+   "result": "right"
+  },
+  {
+   "item": "Remaining hours after 11,000 h",
+   "truth": "46,991 h",
+   "assistant_said": "47,026 h",
+   "result": "right"
+  },
+  {
+   "item": "Remaining years at 1800 h/yr",
+   "truth": "26.1 years",
+   "assistant_said": "26.1 years",
+   "result": "right"
+  },
+  {
+   "item": "Spikes in the raw file",
+   "truth": "756, -378, 861 MPa at 431.7, 990.2, 1556.1 s",
+   "assistant_said": "same three, same times, 'logger errors, far above the real maximum of about 600 microstrain'",
+   "result": "right"
+  },
+  {
+   "item": "Raw-file damage if the spikes are kept",
+   "truth": "4.39e-3 (126 h): wrong to use",
+   "assistant_said": "D 4.392e-3 'contains spikes, not usable'",
+   "result": "right"
+  },
+  {
+   "item": "Histogram of cycle ranges",
+   "truth": "about 4950 noise cycles 0-10 MPa without gate; few cycles above 20 MPa (34), 5 above 60 MPa",
+   "assistant_said": "276 cycles 0-5.8 MPa (2 MPa gate), 23 in 5.8-11.6, single digits above, max bin 110-116",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "Spikes treated as loads (life 126 h)",
+   "caught": true
+  },
+  {
+   "trap": "Basquin A from range (7937) vs amplitude (3969)",
+   "caught": true
+  },
+  {
+   "trap": "Raw file header line",
+   "caught": true
+  },
+  {
+   "trap": "Thousands of noise cycles dominating the count",
+   "caught": true
+  },
+  {
+   "trap": "plot_bar on rainflow_cycles.csv fails above 200 categories",
+   "caught": true
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "First call used basquin_a 7937 MPa; disclosed and corrected in the same reply, checked by hand N = 2e6*(63/1239)^3 = 263 vs tool 262.98.",
+   "severity": "low"
+  },
+  {
+   "issue": "The 2 MPa hysteresis gate was the assistant's choice; disclosed.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 1 gave a provisional life by subtracting the spike damage but marked it not final and asked for a despiked file; the subtraction (9.5e-6) agrees with the tool (9.574e-6).",
+   "severity": "low"
+  },
+  {
+   "issue": "Two further 'small spikes' (48.7, 31.7 MPa) were flagged because the tool listed them; the truth treats them as real data. It estimated their share (3.5 %), labelled it an estimate, asked, and the person kept them: cautious, a mild false alarm.",
+   "severity": "low"
+  },
+  {
+   "issue": "Garbled sentence in turn 1: '直方圖：`D:` 無關，路徑為 ...'.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T170922Z-e904114e-plot_bar_plot.png",
+   "score": 2,
+   "notes": "Bar histogram of cycle counts by stress range, labelled axes with MPa and value labels, 20 bins of 5.8 MPa, every third bin labelled. The first bin (276) hides every damage-relevant bin (0-8 counts); no log axis although the skill says y_scale=log when the first bin is noise. Usable, not report quality. Person saw it: the harness lists every PNG in rendered/ to the persona (scripts/uat_run.py, PICTURES SHOWN TO YOU); the tool result carries an inline ImageContent block (re-run in-process: plot_xy format=both returns TextContent + ImageContent); the PNG path was handed over in words."
+  },
+  {
+   "file": "rendered/20261124T170823Z-ff37b820-plot_bar_plot.png",
+   "score": 1,
+   "notes": "First-turn histogram of the spike-contaminated run in 62 MPa bins (331 / 5 / zeros / 0.5 values); titled as containing spikes and called by the assistant 'not a real load spectrum'. Person saw it: the harness lists every PNG in rendered/ to the persona (scripts/uat_run.py, PICTURES SHOWN TO YOU); the tool result carries an inline ImageContent block (re-run in-process: plot_xy format=both returns TextContent + ImageContent); the PNG path was handed over in words."
+  }
+ ],
+ "problems": [
+  {
+   "id": "M2-r3-1",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "Histogram with linear y and uniform bins: the noise bin flattens everything that matters; the skill's log-axis hint was not used.",
+   "evidence": "y = [276,23,3,4,7,4,8,3,2,3,1,0,1,2,0,0,0,0,0,1], no y_scale.",
+   "fix": "eng-fatigue-check 6: make y_scale=log the default instruction for rainflow histograms; fatigue_rainflow could also return damage share per range bin so the picture shows where the damage is."
+  },
+  {
+   "id": "M2-12",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "(still open) no despike option in fatigue_rainflow. The tool now flags the spikes, but a person without a clean copy of the file cannot proceed.",
+   "evidence": "'我沒有寫檔的工具，無法產生去尖峰的 CSV'.",
+   "fix": "fatigue_rainflow: parameter despike (replace isolated samples beyond k robust sigmas by interpolation) and list the removed indices."
+  },
+  {
+   "id": "M2-15",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Turn 1 asked six questions, some already given by 'FAT 63' (slope, no cut-off) or answerable by default.",
+   "evidence": "turn 1 list items 1-6.",
+   "fix": "eng-toolkit: 'Ask only what the person did not state; a FAT class means slope 3 unless told'."
+  }
+ ],
+ "what_worked": [
+  "eng-fatigue-check loaded before the first tool call and its rule applied: the 861 MPa maximum was compared with about 109 MPa at SWL and called a data problem before any life was quoted.",
+  "Tool improvements used: header line skipped and reported, spikes listed with index, time and value, dominant cycle named.",
+  "Independent hand check of the Basquin life twice; explained that zero offset does not change ranges while gain does (5 % gain is 15 % damage)."
+ ]
+}

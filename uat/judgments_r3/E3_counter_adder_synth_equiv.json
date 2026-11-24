@@ -1,0 +1,70 @@
+{
+ "id": "E3_counter_adder_synth_equiv",
+ "verdict": "PASS",
+ "one_line": "All numbers right (unit-gate 63/62/112/112, cells 24/23/86/80 in the tool), cnt8_opt correctly declared NOT equivalent with count=127, en=1, a testbench that I ran with iverilog (prints 'count=7f tc(cnt8)=0 tc(cnt8_opt)=1' once), adders proved equivalent, no invented um2, tool PNG seen by the person. Weak spots: the first chart lost 2 of 5 bar names (the tool warned; the assistant handed it over and fixed it only when asked), counter cell counts 24/23 never stated, one recalled claim about synthesis tools unlabelled.",
+ "goal_met": true,
+ "turns": 3,
+ "vs_round2": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": [
+   "E3-6 (both skills loaded before the first tool call)",
+   "E3-7 (format=both, PNG path handed over, the person saw the tool PNG)",
+   "E3-8 (no false 'same gates' claim: turn 3 says 'structure close to ripple' and gives depth 33)"
+  ],
+  "still_open": [
+   "E3-3 (digital_equivalent cap of 100 cycles; this run avoided it by splitting out tc; renumbered E3-12 below)"
+  ],
+  "new": ["E3-10", "E3-11"],
+  "regressed": []
+ },
+ "round3_checks": {
+  "png_seen_by_person": "yes: rendered/ holds both tool PNGs; turn 2 PERSON complains that two bars of the first PNG have no name; turn 3 PERSON says all five bars have names.",
+  "inline_image_block": "cannot be read from the run (transcript.json stores tool inputs only, no raw result blocks). In-process re-run through the gateway: plot_bar returns ['TextContent','ImageContent'] and the warning '2 of 5 category labels were left out so that the others do not overlap', so the assistant received the same flawed picture. No assistant turn used Read on a PNG: no evidence it looked at the image, only at the warning.",
+  "png_path_in_words": "yes: full path to plot.png in turns 1 and 2, plus a description of the bars.",
+  "skill_before_first_tool": "yes: eng-toolkit and eng-digital-synthesis; first tool call was Skill. No skill sentence misled: section 1 'Area in um2 needs the company's liberty file' led to the right refusal; section 4 route (1) 'split out the combinational part ... then argue reachability' is what it did.",
+  "asked_before_computing": "not needed (inputs complete). It asked for the .lib or a cell-area table only for um2.",
+  "recalled_values_labelled": "mostly yes (ratios 'my arithmetic', unit-gate model 'tool convention'). Not labelled: 'the synthesis tool can pick a faster adder architecture, so use add16_beh'.",
+  "false_pass": "none"
+ },
+ "answers": [
+  {"item": "cnt8 gate count / area", "truth": "24 cells (8 DFF + 16 gates); 40 structural; no um2 without a .lib", "assistant_said": "unit-gate 63 = 23 combinational + 8 FF x 5, depth 8, 'not um2'. The cell count 24 is not stated.", "result": "right"},
+  {"item": "cnt8_opt gate count / area", "truth": "23 cells", "assistant_said": "unit-gate 62 = 22 + 40, depth 7, one unit-gate less (1.6 %, my arithmetic)", "result": "right"},
+  {"item": "add16_beh vs add16_rca size", "truth": "86 vs 80 cells, both 112 unit-gate; structural rca 80 vs beh 113 cells", "assistant_said": "both 112 unit-gate, depth 33; rca optimized has 80 vs 86 cells 'but cells are not area'; a + b is not larger in this model ('observation of the tool output, not a general rule')", "result": "right"},
+  {"item": "adders equivalent", "truth": "equivalent (combinational proof)", "assistant_said": "digital_equivalent cycles=0: equivalent, proof complete", "result": "right"},
+  {"item": "counters equivalent / can swap", "truth": "NOT equivalent; tc differs at count 0x7F with en=1; first visible after 127 enabled edges", "assistant_said": "not equivalent, do not swap; count=127 (0x7F), en=1: cnt8 tc=0, cnt8_opt tc=1. Found by comparing the two tc expressions as combinational modules (digital_equivalent cycles=0, counterexample count 127, en 1). It says it did NOT run a bounded sequential check because 127 clocks exceed the tool maximum of 100.", "result": "right"},
+  {"item": "input sequence for the colleague", "truth": "reset, then 127 enabled clocks", "assistant_said": "1 clock with rst=1, then rst=0, en=1 for 127 clocks; testbench labelled 'not run, unverified'. I ran it with iverilog: exactly one line 'count=7f  tc(cnt8)=0  tc(cnt8_opt)=1', nothing at 0xFF.", "result": "right"},
+  {"item": "standard-cell area in um2", "truth": "not available without a .lib; do not invent", "assistant_said": "refused um2 in turn 1 ('I do not give a um2 number because the tool has no such data'), gave relative unit-gate numbers and slide wording marked 'non-um2'", "result": "right"},
+  {"item": "bar chart of the four designs", "truth": "a chart with the 4 designs", "assistant_said": "stacked bars (combinational + flip-flop), 5 bars incl. add16_rca structural; first PNG lost the names of cnt8_opt and add16_rca (optimized); second PNG has all names", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "Trusting a bounded 'no_mismatch_within_bound' (cycles=100) as equivalence", "caught": true},
+  {"trap": "Giving um2 or NAND2-equivalents as silicon area", "caught": true},
+  {"trap": "Person's belief that a hand-written ripple adder is always smaller than a + b", "caught": true},
+  {"trap": "Naming target and metric when comparing adders", "caught": true},
+  {"trap": "Colleague's argument 'only counts up from reset, so 7 bits suffice'", "caught": true},
+  {"trap": "Not promising a capability the toolkit lacks (liberty file)", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 1 ends with 'give me the .lib file or the NAND2/XOR2/DFF areas and I can convert to um2'. The toolkit cannot read a .lib; the per-cell table route is feasible only as hand arithmetic over the cell mix, and the assistant did not say it would be labelled arithmetic. Much milder than round 2 ('I map it with Yosys').", "severity": "low"},
+  {"issue": "Turn 1 recommends add16_beh because 'the synthesis tool can choose a faster adder architecture under your library and timing': a recalled claim about commercial flows, unlabelled, and not what Yosys did here (depth 33 for both).", "severity": "low"},
+  {"issue": "Turn 1 says 2 category labels were omitted by the tool and that the table should be trusted, and hands the chart over instead of re-plotting; the person had to ask in turn 2.", "severity": "low"},
+  {"issue": "Labelling elsewhere was good: tool vs 'my arithmetic' (1.6 %, 56 %, 16 x 7), 'derived by me, not run by a simulator', testbench 'not executed, unverified'.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T164926Z-e0ec2c44-plot_bar_plot.png", "score": 1, "notes": "Data right (63/62/112/112/112, stacked comb/FF, value labels, legend, CJK title crisp) but the x axis names only cnt8, add16_beh and add16_rca (structural): the bars for cnt8_opt and add16_rca (optimized) have a tick and no name. The one comparison the person asked about (cnt8 vs cnt8_opt) cannot be read from the picture. Tool warning: '2 of 5 category labels were left out so that the others do not overlap'."},
+  {"file": "rendered/20261124T165015Z-f911770a-plot_bar_plot.png", "score": 3, "notes": "1200 px wide, five named bars (cnt8, cnt8_opt, add_beh, add_rca_opt, add_rca_str), stacked comb/FF, value labels, 0-140 axis, title says 'unit-gate, not um2', legend. Ready for a slide. Only unit-gate is shown; the cell-count difference 86 vs 80 is not visible."}
+ ],
+ "problems": [
+  {"id": "E3-10", "kind": "tool_gap", "severity": "medium", "what": "plot_bar silently drops every other category label when they would overlap at the default 800 px width, instead of rotating, wrapping or widening. The person lost the names of the two bars that mattered. The result carries a warning, but the assistant only paraphrased it and handed the chart over.", "evidence": "In-process: plot_bar with 5 categories ['cnt8','cnt8_opt','add16_beh','add16_rca (optimized)','add16_rca (structural)'] at default width -> warning '2 of 5 category labels were left out so that the others do not overlap'; the run PNG shows 3 of 5 names.", "fix": "domains/plot bar renderer: rotate labels 30 to 45 degrees or wrap on spaces, and widen the figure (up to 1600 px) before dropping any label. If still dropped, name the bars without a label in the warning. Add to plugin/skills/eng-plot-results/SKILL.md: 'a bar chart must show every bar name: re-plot when the result warns that category labels were left out'."},
+  {"id": "E3-11", "kind": "model_error", "severity": "low", "what": "The user asked for 'gate count'. The reply gives unit-gate area for the counters and mentions raw cell counts only for the adders (80 vs 86). The counts 24 / 23 / 86 / 80 are in values.cells of the tool results but were never shown together.", "evidence": "values.cells: cnt8 24, cnt8_opt 23, add16_beh 86, add16_rca 80 (ws/*digital_synthesize/result.json). The turn 1 table has only the unit-gate columns.", "fix": "plugin/skills/eng-digital-synthesis/SKILL.md section 6: 'give cells AND unit-gate area for every module in one table'."},
+  {"id": "E3-12", "kind": "tool_gap", "severity": "medium", "what": "Unchanged from round 2 (E3-3): digital_equivalent allows at most 100 cycles, so the real sequential difference (128 steps from reset) cannot be found by the tool; the design must be split by hand and reachability argued by hand. No parameter override to shrink the width. This run succeeded only because the skill route (1) was followed.", "evidence": "Truth: SAT with 128 steps finds the difference, 127 does not; tool cap 100.", "fix": "Raise the cap to about 512 steps for designs with under 64 state bits, or add a k-induction or reachability mode; allow parameter overrides in digital_equivalent."}
+ ],
+ "what_worked": [
+  "Both skills were loaded before the first tool call and the answer follows skill route (1) for wide counters (split tc, prove with cycles=0, argue reachability by counting). That is general guidance: the skill example is a 6-bit counter, not these numbers.",
+  "All tool numbers match standalone Yosys in the truth script (24/23/86/80 cells; 63/62/112/112 unit-gate).",
+  "Clear yes/no with a mechanism the intern can show the colleague, and a working testbench (I ran it: one mismatch line at count=7f).",
+  "Refused um2, gave slide wording that says 'tool convention, not um2', and answered the 'ripple is smaller' belief with measured evidence (single full adder 7 unit-gate x 16 = 112).",
+  "Fixed the missing bar names in one call; the second chart is slide-ready."
+ ]
+}

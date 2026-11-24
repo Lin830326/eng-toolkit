@@ -1,0 +1,61 @@
+{
+ "id": "M3_air_receiver_manway",
+ "verdict": "PARTIAL",
+ "one_line": "3 turns; hemisphere trap caught in turn 1; shell 4.546 mm, 2:1 end 4.549 mm, 6 mm plate, torque 87.4 N*m, utilisation 0.779, 6-16 bar PNG chart all right and scope limits flagged; but the bolt-fatigue factor is 41.9 against a truth of 12.3 (the skill's hand formula was not used) and the hydrotest has no verdict (corroded wall, no allowable).",
+ "vs_round2": "Same verdict (PARTIAL), better picture and read-out. Round 2: fatigue factor 1.72 (7x too low), SVG path, two wrong plate read-outs (10 and 12 bar), doubt about Se including Kf. Round 3: PNG path, read-out right (6 mm good to about 11.4 bar, 8 mm to about 16.2 bar), no Kf doubt. Fatigue factor is now 41.9 (3.4x too high, non-conservative direction, same 'passes' conclusion). Hydrotest still uses the corroded 4.7 mm wall and now gives no pass/fail word and no allowable.",
+ "goal_met": true,
+ "turns": 3,
+ "holdout": false,
+ "new_checks": {
+  "picture_seen": "Unverifiable for the person: transcript.json records only tool inputs, and the persona ended with DONE without mentioning the chart. A PNG exists (rendered/20261124T171203Z-6977dadc-plot_xy_plot.png). The PNG path was handed over in words (full absolute ws/.../plot.png path in the reply). Whether the image block was inline in the tool result cannot be seen in the harness record.",
+  "domain_skill_before_first_tool": "Yes: eng-machine-design and eng-toolkit loaded in turn 1 before any tool call. eng-fatigue-check and eng-plot-results never loaded (fatigue_sn was called without eng-fatigue-check). No skill sentence misled; the machine-design sentence giving the preloaded-bolt hand formula was ignored.",
+  "asked_before_computing": "Yes. Turn 1 asked 8 inputs (code, design pressure, joint efficiency, corrosion, head type, cover data, nozzle, preload) and ran no tool; recalled values (about 170 MPa, Re/Rm, standard plate) labelled 'from memory'. It also said the half-thickness rule holds only for a true hemisphere.",
+  "false_pass": "No false pass on the main verdicts. One soft one: 'fatigue passes, safety factor 41.9' where the preloaded-bolt Goodman value is 12.3. Tool output said safety_factor 41.88 plus a warning that the proportional-load factor is invalid for a preloaded bolt; the assistant said it did not use the Goodman number and then reported Se/sigma_a (mean_method none, ignores the preload mean of about 447 MPa) as the result. Both pass, margin overstated 3.4x."
+ },
+ "answers": [
+  {"item": "allowable f = min(Re/1.5, Rm/2.4)", "truth": "170.8 MPa", "assistant_said": "170.8 MPa (my calculation, Re/Rm labelled recalled)", "result": "right"},
+  {"item": "shell required thickness (EN 13445)", "truth": "4.56 mm", "assistant_said": "4.546 mm (machine_pressure_vessel thin, allowable x z folded in); hand EN form 4.564 mm", "result": "right"},
+  {"item": "shell plate to order incl. 1 mm + 0.3 mm", "truth": "5.86 mm -> 6 mm", "assistant_said": "5.846 mm -> 6 mm", "result": "right"},
+  {"item": "2:1 ellipsoidal end", "truth": "4.55 mm required, 6 mm plate", "assistant_said": "4.549 mm (hand, ASME-form P D/(2fz-0.2P), labelled not tool-checked), 5.849 -> 6 mm; forming thinning to be confirmed by the supplier", "result": "right"},
+  {"item": "reject sphere/hemisphere shortcut for the 2:1 end", "truth": "2.28 mm is wrong", "assistant_said": "Turn 1: half thickness only for a true hemisphere; turn 3: 2.273 mm 'not applicable because the head is 2:1'", "result": "right"},
+  {"item": "hydrotest pressure", "truth": "15.73 bar", "assistant_said": "1.573 MPa", "result": "right"},
+  {"item": "hydrotest membrane stress vs allowable", "truth": "166.4 MPa on the new 5.7 mm wall; allowable Re/1.05 = 252.4 MPa -> passes", "assistant_said": "200.8 MPa on a 4.7 mm (corroded) wall, yield safety factor 1.52 against Re 265; 'the test-stress limit factor needs EN 13445, not tool-checked'; no pass/fail word", "result": "wrong"},
+  {"item": "thickness vs design pressure 6..16 bar incl. c", "truth": "3.78 / 4.61 / 5.45 / 6.28 / 7.11 / 7.95 mm", "assistant_said": "plotted 3.780 / 4.606 / 5.433 / 5.846 (11 bar) / 6.259 / 7.086 / 7.912; text: 6 mm good to about 11.4 bar, 8 mm to about 16.2 bar", "result": "right"},
+  {"item": "pressure force per bolt", "truth": "5.713 kN", "assistant_said": "5.71 kN (after correcting a first call that used the total 45.7 kN as the per-bolt load)", "result": "right"},
+  {"item": "preload / torque (K 0.2) / utilisation", "truth": "36.67 kN / 88.0 N*m / 0.779", "assistant_said": "36.4 kN / 87.36 N*m / 0.779 (tool, Sp 576 MPa estimated because no proof_strength was passed)", "result": "right"},
+  {"item": "fatigue stress amplitude", "truth": "3.08 MPa", "assistant_said": "3.08 MPa (hand)", "result": "right"},
+  {"item": "fatigue safety factor (Goodman, preloaded bolt, Se 129)", "truth": "12.3", "assistant_said": "41.9 (fatigue_sn correction, mean_method none = Se/sigma_a); 'fatigue passes'", "result": "wrong"},
+  {"item": "out of scope flagged", "truth": "nozzle reinforcement, saddles, welds, vessel fatigue, code stamp", "assistant_said": "DN200 reinforcement (hand estimate: about 910 mm2 needed, shell excess about 90 mm2, 'not usable without a pad'), saddles not computed, forming thickness, weld details, 'not an EN 13445 certified calculation'", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "hemisphere formula for a 2:1 end", "caught": true},
+  {"trap": "joint efficiency, corrosion and tolerance included", "caught": true},
+  {"trap": "hydrotest on the new (uncorroded) wall", "caught": false},
+  {"trap": "preload is a fixed mean in bolt fatigue (no proportional-load Goodman, no plain Se/sa)", "caught": false},
+  {"trap": "nozzle opening not covered by the tool", "caught": true},
+  {"trap": "per-bolt vs total cover force", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "DN200 verdict 'not usable' is stated flatly from a rough hand area balance that ignores the nozzle neck's contribution; it is labelled hand estimate, not tool-checked, and the direction (reinforcement needed) is plausible", "severity": "low"},
+  {"issue": "Turn 3 says the 'Goodman safety factor does not apply to a preloaded bolt, so I did not use it' and then reports a different factor (41.9) as the fatigue result; it ignores the mean stress and is 3.4x too high", "severity": "medium"},
+  {"issue": "Turn 2 wording 'the hemisphere result is 4 mm' mixes the 3.57 mm value with a plate rounding; harmless and superseded by the 2:1 answer", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r3/M3_air_receiver_manway/rendered/20261124T171203Z-6977dadc-plot_xy_plot.png", "score": 2, "notes": "Line chart 6-16 bar, y 3.5-8 mm, axes and units legible, 6 mm plate line crosses the demand curve at about 11.4 bar as stated; data match the truth within 0.5 %. Weak points: the 8 mm plate line sits on the top frame (y max 8.0) and is nearly invisible; the legend entry of the main curve is truncated ('my arithmeti...'); plate lines not labelled on the plot; no marker for the 11 bar design point. Good enough to decide, not yet report-ready."}
+ ],
+ "problems": [
+  {"id": "M3_air_receiver_manway-1", "kind": "model_error", "severity": "high", "what": "Bolt fatigue safety factor 41.9 reported instead of the preloaded-bolt Goodman value 12.3 (open since round 1, a different wrong number each round). It used fatigue_sn correction with mean_method none, which ignores the preload mean stress, although eng-machine-design gives the hand formula.", "evidence": "fatigue_sn input {mode correction, alternating_stress 3.08 MPa, endurance_limit 129 MPa, mean_method none} -> safety_factor 41.88; reply: 'Se/sigma_a = 41.9 ... Goodman does not apply to a preloaded bolt ... so I did not use it'; truth n = Se(Sut-si)/(Sut sa + Se(sm-si)) = 12.3", "fix": "Add a preloaded-bolt mode to mech_bolt_check or fatigue_sn (inputs preload, load_share, external max/min, Se, Sut) so the formula is a tool. Until then add one sentence to eng-machine-design section 4: do not report Se/sa either, it ignores the preload mean; compute n by the hand formula and label it."},
+  {"id": "M3_air_receiver_manway-2", "kind": "tool_gap", "severity": "medium", "what": "fatigue_sn warning is self-contradictory and fires also for mean_method none: 'far too conservative (for a bolt it can be several times too low)'. The assistant read it as 'the Goodman number is too conservative, use the plain amplitude ratio', which is the non-conservative number.", "evidence": "warnings[1] of the fatigue_sn call 8551618e: 'It is NOT valid when the mean stays fixed ... far too conservative (for a bolt it can be several times too low)'", "fix": "Reword: 'not valid for a preloaded bolt (the preload mean stays fixed); the true factor is lower than a plain Se/sa ratio; use the preloaded-bolt form'. Do not put 'conservative' and 'too low' in one sentence."},
+  {"id": "M3_air_receiver_manway-3", "kind": "model_error", "severity": "medium", "what": "Hydrotest computed on the corroded wall (6 - 0.3 - 1 = 4.7 mm) although eng-machine-design says new wall minus under-tolerance; no test allowable stated, no pass/fail word, so 'is the test stress fine' is not answered.", "evidence": "machine_pressure_vessel thickness 4.7 mm, pressure 1.573 MPa -> hoop 200.8 MPa; reply 'the test-stress limit factor needs EN 13445, not tool-checked'. Truth 166.4 MPa on 5.7 mm against Re/1.05 = 252.4 MPa.", "fix": "eng-machine-design: add the rule 'the test is done on the new wall: no corrosion allowance' and a labelled recalled allowable (EN 13445-5 ferritic test membrane stress limit about Re/1.05, ASME about 0.9 Sy; label as recalled) and require a pass/fail word against it."},
+  {"id": "M3_air_receiver_manway-4", "kind": "tool_gap", "severity": "medium", "what": "machine_pressure_vessel has no 2:1 / torispherical head, no pressure sweep and no test-pressure check; the head value, the six chart points and the hydrotest limit are hand arithmetic typed into plot_xy. Disclosed as 'my arithmetic', but a plant engineer cannot reproduce them from a tool log.", "evidence": "head 'P D/(2fz-0.2P), hand, not tool-checked'; plot series typed inline y [3.780, 4.606, ...]", "fix": "Add geometry 'ellipsoidal_2to1' (and torispherical Cr, r), a sweep of internal_pressure, and a test_pressure_factor output to machine_pressure_vessel."},
+  {"id": "M3_air_receiver_manway-5", "kind": "skill_gap", "severity": "low", "what": "mech_bolt_check was called without proof_strength, so Sp = 576 MPa (0.9 x nominal yield) gave preload 36.4 kN and torque 87.36 N*m instead of 36.67 kN and 88.0 N*m. Within tolerance.", "evidence": "tool warning: 'proof stress Sp = 576 MPa is estimated 0.9 x nominal yield of class 8.8; give proof_strength from the standard'", "fix": "eng-machine-design: 'pass proof_strength from the standard for the size range (label recalled) instead of the 0.9 x yield estimate'."},
+  {"id": "M3_air_receiver_manway-6", "kind": "harness_artifact", "severity": "low", "what": "Whether the PNG reached the person as an image cannot be judged: the record has only the path in words, and the persona never commented on the chart.", "evidence": "transcript.md turn 3 item 4: path only; transcript.json holds tool inputs only", "fix": "Harness: record image blocks of tool results (type, size) in transcript.json and make the persona acknowledge each picture."}
+ ],
+ "what_worked": [
+  "Asked for the deciding inputs before any calculation and labelled every recalled value",
+  "Caught the hemisphere assumption in turn 1 without being told; relayed the tool's 2:1 warning correctly",
+  "Self-corrected a per-bolt vs total-load slip within the same turn and said so",
+  "Shell, end, plate, torque, utilisation and the whole thickness curve are within tolerance; chart read-out text now matches the plotted data",
+  "Flagged DN200 reinforcement and saddles as not covered and refused to call the design final"
+ ]
+}

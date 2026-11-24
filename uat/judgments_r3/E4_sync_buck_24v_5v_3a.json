@@ -1,0 +1,75 @@
+{
+ "id": "E4_sync_buck_24v_5v_3a",
+ "verdict": "PARTIAL",
+ "one_line": "Final numbers are right (10 uH, ripple 0.80 A at 24 V / 0.83 A at 28 V, peak 3.40 / 3.42 A, efficiency 95.5 % / 95.2 % with a correct loss list, ngspice 0.8014 / 0.8320 A pp against the formula) and the PNGs are design-review quality; but turn 1 again invented all part data and led with 'efficiency 92.8 %', the 20 mV output-ripple requirement was never asked (an invented 50 mV was used and no minimum capacitance for the real target is ever stated), and turn 2 tells the person to compensate the duty by 0.015 'because of dead time', a claim created by the assistant's own netlist, not by the circuit. Borderline: round 2 was PASS with the same ask-first and capacitor gaps but without a false engineering claim.",
+ "goal_met": true,
+ "turns": 2,
+ "vs_round2": {
+  "verdict_before": "PASS",
+  "verdict_now": "PARTIAL",
+  "fixed": [
+   "E4-8 (gate_charge now 16 nC = both FETs)",
+   "E4-9 (chart titles no longer clipped)"
+  ],
+  "still_open": [
+   "E4-3 (invented part data in turn 1 although both skills were loaded)",
+   "E4-4 (minimum_output_capacitance never reported for the real target)",
+   "E4-5 (partly: SI-prefix ticks exist but are not applied to a window that starts at 1 ms)"
+  ],
+  "new": ["E4-11", "E4-12", "E4-13", "E4-14"],
+  "regressed": ["a bogus dead-time/duty-compensation statement is in the final reply; round 2 had none"]
+ },
+ "round3_checks": {
+  "png_seen_by_person": "yes: rendered/ holds all 5 PNGs; turn 2 PERSON asks for steady state, not start-up, and ends with 'the waveforms can go into a design review'.",
+  "inline_image_block": "not verifiable from the run (no raw tool results). The gateway code returns an ImageContent block for plot_* (checked in-process on plot_bar). The assistant described the waveforms consistently with the CSVs but never used Read on a PNG.",
+  "png_path_in_words": "yes: full path to plot.png (format both in turn 1, format png for the two final charts) plus a text description.",
+  "skill_before_first_tool": "yes: eng-toolkit and eng-circuit-sim. A skill sentence DID mislead: eng-circuit-sim sections 1 and 5 say 'Ask the person's MOSFET and inductor data, or label it \"assumed\"', which contradicts eng-toolkit 'Ask first (hard rule) ... give no provisional numbers'. Haiku took the 'label it assumed' exit and printed 'efficiency 92.8 %' in the bold conclusion.",
+  "asked_before_computing": "no: turn 1 ran electric_converter, two failing netlists and a plot with assumed Rds 30/15 mohm, Qg 20 nC, ESR 10 mohm, rise 20 ns, 22 uF and a 50 mV ripple target, and asked for the real parts only at the end. It never asked for the Vin range or the output-ripple target.",
+  "recalled_values_labelled": "assumptions were listed as 'my assumption, not given by the user, not tool-verified'; hand arithmetic labelled; body-diode IS/RS 'derived by me from 0.7 V at 3 A, not a datasheet value'. Good.",
+  "false_pass": "no false pass on a pass/fail question. One confident wrong engineering claim (dead-time duty compensation, E4-13) and one invented requirement presented as the person's ('far below the 50 mV target')."
+ },
+ "answers": [
+  {"item": "inductance to buy", "truth": "8.8 uH for 30 % ripple at 24 V (9.13 uH at 28 V) -> standard 10 uH", "assistant_said": "turn 1: 8.93 uH (tool, 0.9 A ripple). Turn 2 accepts his 10 uH: 'Isat 6 A against 3.42 A peak = 1.75x (my arithmetic)'", "result": "right"},
+  {"item": "inductor ripple, 10 uH, 24 V", "truth": "0.805 A pp", "assistant_said": "tool 0.8006 A; ngspice 0.8015 A", "result": "right"},
+  {"item": "inductor ripple, 10 uH, 28 V (worst case)", "truth": "0.835 A pp", "assistant_said": "tool 0.8313 A; ngspice 0.8320 A; hand check 23 x 0.1815 / 5 = 0.835", "result": "right"},
+  {"item": "peak inductor current", "truth": "3.402 A (24 V) / 3.417 A (28 V)", "assistant_said": "3.400 / 3.416 A (tool); simulated 3.389 / 3.404 A", "result": "right"},
+  {"item": "output capacitor for 20 mV pp", "truth": "13.2 uF minimum at 28 V with 5 mohm ESR; 47 uF gives 4 to 8 mV", "assistant_said": "never asked the 20 mV target; used an invented 50 mV in turn 1 (min C 5.5 uF for 50 mV) and 'far below the 50 mV target' in turn 2. Reports 2 x 22 uF = 5.9 / 6.2 mV (ngspice) and 8.55 / 8.88 mV (tool upper bound), 47 uF only 3 % better. The person can see 44 uF is enough, but no minimum capacitance for his real spec is given.", "result": "missing"},
+  {"item": "efficiency at 24 V, 3 A with his MOSFETs", "truth": "95.6 % +/- 1 point, total 0.689 W", "assistant_said": "95.54 % / 0.700 W (24 V), 95.19 % / 0.758 W (28 V); losses: overlap 0.371 (53 %), DCR 0.181, low-side 0.043, dead time 0.042, gate 0.040, high-side 0.023", "result": "right"},
+  {"item": "simulated inductor current in steady state vs the formula", "truth": "0.804 A (24 V) / 0.834 A (28 V); formula and simulation within 3 %", "assistant_said": "0.8015 / 0.8320 A, window 1.00 to 1.02 ms from near-steady-state initial conditions; I recomputed from result.csv: 0.8014 / 0.8320 A", "result": "right"},
+  {"item": "open-loop Vout and efficiency cannot come from a lossless-switch simulation", "truth": "Vout about 4.99 V open loop; lossless simulation gives 97.9 %", "assistant_said": "Vout 4.976 to 4.982 V (mean 4.979; the assistant quotes 4.976, the minimum); says the simulation has ideal switches without Coss, gate drive or reverse recovery; efficiency only from electric_converter", "result": "right"},
+  {"item": "turn 1 headline efficiency with invented parts", "truth": "not requested for invented parts; his parts give 95.6 %", "assistant_said": "'efficiency estimate 92.8 %, total loss 1.17 W' from 30/15 mohm FETs and 20 ns edges (overlap 0.738 W)", "result": "wrong"}
+ ],
+ "traps": [
+  {"trap": "electric_converter without loss inputs returns about 99.99 % efficiency", "caught": true},
+  {"trap": "Start-up transient polluting the simulated ripple", "caught": true},
+  {"trap": "Ideal-switch simulation cannot give efficiency", "caught": true},
+  {"trap": "gate_charge for a synchronous stage is the sum of both FETs", "caught": true},
+  {"trap": "Worst case at 28 V input", "caught": true},
+  {"trap": "Ask for part data, Vin range and ripple target before an efficiency figure", "caught": false},
+  {"trap": "Report minimum_output_capacitance for the person's ripple target", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 2, section 'Dead time effect (important, design review must see this)': 'the first simulation used the tool's D and the output reached only 4.62 V; after the correction (D + 0.015) 4.976 V; the real controller must compensate this 0.015 of D, otherwise the output is about 0.4 V low'. The first netlist's high-side pulse is 0.38348 us (effective on-time 0.3935 us with the 10 ns edges, D 0.1967): the assistant itself had cut 40 ns from the tool's 0.4235 us. The final netlist (0.41348 us + 10 ns = 0.4235 us) equals the tool's D 0.2117 exactly. So with the tool's duty the open-loop output is already 4.979 V; the 0.015 compensation does not exist in the circuit. A reader could carry this sentence into the design review.", "severity": "medium"},
+  {"issue": "Turn 2 recommendation: 'ripple is already far below the 50 mV target'. The person never gave 50 mV (the assistant invented it in turn 1) and never stated 20 mV because the assistant never asked.", "severity": "medium"},
+  {"issue": "Turn 1 bold conclusion 'efficiency estimate 92.8 %' for parts the person did not give (the text says it depends on assumed data, but the number is the headline). The person's first reaction in turn 2: 'those are assumptions, right?'.", "severity": "medium"},
+  {"issue": "Turn 2 says the mean output voltage is 4.976 V; the CSV mean is 4.979 V (4.976 V is the minimum). Cosmetic.", "severity": "low"},
+  {"issue": "Labelling was otherwise good: 'my arithmetic' for 19 x 0.2117 / 5, 23 x 0.1815 / 5 and 6 / 3.42; tool and simulation columns kept apart; body-diode parameters flagged as derived, not datasheet.", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T165135Z-383fffd3-plot_panels_plot.png", "score": 2, "notes": "Turn 1, assumed parts (8.93 uH, 22 uF, 10 mohm ESR). Two panels, 3 clean periods, inductor current 2.49 to 3.38 A, Vout 4.883 to 4.896 V. The x axis title says 'Time (s)' while the ticks read '900 us ... 906 us' (SI prefix applied by the tool, the title is the assistant's): unit mismatch. Superseded by the turn 2 charts."},
+  {"file": "rendered/20261124T165357Z-aacfe131-plot_panels_plot.png", "score": 3, "notes": "24 V, his parts (10 uH, 2 x 22 uF): 4 periods, inductor current 2.59 to 3.39 A (CSV 0.8014 A pp), Vout 4.976 to 4.982 V, vertical zoom chosen well so the dome and the ESR kink are visible. Nits: raw-seconds ticks (1.001e-3), Vout trace dashed, no ripple marker; the 'us' ticks seen in the turn 1 chart were not applied to a window starting at 1 ms."},
+  {"file": "rendered/20261124T165358Z-069222fa-plot_panels_plot.png", "score": 3, "notes": "28 V worst case: inductor current 2.57 to 3.40 A (0.832 A pp), Vout 4.976 to 4.982 V, title and x label name the case. Same nits as the 24 V chart. Usable in a design review as it is."}
+ ],
+ "problems": [
+  {"id": "E4-11", "kind": "skill_gap", "severity": "high", "what": "Two loaded skills contradict each other on asking. eng-toolkit says 'ask BEFORE calculating ... no provisional numbers'; eng-circuit-sim sections 1 and 5 and eng-motor-drive-sizing line 14 say 'ask ..., or label it assumed'. Haiku followed the permissive sentence, invented every part value (30/15 mohm, 20 nC, 10 mohm ESR, 22 uF, 50 mV) and led with 'efficiency 92.8 %'. It also never asked for the Vin range or the ripple target although both are in the skill lists.", "evidence": "electric_converter call, turn 1: switch_resistance '30 mohm', low_side_resistance '15 mohm', gate_charge '20 nC', capacitor_esr '10 mohm', target_output_ripple '50 mV'. eng-circuit-sim SKILL.md section 1: '(ask them; if you must pick one, label it \"assumed\")'; section 5: 'Ask the person's MOSFET and inductor data, or label it \"assumed\"'.", "fix": "plugin/skills/eng-circuit-sim/SKILL.md sections 1 and 5 and plugin/skills/eng-motor-drive-sizing/SKILL.md line 14: delete 'or label it assumed' and write 'if the person has not given them, ask; give no efficiency, ripple or loss number until part data, Vin range and ripple target are known (L from a ripple percentage needs only Vin, Vout, Iout, f)'. Add Vin range and output-ripple target to the converter ask list. Add one sentence to the electric_converter tool description: 'Do not run it with invented Rds(on), Qg or ESR: ask.'"},
+  {"id": "E4-12", "kind": "model_error", "severity": "medium", "what": "The 20 mV requirement never surfaced and no minimum output capacitance is stated for it: turn 1 invented a 50 mV target (min C 5.5 uF), turn 2 dropped target_output_ripple from the call so minimum_output_capacitance was not returned at all, and the summary says 'far below the 50 mV target'. The skill says to report minimum_output_capacitance next to the capacitor on hand.", "evidence": "turn 2 electric_converter inputs contain no target_output_ripple; reply: 'ripple is already far below the 50 mV target, 47 uF gives little benefit'. Truth: 13.2 uF at 20 mV.", "fix": "Tool: when output_capacitance is given without target_output_ripple, add the warning 'minimum_output_capacitance not computed: give target_output_ripple'. Skill eng-circuit-sim section 1: put 'output ripple target (mV pp)' in the ask list."},
+  {"id": "E4-13", "kind": "model_error", "severity": "medium", "what": "A made-up dead-time conclusion: the first turn 2 simulations were built with the high-side pulse shortened by the dead time, gave 4.62 V, and were reported as 'the tool's D reaches only 4.62 V; the controller must add 0.015 of duty'. With the tool's D (final netlist) the output is 4.979 V.", "evidence": "spice_simulate turn 2: PULSE(0 5 0 10n 10n 0.38348u 2u) -> v(n2) mean 4.625 V (ws/20261124T165317Z-507f1b3c-spice_simulate); PULSE(0 5 0 10n 10n 0.41348u 2u) -> mean 4.979 V (ws/20261124T165336Z-474dbb2a-spice_simulate). Effective D = (width + 10 ns) / 2 us = 0.1967 against the tool's 0.2117.", "fix": "plugin/skills/eng-circuit-sim/SKILL.md section 4: 'Derive the PULSE width from the tool duty: width = D T - (tr + tf)/2. Do not subtract the dead time from the high-side pulse: dead time is only the gap before the low-side pulse.' And: do not present a simulation artefact as a design finding without an independent hand check (mean-voltage effect of dead time is about 0.7 V x 40 ns x 500 kHz = 14 mV)."},
+  {"id": "E4-14", "kind": "tool_gap", "severity": "low", "what": "plot_panels / plot_xy SI-prefix tick labels are applied inconsistently and the axis title does not follow: the 0.9 to 0.906 ms window gets '900 us ... 906 us' ticks under the title 'Time (s)'; the 1.000 to 1.008 ms window gets raw '1.001e-3' ticks.", "evidence": "result.json data.panels[0].axes.x: window 0.0009 to 0.000906 -> si_prefix us, tick_labels '900 us'...; window 0.001 to 0.001008 -> tick_labels '1e-3', '1.001e-3', ... and no si_prefix; the note says 'the axis title is yours'.", "fix": "domains/plot/_axes.py seconds_axis: apply the prefix also to windows at or above 1e-3 (ms or us labels), and when x_label ends in '(s)' while ticks carry a prefix, rewrite the unit or add the warning 'tick labels are in us but x_label says (s)'."}
+ ],
+ "what_worked": [
+  "Corrected itself fully in turn 2 when the person said the parts were assumptions: replaced every value, ran the 28 V worst case, produced steady-state charts for both inputs, showed tool vs ngspice side by side (0.8006 vs 0.8015 A; 0.8313 vs 0.8320 A) and hand checks of the ripple and the capacitor term (4.7 mV).",
+  "Right modelling choices without being told: windowed ngspice transient (1.00 to 1.02 ms with initial conditions 3 A / 5 V) so no start-up pollution, body diode D2 across the low side after the first netlist failed (the failure was disclosed), gate_charge 16 nC (sum of both FETs), synchronous=true with low_side_resistance and dead_time.",
+  "The loss list matches the truth within 0.02 W per line; efficiency 95.5 % / 95.2 % against the truth 95.6 %; it says the overlap loss is not verified by the lossless simulation.",
+  "Honest limits: no Coss, no gate-drive timing, fixed 10 uH (no saturation), resistive load, open loop; closed-loop stability not designed."
+ ]
+}

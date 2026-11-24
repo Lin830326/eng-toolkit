@@ -1,0 +1,62 @@
+{
+ "id": "M4_gantry_servo_sizing",
+ "verdict": "PASS",
+ "one_line": "4 turns; with the profile given the assistant used strokes_per_cycle=2 and got the truth values (RMS 4.366, peak 7.446, 3750 rpm, ratio 25.3) and a clear 'not adequate'; weak points: the false claim that 750 W cannot work at any ratio (peak power treated as a limit), an unpriced '1 kW' pick for the 0.8 s case, and a decel line drawn as a diagonal in both charts.",
+ "vs_round2": "FAIL -> PASS. Round 2's false pass (RMS 1.83, 'adequate') is gone: RMS 4.366 N*m (truth 4.369) over the whole 2.0 s cycle with two strokes, verdict 'not adequate' right, PNG charts with the 7.16 / 2.39 / RMS lines. The person's 0.6 s case is now answered. New: the 'peak power above 750 W, so no ratio works' argument came back in turn 3.",
+ "goal_met": true,
+ "turns": 4,
+ "holdout": false,
+ "new_checks": {
+  "picture_seen": "Both PNGs exist in rendered/ and their full ws/.../plot.png paths were written in the replies. The persona never mentioned either picture (it moved on to the motor choice and ended), so seeing is unverified; inline delivery cannot be checked from the record.",
+  "domain_skill_before_first_tool": "Yes: eng-toolkit and eng-motor-drive-sizing loaded in turn 1 before any tool call. The skill sentence 'an out-and-back axis needs strokes_per_cycle=2' was followed; 'never call peak power a hard limit' was violated in turn 3. No misleading skill sentence found.",
+  "asked_before_computing": "Yes. Turn 1 asked pulley diameter, return/dwell, profile, friction, gearbox efficiency, inertia, datasheet, and ran no tool (it printed triangle-profile kinematics labelled as an assumption). The recalled 2.39 N*m was labelled and not used. Turn 1 named a non-existent tool 'calc_pulley' (harmless).",
+  "false_pass": "None on the asked case. One misleading negative: turn 3 'a 750 W motor is not enough at any ratio' (reason: peak power 1.2 kW). My re-run with the 750 W candidate row, 6:1, 0.2 s acceleration, 0.8 s move gives RMS 2.254 N*m (rated 2.39), peak 4.229, ratio 17.5: pass; 8:1 gives RMS 1.76. The assistant's own table row C (8:1, RMS 1.600 without rotor) contradicts its sentence."
+ },
+ "answers": [
+  {"item": "verdict for the 0.6 s case", "truth": "NOT adequate: RMS 1.83x rated, peak 7.45 > 7.16, inertia ratio 25", "assistant_said": "'ECMA-C20807 not enough': RMS 4.366 (1.83x), peak 7.446 > 7.16 (4.0 % over), speed 3750 rpm above rated 3000 (derate, within 5000 max), ratio 25.3", "result": "right"},
+  {"item": "peak motor torque", "truth": "7.45 N*m", "assistant_said": "7.446 N*m (tool; hand check 7.44)", "result": "right"},
+  {"item": "RMS torque over full cycle with dwell", "truth": "4.369 N*m", "assistant_said": "4.366 N*m (tool, strokes_per_cycle 2, cycle 2 s)", "result": "right"},
+  {"item": "cruise speed / acceleration", "truth": "2.5 m/s / 12.5 m/s2", "assistant_said": "2.5 m/s, 12.5 m/s2; the earlier triangle values withdrawn explicitly", "result": "right"},
+  {"item": "peak motor speed", "truth": "3748 rpm of 5000", "assistant_said": "3750 rpm (392.7 rad/s)", "result": "right"},
+  {"item": "inertia ratio", "truth": "25.3", "assistant_said": "25.3 (tool), flagged above 10:1 (recalled)", "result": "right"},
+  {"item": "equivalent mass / efficiency / motor-side inertia", "truth": "82.88 kg / 0.931 / 1.33e-4", "assistant_said": "82.88 kg, 0.9312, 1.33e-4 kg*m2, each labelled 'my arithmetic'", "result": "right"},
+  {"item": "decel torque in the picture", "truth": "-6.317 N*m at 3748 rpm", "assistant_said": "-6.314 in the data, but drawn as a diagonal from (3750 rpm, +0.10) to (0 rpm, -6.31): the high-speed decel point is missing from the picture", "result": "wrong"},
+  {"item": "what to change", "truth": "motor of about 4.4 N*m continuous (1.5 kW class) or lower acceleration / longer move", "assistant_said": "turn 2: 4.37 N*m needs about 1.37 kW at 3000 rpm, ratio alone cannot fix RMS; turn 3 (0.8 s): keep 5:1, accel 0.3 s, a 1 kW class (ECMA-C21010, from memory, labelled), RMS 2.51 (rotor excluded), peak 3.88", "result": "right"},
+  {"item": "claim '750 W fails at every ratio'", "truth": "not in truth; toolkit run: 750 W + 6:1 + 0.2 s accel at 0.8 s passes, RMS 2.25 < 2.39", "assistant_said": "'peak power of all three options is above 1.2 kW; a 750 W motor is not enough at any ratio'", "result": "wrong"},
+  {"item": "torque-speed picture with motor limits", "truth": "points (3748 rpm: +7.45, 0.10, -6.32) with 2.39 and 7.16 lines", "assistant_said": "delivered twice; limit lines drawn as horizontals; 750 W / 1 kW ideal constant-power curves labelled 'my arithmetic, not the datasheet curve'", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "one stroke instead of out-and-back (RMS understated by sqrt 2; round 2 false pass)", "caught": true},
+  {"trap": "dwell left out of the cycle", "caught": true},
+  {"trap": "peak speed compared with rated rpm instead of maximum rpm", "caught": true},
+  {"trap": "pulley/idler inertia as equivalent mass, gearbox input inertia into rotor_inertia", "caught": true},
+  {"trap": "peak mechanical power treated as a hard limit vs rated power", "caught": false},
+  {"trap": "rpm vs rad/s in the candidate row", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "1 kW rated torque 3.18 N*m is called 'from memory' in turn 3 and 'computed, not recalled' in turn 4; cosmetic inconsistency", "severity": "low"},
+  {"issue": "'Most economical' recommendation has no price data; the reply only says the datasheet must confirm the motor", "severity": "low"},
+  {"issue": "Turn 3 option study omits the rotor inertia (rotor_inertia 0), disclosed in the chart title; RMS 2.51 instead of 2.61 for a 750 W rotor", "severity": "low"},
+  {"issue": "1 kW model ECMA-C21010 named from memory with an instruction to confirm; labelled", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r3/M4_gantry_servo_sizing/rendered/20261124T171132Z-77db7598-plot_xy_plot.png", "score": 2, "notes": "Torque vs rpm for the 0.6 s move with 7.16 / 4.366 / 2.39 N*m lines and the 3000 rpm line, Chinese labels, readable; the overload (blue line above 7.16) is clear. Defects: the decel leg is a diagonal (3750, 0.10) -> (0, -6.31) instead of a step to -6.31 at 3750 rpm then a horizontal line; x axis -4000..6000 only to draw the mirrored return stroke (the left half is nearly empty); the 750 W hyperbola legend is truncated; the -7.446 return line is cropped by the bottom frame."},
+  {"file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r3/M4_gantry_servo_sizing/rendered/20261124T171328Z-372bc695-plot_xy_plot.png", "score": 2, "notes": "Three 0.8 s options plus 1 kW and 750 W ideal power curves, 0..5000 rpm, -4..10 N*m, RMS line of option A. Same diagonal-decel defect for A, B, C; the legend box covers the '3000 rpm rated' label; B's -4.005 point sits on the bottom frame. The comparison is legible: A and C lie below the 1 kW curve."}
+ ],
+ "problems": [
+  {"id": "M4_gantry_servo_sizing-1", "kind": "model_error", "severity": "medium", "what": "Peak mechanical power compared with rated power as a limit: '750 W cannot do it at any ratio' and a selection criterion 'peak power >= 1.22 kW'. The skill says never to do this. It also ignores its own table: 8:1 gives RMS 1.60 N*m and 6:1 with 0.2 s acceleration gives 2.25 N*m with the 750 W candidate. The person asked whether the ratio should change and got a categorical wrong 'no' plus an unpriced 1 kW pick.", "evidence": "reply turn 3: '三個方案的峰值功率都在 1.2 kW 以上。750 W 機種在任何齒比下都不夠'; my re-run electric_drive_sizing (belt, 82.88 kg, r 0.03183 m, ratio 6, eff 0.9312, rotor 1.33e-4, 0.8 s, accel 0.2 s, strokes 2, cycle 2.4 s, candidate 750 W row) -> rms_torque_with_rotor 2.254, peak 4.229, status 'pass within stated limits, above rated speed (1 x)'", "fix": "eng-motor-drive-sizing: move 'never call peak power a hard limit' into section 6 (Report) and add: 'when comparing options run the candidate row for every option (rotor inertia, candidates) and decide from RMS and peak torque, never from a power number'."},
+  {"id": "M4_gantry_servo_sizing-2", "kind": "model_error", "severity": "medium", "what": "In both charts the decel leg is a diagonal between segment end points: drive_profile.csv has the decel start torque (-6.3137 N*m at 392.7 rad/s) and the assistant dropped that row. The high-speed regeneration point is absent and the plot suggests small torque at high speed.", "evidence": "plot_xy series x [0, 3750, 3750, 0], y [7.446, 7.446, 0.1025, -6.314]; csv row '0.4, 0.2, 392.7, 0.0, -1963.6, -6.3137, -6.3137'", "fix": "eng-motor-drive-sizing section 4.3: spell out the polyline: for each csv row emit (start speed, start torque) then (end speed, end torque), in order, speeds in rpm."},
+  {"id": "M4_gantry_servo_sizing-3", "kind": "tool_gap", "severity": "low", "what": "No torque-speed envelope output: the assistant hand-builds the operating polyline, horizontal limit lines and an ideal-power hyperbola that is not the datasheet curve. electric_drive_sizing could write the operating polyline plus the candidate's continuous, peak, rated-speed and maximum-speed limits as a PNG.", "evidence": "hand-typed series in both plot_xy calls", "fix": "Add a torque_speed PNG/CSV artifact to electric_drive_sizing when a candidate row is given."},
+  {"id": "M4_gantry_servo_sizing-4", "kind": "model_error", "severity": "low", "what": "Turn 3 options were run with rotor_inertia 0 and no candidate row, so the tool gave no pass/fail and understated RMS and peak by the rotor term; the skill says a blank rotor_inertia understates the peak. Disclosed, but it helped cause problem -1.", "evidence": "turn 3 calls: rotor_inertia '0 kg*m^2', no candidates", "fix": "Skill: 'for option studies pass the candidate row; do not set rotor_inertia 0'."},
+  {"id": "M4_gantry_servo_sizing-5", "kind": "harness_artifact", "severity": "low", "what": "The persona asked which option is 'most economical'; no price data exist for any tool or for the assistant.", "evidence": "turn 3 person: 'which plan is the most economical'", "fix": "none"},
+  {"id": "M4_gantry_servo_sizing-6", "kind": "harness_artifact", "severity": "low", "what": "Picture delivery unverifiable: no tool-result image record; persona silent on the charts.", "evidence": "transcript.json holds tool inputs only", "fix": "Harness: record image blocks and make the persona acknowledge each picture."}
+ ],
+ "what_worked": [
+  "Whole-cycle RMS with strokes_per_cycle=2 and a check of data.cycle: the round-2 false pass is fixed",
+  "Peak 7.446 / RMS 4.366 / 3750 rpm / ratio 25.3 all within 0.1 % of the truth",
+  "Asked for the deciding inputs first, kept the guessed triangle numbers labelled and withdrew them explicitly when the trapezoid arrived",
+  "Hand check of peak torque and RMS next to the tool values",
+  "Speed above rated but below maximum treated as 'check the datasheet curve', not as a failure",
+  "PNG charts with the three limit lines for the asked case"
+ ]
+}
