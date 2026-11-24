@@ -19,6 +19,7 @@ from pydantic import Field
 from eng_toolkit import __version__, brep
 from eng_toolkit import external as ext
 from eng_toolkit.contract import Artifact, QuantityOut, ToolResult
+from eng_toolkit.inline_image import INLINE_IMAGE_DESCRIPTION
 from eng_toolkit.domains.fem import mesh as meshing
 from eng_toolkit.domains.fem import selectors as sel
 from eng_toolkit.domains.fem import solver
@@ -704,15 +705,15 @@ def static(
 # --------------------------------------------------------------------------- fem_view
 
 VIEW_DESCRIPTION = (
-    "A fem_static result as a PNG picture (default: isometric view, colour bar with field, unit, min and max, size in mm, a ring on "
-    "the largest value; for a mail, hand it over first) and a GLB for 3D viewers: the mesh surface (6-node facets as 4 triangles) "
-    "coloured by the nodal field CalculiX wrote, optionally deformed. Give result_dir (the fem_static job directory; manifest "
+    "A fem_static result as a PNG picture (isometric view, colour bar with field, unit, min and max, size in mm, a ring on "
+    "the largest value; returned in the reply too, inline_image: hand it over first) and a GLB for 3D viewers: the mesh surface (6-node facets as 4 triangles) "
+    "coloured by the nodal field of CalculiX, optionally deformed. Give result_dir (the fem_static job directory; manifest "
     "sha256s are checked) or mesh_file + results_file. field: von_mises, displacement, ux uy uz, s_xx s_yy s_zz s_xy s_yz s_zx, "
     "principal_max, principal_min. colormap auto (sequential for magnitudes, diverging blue-grey-red for signed fields, light grey "
     "= 0, ranges symmetric about zero). GLB is metres, +Y up; COLOR_0 linear RGB, _FIELD holds the values. Also writes legend.svg "
     "and view.json. Returns triangle_count, field_max, field_min, deformation_factor. "
     f"Capped at {viewer.MAX_TRIANGLES:,} triangles. Surface only; nodal stresses are extrapolated, averaged, and unbounded at point "
-    "loads and sharp corners. No Gmsh/CalculiX run."
+    "loads and sharp corners. No solver run."
 )
 
 
@@ -734,6 +735,7 @@ def view(
         str,
         Field(description="'png' (default; 'iso' is the same): also write fem_view.png, a picture with colour bar, unit and range; 'none': GLB only"),
     ] = "png",
+    inline_image: Annotated[bool, Field(description=INLINE_IMAGE_DESCRIPTION)] = True,
 ) -> ToolResult:
     deadline = viewer.Deadline(max(1, min(max_seconds, 600)) if isinstance(max_seconds, int) else 1)
     inputs = {

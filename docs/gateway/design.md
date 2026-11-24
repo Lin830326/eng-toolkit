@@ -59,3 +59,18 @@ calculations, strict JSON artifact parsing and matching input hashes. The
 Ramberg-Osgood reference uses exact rational arithmetic. The shared-layer changes
 also require the complete test suite, including surrogate, workspace and contract
 checks.
+
+## Pictures in the reply (`InlineImages`)
+
+A tool that writes a PNG returns only its path, and a chat client cannot open a path. Every tool that declares the boolean
+parameter `inline_image` (default true: `plot_xy`, `plot_panels`, `plot_bar`, `geometry_view`, `fem_view`) is wrapped by the
+`InlineImages` middleware (`eng_toolkit/gateway/images.py`; the shared constants and the parameter text are in
+`eng_toolkit/inline_image.py`). After a successful call it adds one MCP `ImageContent` block (base64, `image/png`) after the
+`TextContent`; `structured_content` (the unified `ToolResult`) is the same, `data.png_path` stays.
+
+* The file read is the result's own PNG artifact: it must lie in `data.job_dir` and its SHA-256 must match the artifact record.
+* A PNG above 600 000 bytes is not attached; the returned `warnings` (and the text block) get `The PNG is N kB, above the 600 kB limit
+  for an inline image ... open it from data.png_path`. `result.json` on disk is not changed.
+* `inline_image=false`, a refusal, a result without a PNG (`plot_*` with `format="svg"`, `preview="none"`) and an unreadable file
+  all return the plain result. The parameter is not part of the hashed inputs.
+* Tested through an in-process FastMCP client in `tests/test_plot_inline_image.py`.

@@ -20,6 +20,7 @@ y axis ``origin_px`` is the bottom of the plot area and ``scale`` is negative (S
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from fractions import Fraction
 
@@ -45,6 +46,7 @@ class Axis:
     p0: float = 0.0
     p1: float = 1.0
     shown: list[bool] = field(default_factory=list)
+    si: dict | None = None  # set by ``seconds_axis``: the common SI prefix of the tick labels of a seconds axis
 
     def tv(self, v: float) -> float:
         return math.log10(v) if self.scale == "log" else v
@@ -84,6 +86,7 @@ class Axis:
         return {
             "scale": self.scale, "min": self.lo, "max": self.hi, "automatic": self.auto, "ticks": self.ticks, "tick_labels": self.labels,
             "labelled": [lab for lab, s in zip(self.labels, self.shown or [True] * len(self.labels)) if s], "minor_ticks": self.minor, "notes": self.notes,
+            **({"si_prefix": self.si} if self.si else {}),
         }
 
 
@@ -143,6 +146,14 @@ def format_value(v: float, sig: int = 4) -> str:
     return f"{mant}e{int(exp)}"
 
 
+_SUFFIX = {"k": 1e3, "M": 1e6, "G": 1e9}
+
+
+def read_label(lab: str) -> float:
+    """The number a tick label names (``100k`` is 100000)."""
+    return float(lab[:-1]) * _SUFFIX[lab[-1]] if lab and lab[-1] in _SUFFIX else float(lab)
+
+
 def verified_labels(ticks: list[float], labels: list[str]) -> list[str]:
     """``labels`` if they are all different and each reads back as its tick (to 1e-6 of the tick spacing); otherwise labels with as
     many significant digits as the spacing needs.  So no label repeats and none names a different value than its tick."""
@@ -154,7 +165,7 @@ def verified_labels(ticks: list[float], labels: list[str]) -> list[str]:
         if len(set(labs)) != len(labs):
             return False
         try:
-            return all(abs(float(lab) - t) <= 1e-6 * spacing for lab, t in zip(labs, ticks))
+            return all(abs(read_label(lab) - t) <= 1e-6 * spacing for lab, t in zip(labs, ticks))
         except ValueError:
             return False
 
@@ -225,6 +236,35 @@ def _log_label(v: float) -> str:
     return f"{m}e{n}" if m != 1 else f"1e{n}"
 
 
+def _si_label(v: float) -> str | None:
+    """1, 10, 100, 1k, 20k, 5M ...: the tick as a plain number or with k, M, G; None above 1e12 or when the tick is not 1, 2 or 5 x 10^n."""
+    n = math.floor(math.log10(v) + 1e-9)
+    m = round(v / 10.0 ** n)
+    if m not in (1, 2, 5) or not 0 <= n < 12:
+        return None
+    shift = 3 * (n // 3)
+    return f"{m * 10 ** (n - shift)}{'' if shift == 0 else {3: 'k', 6: 'M', 9: 'G'}[shift]}"
+
+
+def log_labels(ticks: list[float]) -> list[str]:
+    """Labels of log ticks, all in one style: plain decimals (1e-4 .. 1e5); when some tick would need an exponent while others are plain,
+    ticks of 1 and above get k, M, G (``10k 100k 1M 10M``) and anything else exponents for every tick (``1e-6 1e-3 1e0``)."""
+    plain = [_log_label(t) for t in ticks]
+    exponent = ["e" in lab for lab in plain]
+    if all(exponent) or not any(exponent):
+        return plain
+    if all(t >= 1 for t in ticks):
+        si = [_si_label(t) for t in ticks]
+        if None not in si:
+            return si  # type: ignore[return-value]
+    out = []
+    for t in ticks:
+        n = math.floor(math.log10(t) + 1e-9)
+        m = round(t / 10.0 ** n)
+        out.append(f"{m if m != 1 else ''}e{n}" if m != 1 else f"1e{n}")
+    return out
+
+
 def _nice_below(v: float) -> float:
     n = math.floor(math.log10(v))
     return next((c for c in (float(f"{m}e{n}") for m in (5, 2, 1)) if c <= v), float(f"5e{n - 1}"))
@@ -282,9 +322,30 @@ def log_axis(lo: float, hi: float, target: int, fixed: tuple[float, float] | Non
         ticks, labels = [t for t, _ in pairs], [lab for _, lab in pairs]
     else:
         ticks = sorted(set(labelled))
-        labels = [_log_label(t) for t in ticks]
+        labels = log_labels(ticks)
     minor = [v for v in minor if v not in set(ticks)]
     return Axis("log", lo, hi, ticks, verified_labels(ticks, labels), minor=minor, auto=fixed is None, notes=notes)
+
+
+_SECONDS_LABEL = re.compile(r"[(\[]\s*s\s*[)\]]\s*$|[,/]\s*s\s*$|^\s*s\s*$")
+_SI_SECONDS = ((1e-3, "m"), (1e-6, "u"), (1e-9, "n"), (1e-12, "p"))
+
+
+def seconds_axis(ax: Axis, label: str, what: str) -> None:
+    """A linear axis whose title gives seconds ('Time (s)', 'Time [s]', 'Time, s') and whose range is below 1 s: tick labels carry one SI
+    prefix (``2.102 ms``, ``40 us``) instead of ``2.102e-3``.  The data, the range and the mapping stay in seconds; ``describe`` says so."""
+    big = max(abs(ax.lo), abs(ax.hi))
+    if ax.scale != "linear" or not 0 < big < 1 or not _SECONDS_LABEL.search(label):
+        return
+    factor, prefix = next(((f, p) for f, p in _SI_SECONDS if big >= f), _SI_SECONDS[-1])
+    scaled = [float(f"{t / factor:.12g}") for t in ax.ticks]
+    labels = verified_labels(scaled, [format_value(v, 6) for v in scaled])
+    ax.labels = [f"{lab} {prefix}s" for lab in labels]
+    ax.si = {
+        "prefix": prefix, "factor_s": factor, "unit": f"{prefix}s",
+        "tick_labels": f"the tick value divided by {factor:g} followed by '{prefix}s'; min, max, ticks and the mapping stay in seconds",
+    }
+    ax.notes.append(f"{what}: the range is below 1 s, so its tick labels are in {prefix}s (tick value / {factor:g}); the axis title is yours, and ticks, min and max in data.axes stay in s")
 
 
 def make_axis(scale: str, lo: float, hi: float, target: int, fixed: tuple[float, float] | None, *, param: str, what: str, margin: float = 0.0) -> Axis:
@@ -310,4 +371,4 @@ def label_widths(labels: list[str], size: float) -> list[float]:
     return [text_width(lab, size) for lab in labels]
 
 
-__all__ = ["format_value", "verified_labels", "Axis", "label_widths", "linear_axis", "log_axis", "make_axis", "nice_step", "thin", "tick_value"]
+__all__ = ["format_value", "log_labels", "read_label", "seconds_axis", "verified_labels", "Axis", "label_widths", "linear_axis", "log_axis", "make_axis", "nice_step", "thin", "tick_value"]

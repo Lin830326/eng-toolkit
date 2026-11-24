@@ -11,7 +11,8 @@ from eng_toolkit.domains.plot._common import INLINE_SVG_MAX, Computed, JobHandle
 from eng_toolkit.errors import EngineUnavailable
 
 FORMATS = ("svg", "png", "both")
-FORMAT_TEXT = "svg (default), png (plot.png, 1600 px wide; needs the png extra) or both"
+DEFAULT_FORMAT = "both"
+FORMAT_TEXT = "both (default: plot.svg + plot.png 1600 px wide; PNG needs the png extra), svg (no PNG) or png (no SVG)"
 
 
 def wants_png(raw: object) -> bool:
@@ -19,7 +20,7 @@ def wants_png(raw: object) -> bool:
     return isinstance(raw, str) and raw.strip().lower() in ("png", "both")
 
 
-def finish(handle: JobHandle, svg: str, data: dict, warnings: list[str], values: dict[str, float], primary: str, fmt: str = "svg") -> Computed:
+def finish(handle: JobHandle, svg: str, data: dict, warnings: list[str], values: dict[str, float], primary: str, fmt: str = DEFAULT_FORMAT) -> Computed:
     # every string is cleaned once more here (the last guard), so nothing a caller sent can make the UTF-8 encoding fail
     data = clean(data)
     warnings = scrub(warnings) + replaced_text_warning()
@@ -64,12 +65,13 @@ def finish(handle: JobHandle, svg: str, data: dict, warnings: list[str], values:
         artifacts.append(png_artifact)
         files["png"] = "plot.png"
         out_extra["png_path"] = png_artifact.path
-        data["png"]["path"] = png_artifact.path
     text = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n"
     json_artifact = handle.write_bytes("plot_data.json", text.encode("utf-8", "backslashreplace"), fmt="json")
     artifacts.append(json_artifact)
     files["data"] = "plot_data.json"
     out = dict(data)
+    if picture is not None:
+        out["png"] = {**data["png"], "path": out_extra["png_path"]}  # the path holds the job id: not in plot_data.json, which must be reproducible
     out["files"] = files
     out.update(out_extra)
     if write_svg and len(payload) <= INLINE_SVG_MAX:
@@ -84,4 +86,4 @@ def finish(handle: JobHandle, svg: str, data: dict, warnings: list[str], values:
     return Computed(values=quantities, primary=primary, warnings=warnings, data=out, artifacts=artifacts)
 
 
-__all__ = ["FORMATS", "FORMAT_TEXT", "finish", "wants_png"]
+__all__ = ["DEFAULT_FORMAT", "FORMATS", "FORMAT_TEXT", "finish", "wants_png"]

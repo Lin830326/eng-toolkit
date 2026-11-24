@@ -29,6 +29,7 @@ from eng_toolkit import __version__
 from eng_toolkit.contract import Provenance, ToolResult, failure, inputs_hash
 from eng_toolkit.domains import all_domains
 from eng_toolkit.external import probe as probe_external
+from eng_toolkit.gateway.images import InlineImages
 from eng_toolkit.licenses import (
     EXTERNAL,
     KNOWN,
@@ -137,6 +138,7 @@ gateway = FastMCP(
     ),
 )
 gateway.add_middleware(ArgumentRefusals())
+gateway.add_middleware(InlineImages())
 
 DOMAINS = all_domains()
 for _domain in DOMAINS:

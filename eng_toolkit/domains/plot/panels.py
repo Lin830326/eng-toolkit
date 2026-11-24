@@ -8,6 +8,7 @@ from typing import Annotated
 from pydantic import Field
 
 from eng_toolkit.contract import ToolResult
+from eng_toolkit.inline_image import INLINE_IMAGE_DESCRIPTION
 from eng_toolkit.domains.plot._chart import Chart, Panel, render_xy
 from eng_toolkit.domains.plot._common import (
     MAX_SERIES,
@@ -27,7 +28,8 @@ from eng_toolkit.domains.plot._common import (
     whole,
 )
 from eng_toolkit.domains.plot._data import check_one_source, csv_series, inline_series
-from eng_toolkit.domains.plot._output import FORMAT_TEXT, FORMATS, finish, wants_png
+from eng_toolkit.domains.plot._data import unwrap_phase as unwrap_series
+from eng_toolkit.domains.plot._output import DEFAULT_FORMAT, FORMAT_TEXT, FORMATS, finish, wants_png
 from eng_toolkit.domains.plot._server import server
 from eng_toolkit.domains.plot.xy import KINDS, LEGENDS, SCALES, THEME_NAMES
 
@@ -62,8 +64,9 @@ def parse_panels(raw: object, notes: list[str]) -> list[tuple[str, list[str], st
     name="panels",
     description=(
         "Draw 2-6 vertically stacked panels that share one x axis (Bode magnitude + phase, waveform + spectrum, S-N curve + "
-        "residual) as one deterministic SVG plus plot_data.json; format=png (or both) also writes plot.png, a 1600 px wide picture "
-        "to paste into slides and reports (data.png_path; needs the png extra). 'panels' lists 'title|y_columns|y_label|y_scale' "
+        "residual) as one deterministic SVG plus, by default, plot.png, a 1600 px wide picture (format=both; data.png_path; needs the "
+        "png extra) that also comes back as an image in the reply (inline_image): hand over the PNG, not the SVG path; plus "
+        "plot_data.json. 'panels' lists 'title|y_columns|y_label|y_scale' "
         "records; each panel gets its own y axis. Data: a CSV with a header row or inline JSON series; the same kinds, themes and decimation as plot_xy."
     ),
 )
@@ -83,12 +86,14 @@ def panels(
     width: Annotated[int, Field(description="SVG width in px, 200..2400, e.g. 900.")] = 800,
     height: Annotated[int, Field(description="SVG height in px, 200..2400, e.g. 700; split equally between the panels.")] = 700,
     theme: Annotated[str, Field(description="auto (follows light/dark), light, dark, or print (black and grey with dash patterns).")] = "auto",
-    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = "svg",
+    unwrap_phase: Annotated[bool, Field(description="true unwraps every series whose name contains 'phase' (degrees; 'rad' in the name: radians): no +-180 jumps in a Bode phase.")] = False,
+    format: Annotated[str, Field(description=f"Picture file: {FORMAT_TEXT}.")] = DEFAULT_FORMAT,
+    inline_image: Annotated[bool, Field(description=INLINE_IMAGE_DESCRIPTION)] = True,
 ) -> ToolResult:
     inputs = {
         "panels": record_text(panels), "data_file": data_file, "series": record_text(series), "x_column": x_column, "kind": kind, "markers": markers,
         "x_scale": x_scale, "x_range": x_range, "x_label": record_text(x_label), "title": record_text(title), "legend": legend, "grid": grid,
-        "width": width, "height": height, "theme": theme, "format": format,
+        "width": width, "height": height, "theme": theme, "unwrap_phase": unwrap_phase, "format": format,
     }
 
     def compute(handle: JobHandle) -> Computed:
@@ -98,6 +103,7 @@ def panels(
         leg = choice(legend, "legend", LEGENDS)
         th = choice(theme, "theme", THEME_NAMES)
         fmt = choice(format, "format", FORMATS)
+        unwrap = flag(unwrap_phase, "unwrap_phase")
         xs = choice(x_scale, "x_scale", SCALES)
         w, h = whole(width, "width", *SIZE_RANGE), whole(height, "height", *SIZE_RANGE)
         chart_title = text_param(title, "title", notes=notes)
@@ -129,6 +135,8 @@ def panels(
             unused = [s.column for s in loaded if s.column not in used]
             if unused:
                 notes.append(f"inline series not named by any panel are not drawn: {', '.join(repr(u[:30]) for u in unused[:6])}")
+        if unwrap:
+            unwrap_series([by_name[c] for c in dict.fromkeys(c for _, cols, _, _ in specs for c in cols)], notes)
         chart_panels = [
             Panel(series=[dataclasses.replace(by_name[c]) for c in cols], title=t, y_label=yl, y_scale=sc, y_scale_param=f"panels/{i}")
             for i, (t, cols, yl, sc) in enumerate(specs)

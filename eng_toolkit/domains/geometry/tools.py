@@ -19,6 +19,7 @@ from pydantic import Field
 
 from eng_toolkit import __version__, brep
 from eng_toolkit.contract import QuantityOut, ToolResult
+from eng_toolkit.inline_image import INLINE_IMAGE_DESCRIPTION
 from eng_toolkit.domains.geometry import convert as conversion
 from eng_toolkit.domains.geometry import dfm
 from eng_toolkit.domains.geometry import part as partspec
@@ -951,7 +952,7 @@ def convert(
 
 VIEW_DESCRIPTION = (
     "Write a solid 3D CAD file (.step .stp .iges .igs .brep, mm) as a coloured GLB for 3D viewers and, by default, a PNG picture "
-    "of the same colours (isometric plus front, top, right views, legend, size in mm) for a mail: hand over the PNG first. GLB: one "
+    "of the same colours (isometric plus front, top, right views, legend, size in mm), also returned as an image in the reply (inline_image): hand over the PNG first. GLB: one "
     "material per colour, each primitive's extras list its face ids (F<n>, as in geometry_measure) with triangle ranges; B-rep "
     "edges as lines if show_edges. color_by: 'none' (grey), 'face_kind' (plane, cylinder, cone, sphere, torus, bspline, other), "
     "'dfm' (worst geometry_check_dfm finding per face: error red, warn orange, info blue; process, tool_axis, limits as there) or "
@@ -987,6 +988,7 @@ def view(
         str,
         Field(description="'png' (default): also write a PNG picture, isometric + front, top, right views and legend; 'iso': isometric only; 'none'"),
     ] = "png",
+    inline_image: Annotated[bool, Field(description=INLINE_IMAGE_DESCRIPTION)] = True,
 ) -> ToolResult:
     deadline = dfm.Deadline(max(1, min(max_seconds, 600)))
     inputs = {

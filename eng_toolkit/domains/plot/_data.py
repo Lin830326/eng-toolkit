@@ -66,6 +66,30 @@ class Series:
         return display(self.column)
 
 
+_RADIANS = re.compile(r"(?<![a-z])rad(?![a-z])", re.IGNORECASE)
+
+
+def unwrap_phase(series: list[Series], notes: list[str]) -> None:
+    """``unwrap_phase=true``: every series whose name contains 'phase' is unwrapped in data order with ``numpy.unwrap`` (period 360 degrees,
+    or 2 pi when the name contains the word 'rad'), so a phase that wraps at +-180 degrees is one continuous curve instead of vertical lines."""
+    done = []
+    for s in series:
+        if "phase" not in s.column.lower() or len(s.y) < 2:
+            continue
+        period = 2.0 * np.pi if _RADIANS.search(s.column) else 360.0
+        lo, hi = float(np.min(s.y)), float(np.max(s.y))
+        s.y = np.unwrap(s.y, period=period)
+        s.meta["unwrapped"] = "2*pi rad" if period != 360.0 else "360 deg"
+        done.append(f"{s.name[:40]!r} ({lo:.6g}..{hi:.6g} became {float(np.min(s.y)):.6g}..{float(np.max(s.y)):.6g})")
+    if not done:
+        notes.append("unwrap_phase was true but no series name contains 'phase'; nothing was unwrapped")
+        return
+    notes.append(
+        "unwrap_phase: numpy.unwrap in data order was applied to " + "; ".join(done[:6]) + (f" and {len(done) - 6} more" if len(done) > 6 else "")
+        + "; the curve drawn is no longer the table's wrapped values (360 deg period, 2*pi when the name has 'rad')"
+    )
+
+
 def is_blank(raw: Any) -> bool:
     return raw is None or (isinstance(raw, str) and not raw.strip())
 
@@ -409,5 +433,5 @@ def check_one_source(data_file: Any, series: Any) -> str:
 
 __all__ = [
     "CsvTable", "Series", "cell_pointer", "check_one_source", "csv_series", "display", "inline_series", "is_blank", "is_text_column", "number_list",
-    "numeric_cells",
+    "numeric_cells", "unwrap_phase",
 ]

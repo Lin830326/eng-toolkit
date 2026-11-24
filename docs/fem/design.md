@@ -148,6 +148,7 @@ Measured: 33482 elements (the bar at 1.13 mm) take 2.3 s to mesh and about 22 s 
 | `output_unit` | `auto` | unit of the values, labels and `_FIELD`: MPa or mm by default, any pressure or length unit matching the field |
 | `max_seconds` | 120 | wall-clock budget, 1 to 600, checked between steps (`fem.time_budget_exceeded`, `/max_seconds`) |
 | `preview` | `png` | `png` (or `iso`, the same picture): also write `fem_view.png`; `none`: the GLB, `legend.svg` and `view.json` only; anything else is `input.invalid` at `/preview` |
+| `inline_image` | `true` | the PNG also comes back as an MCP image block in the reply when it is at most 600 kB (`eng_toolkit/gateway/images.py`, see `docs/plot/design.md`, "PNG output"); `false`: the path only. The structured result is the same either way; a PNG above the limit is not attached and a warning says so |
 
 Values: `triangle_count` (primary), `field_max`, `field_min` (over the surface nodes, read back from the GLB's `_FIELD` as float32 and given to 7 digits), `deformation_factor`. `data`: `statistics` (surface and all-node extremes with node numbers and whether they lie on the surface), `fem_static_comparison` (the all-node maximum of `von_mises` or `displacement` against `fem_static`'s `max_von_mises`/`max_displacement` from `result.json`, relative `1e-6`), `range` (mode, ends, widened, clamped counts), `deformation`, `legend`, `counts`, `closed_surface`, `source` (mode, sha256 of every file read, the `fem_static` job id), `output` (accessor bounds read back, conversion, material), `limits`, `losses`.
 
