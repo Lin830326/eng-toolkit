@@ -196,3 +196,69 @@ def test_cycle_time_refusals():
         assert r.ok is False and r.error.details["param"] == param, r.error
     r = call(drive_sizing, load_inertia="2 kg*m^2", profile="1 s,0 rad/s,0 rad/s,0 N*m", cycle_time="4 s")
     assert r.ok is False and r.error.details["param"] == "/cycle_time"
+
+
+# --- strokes_per_cycle: the M4 gantry (82.878 kg equivalent, 1 m in 0.8 s, 0.4 s dwell after each stroke, out and back, period 2.4 s) ---
+M4 = dict(model="belt", distance="1 m", move_time="0.8 s", acceleration_time="0.2667 s", load_mass="82.878 kg", radius="0.03183 m",
+          gear_ratio=5, efficiency=0.9312, coulomb_friction="15 N", rotor_inertia="0.000133 kg*m^2", rated_torque="2.39 N*m",
+          candidates="ECMA-C20807,0.000133 kg*m^2,2.39 N*m,7.16 N*m,3000 rpm,5000 rpm")
+_TOP = 1/(0.8-0.2667)
+M4_FORWARD = f"0.2667 s,0 m/s,{_TOP} m/s,0 N;0.2666 s,{_TOP} m/s,{_TOP} m/s,0 N;0.2667 s,{_TOP} m/s,0 m/s,0 N;0.4 s,0 m/s,0 m/s,0 N"
+M4_BACK = f"0.2667 s,0 m/s,-{_TOP} m/s,0 N;0.2666 s,-{_TOP} m/s,-{_TOP} m/s,0 N;0.2667 s,-{_TOP} m/s,0 m/s,0 N;0.4 s,0 m/s,0 m/s,0 N"
+M4_EXPLICIT = {k: x for k, x in M4.items() if k not in ("distance", "move_time", "acceleration_time")}
+
+
+def _m4_profile_rms(rows):
+    return v(ok(drive_sizing, profile=rows, **M4_EXPLICIT), "rms_torque_with_rotor")
+
+
+def test_strokes_per_cycle_matches_the_explicit_out_and_back_profile():
+    # One stroke per 2.4 s reports pass (the original M4 result); the real out-and-back cycle fails the 2.39 N*m rating.
+    one = ok(drive_sizing, cycle_time="2.4 s", **M4)
+    two = ok(drive_sizing, cycle_time="2.4 s", strokes_per_cycle=2, **M4)
+    close(v(two, "rms_torque_with_rotor"), _m4_profile_rms(M4_FORWARD+";"+M4_BACK), rel=1e-3)
+    close(v(ok(drive_sizing, cycle_time="1.2 s", **M4), "rms_torque_with_rotor"), _m4_profile_rms(M4_FORWARD), rel=1e-3)
+    close(_m4_profile_rms(M4_FORWARD), 2.5935, rel=1e-4)  # the true RMS, 1.09 x the 2.39 N*m rating
+    close(v(one, "rms_torque_with_rotor"), 1.8339, rel=1e-4)  # what one stroke per 2.4 s reports: pass with a 23 % margin
+    # same period, twice the moving time: the mean square doubles, so the one-stroke shortcut understates RMS by sqrt(2)
+    close(v(two, "rms_torque_with_rotor"), math.sqrt(2)*v(one, "rms_torque_with_rotor"))
+    close(v(two, "rms_torque_with_rotor"), v(ok(drive_sizing, cycle_time="1.2 s", **M4), "rms_torque_with_rotor"))
+    close(v(two, "profile_duration"), 2.4)
+    close(v(two, "net_travel"), 0.0)
+    assert v(two, "rms_torque_with_rotor") > 2.39 > v(one, "rms_torque_with_rotor")
+    assert one.data["candidates"][0]["status"].startswith("pass")
+    assert two.data["candidates"][0]["status"].startswith("fail")
+    assert two.data["profile_thermal_check"].startswith("fail") and one.data["profile_thermal_check"].startswith("pass")
+
+
+def test_shortcut_states_the_stroke_assumption_duty_fraction_and_thin_margin():
+    one = ok(drive_sizing, cycle_time="2.4 s", **M4)
+    assert one.data["cycle"]["strokes_per_cycle"] == 1 and one.data["cycle"]["period_s"] == pytest.approx(2.4)
+    close(one.data["cycle"]["active_fraction"], 0.8/2.4)
+    close(v(one, "cycle_active_fraction"), 0.8/2.4)
+    assert any("1 stroke(s)" in a and "per period of 2.4 s" in a for a in one.data["assumptions"])
+    assert any("RMS covers 1 stroke per cycle_time of 2.4 s" in w and "strokes_per_cycle=2" in w for w in one.warnings)
+    assert any("margin below 30 %" in w and "stroke assumption" in w and "ECMA-C20807" in w for w in one.warnings)
+    two = ok(drive_sizing, cycle_time="2.4 s", strokes_per_cycle=2, **M4)
+    close(two.data["cycle"]["active_fraction"], 1.6/2.4)
+    assert any("RMS covers 2 strokes per cycle_time of 2.4 s" in w for w in two.warnings)
+    assert not any("strokes_per_cycle=2" in w for w in two.warnings)
+    # the generated move without a cycle_time also states its assumption
+    move = ok(drive_sizing, **M4)
+    assert any("RMS covers 1 stroke per move of 0.8 s" in w for w in move.warnings)
+    # an explicit profile has no stroke assumption to state
+    explicit = ok(drive_sizing, profile=M4_FORWARD, **M4_EXPLICIT)
+    assert "cycle" not in explicit.data and not any("stroke" in w for w in explicit.warnings)
+
+
+def test_strokes_per_cycle_validation_and_odd_counts():
+    for bad in (0, 5):
+        r = call(drive_sizing, strokes_per_cycle=bad, cycle_time="9 s", **M4)
+        assert r.ok is False and r.error.details["param"] == "/strokes_per_cycle" and r.error.family == "input.out_of_range", r.error
+    r = call(drive_sizing, strokes_per_cycle=2, cycle_time="1.5 s", **M4)  # 2 x 0.8 s of motion does not fit
+    assert r.ok is False and r.error.details["param"] == "/cycle_time"
+    r = call(drive_sizing, strokes_per_cycle=2, profile=M4_FORWARD, **M4_EXPLICIT)
+    assert r.ok is False and r.error.details["param"] == "/strokes_per_cycle"
+    three = ok(drive_sizing, strokes_per_cycle=3, cycle_time="3.6 s", **M4)
+    close(v(three, "net_travel"), 1.0)
+    close(v(three, "rms_torque_with_rotor"), _m4_profile_rms(M4_FORWARD+";"+M4_BACK+";"+M4_FORWARD), rel=1e-3)
