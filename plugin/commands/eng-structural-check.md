@@ -9,4 +9,4 @@ Use the `eng-structural-check` skill (and `eng-toolkit` for the unit and reporti
 
 $ARGUMENTS
 
-If key inputs are missing (supports, load direction, material, allowable stress or limit), ask for them first; otherwise run the analysis, hand-check one number, and give the report in the user's language.
+If key inputs are missing (supports, load direction, material, allowable stress or limit), ask for them first; otherwise run the analysis, hand-check one number (for a truss also the summed joint loads against your hand total), and give the report in the user's language.

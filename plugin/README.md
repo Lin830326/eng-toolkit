@@ -14,23 +14,23 @@ artifacts preserve nonfinite inputs as quoted text. See the
 
 | Piece | What it does |
 |---|---|
-| skill `eng-toolkit` | unit rules, the ask-first rule (no invented datasheet values or verdicts on missing inputs), where numbers may come from, reading a tool's self-reporting, coverage limits, the tool map, the report format |
-| skill `eng-structural-check` + `/eng-structural-check` | beam, frame, truss, column, plate, vibration checks: model choice, inputs, hand check, convergence, utilization |
-| skill `eng-dfm-review` + `/eng-dfm-review` | CNC milling and sheet-metal review of a STEP/IGES/BREP file |
-| skill `eng-fatigue-check` + `/eng-fatigue-check` | infinite-life check with Marin factors and mean stress, rainflow + Miner damage, notches, strain-life, crack growth |
-| skill `eng-motor-drive-sizing` + `/eng-motor-drive-sizing` | motor and gearbox sizing for a motion profile or move plus dwell, induction and PM motor operating points, converters, transformers, faults |
-| skill `eng-optimize` + `/eng-optimize` | minimise, linear programs, root finding, curve fitting with intervals, uncertainty propagation, design of experiments |
-| skill `eng-plot-results` + `/eng-plot-results` | charts (PNG or SVG) from other tools' CSV artifacts or inline series: Bode, S-N, histograms, station diagrams |
-| skill `eng-3d-view` + `/eng-3d-view` | a PNG picture (to paste into a mail) and a coloured GLB of a part, DFM findings, named face groups or an FEM stress/displacement result |
-| skill `eng-thermal-check` + `/eng-thermal-check` | heatsink and junction temperature (catalogue Rth is valid only at its quoted temperature rise), insulation, fins, radiation, exchanger duty, warm-up curve |
+| skill `eng-toolkit` | the ask-first lists (no invented datasheet values or verdicts on missing inputs), where numbers may come from, reading a tool's self-reporting, coverage limits, the tool map, the report format. The seven hard rules themselves travel with the MCP server instructions, so a client that never opens a skill still sees them |
+| skill `eng-structural-check` + `/eng-structural-check` | beam, frame, truss, column, plate, vibration checks: model choice, inputs, hand check (a truss reports its summed joint loads in `data.applied_total_fx/fy` to compare with the hand total), convergence, utilization |
+| skill `eng-dfm-review` + `/eng-dfm-review` | CNC milling and sheet-metal review of a STEP/IGES/BREP file: spindle axis to ask for (default +z is flagged), bends that were not recognised or only within a relaxed tolerance, findings ringed in the picture |
+| skill `eng-fatigue-check` + `/eng-fatigue-check` | infinite-life check with Marin factors and mean stress, rainflow + Miner damage (record range, spike and dominant-cycle checks), notches, strain-life, crack growth; preloaded bolts are outside the toolkit |
+| skill `eng-motor-drive-sizing` + `/eng-motor-drive-sizing` | motor and gearbox sizing for a motion profile or move plus dwell (`strokes_per_cycle=2` for an out-and-back axis), induction and PM motor operating points, converters, transformers, faults |
+| skill `eng-optimize` + `/eng-optimize` | minimise, linear programs, root finding, curve fitting with intervals (initial values set the parameter scales), uncertainty propagation, design of experiments |
+| skill `eng-plot-results` + `/eng-plot-results` | charts from other tools' CSV artifacts or inline series: Bode (with phase unwrapping), S-N, histograms, bars with limit lines, station diagrams. The PNG is written by default and appears in the reply; its path is still handed over |
+| skill `eng-3d-view` + `/eng-3d-view` | a PNG picture (shown in the reply, to paste into a mail) and a coloured GLB of a part, DFM findings (ringed, with a close-up panel), named face groups or an FEM stress/displacement result, with the mesh-convergence recipe |
+| skill `eng-thermal-check` + `/eng-thermal-check` | heatsink and junction temperature (catalogue Rth is valid only at its quoted temperature rise; natural convection between fins with the channel model), insulation, fins, radiation, exchanger duty, warm-up curve from one lumped-transient call |
 | skill `eng-control-tuning` + `/eng-control-tuning` | PI/PID from datasheet plant numbers (V/krpm trap), exact-plant check, phase and delay margin, current-limit check, Tustin difference equation |
 | skill `eng-signal-analysis` + `/eng-signal-analysis` | spectrum and peak naming (rpm to Hz, gear mesh), alias check, anti-alias filter and decimation by specification, sample files with or without a header line |
-| skill `eng-flow-network` + `/eng-flow-network` | pump and system curve, branch flow split, DN to bore, Kv and datasheet dp to K, open channel, nozzle, drag, water hammer |
+| skill `eng-flow-network` + `/eng-flow-network` | pump and system curve (`curve_points` writes the table and the operating point), branch flow split, DN to bore, Kv and datasheet dp to K, open channel, nozzle, drag, water hammer |
 | skill `eng-drawing` + `/eng-drawing` | dimensioned A4-A0 drawing (PDF, PNG, DXF) of a STEP part with hole callouts and hole list; read and convert DXF and PDF drawings |
-| skill `eng-pcb-review` + `/eng-pcb-review` | KiCad board and schematic review before fabrication: board facts, DRC and ERC (real findings versus library warnings, counts at kicad-cli's listing limit), checklist against the fab's rules, gerber and drill export |
-| skill `eng-circuit-sim` + `/eng-circuit-sim` | ngspice from a verbal circuit description: bias, Bode, transient windows, band-pass corners, converter sizing and its limits |
+| skill `eng-pcb-review` + `/eng-pcb-review` | KiCad board and schematic review before fabrication: board facts, DRC and ERC (real findings versus library warnings, counts at kicad-cli's listing limit), checklist against the fab's rules, gerber export (layers, drill and job file in one zip), board-fitted PDF and SVG |
+| skill `eng-circuit-sim` + `/eng-circuit-sim` | ngspice from a verbal circuit description: bias, Bode (wrapped and unwrapped phase), transient windows, band-pass corners, converter sizing and its limits |
 | skill `eng-digital-synthesis` + `/eng-digital-synthesis` | Verilog lint, unit-gate counts, equivalence proofs versus bounded checks, wide counters |
-| skill `eng-machine-design` + `/eng-machine-design` | shafts with keys and bearings (helical gear loads), gears, bolts, springs, welds, belts, pressure vessels: what to ask and what the tools cannot do |
+| skill `eng-machine-design` + `/eng-machine-design` | shafts with keys and bearings (helical gear loads by hand; the gear tool is spur only), bolts, springs, welds, belts, pressure vessels: what to ask and what the tools cannot do |
 | skill `eng-tolerancing` + `/eng-tolerancing` | ISO 286 fits, bearing seat fits, tolerance stack-ups, true position, form error |
 | `/eng-toolkit-setup` | connection and dependency check, registration command |
 | prompt hook (`hooks/hooks.json`) | one short reminder with every prompt: numbers that decide a result come from an `mcp__eng-toolkit__` call; unit scaling and sums of tool outputs are allowed only labelled "my arithmetic"; values from memory are labelled "from memory, not a tool result"; missing deciding inputs are asked for, not invented. Delete `hooks/` to turn it off |

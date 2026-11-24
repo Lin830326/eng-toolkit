@@ -18,7 +18,7 @@ Which module is the top; reset style and initial values; the exact claim to test
 | Syntax, undriven wires, latches, loops, width mismatches | `digital_check` (call succeeds even with errors: read `data.findings`, `values.errors`) |
 | Cells, wires, levels, unit-gate area | `digital_synthesize` |
 | Same behaviour of two designs | `digital_equivalent` |
-| Bar chart of results | `plot_bar` with inline series, `format="png"` (skill `eng-plot-results`); never hand-written charts |
+| Bar chart of results | `plot_bar` with inline series (PNG by default, give `data.png_path`; skill `eng-plot-results`); never hand-written charts |
 
 ## 3. Inputs that work (verified)
 

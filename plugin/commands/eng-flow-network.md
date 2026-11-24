@@ -9,4 +9,4 @@ Use the `eng-flow-network` skill (and `eng-toolkit` for the unit and reporting r
 
 $ARGUMENTS
 
-If key inputs are missing (the real pump curve points, fluid and temperature, DN and schedule, lengths, fittings, valve Kv, exchanger datasheet point, branch layout, required flow), ask for them first; otherwise run the analysis, convert Kv and datasheet pressure drops to K and show it, hand-check one pressure drop, and give the report in the user's language.
+If key inputs are missing (the real pump curve points, fluid and temperature, DN and schedule, lengths, fittings, valve Kv, exchanger datasheet point, branch layout, required flow), ask for them first; otherwise run the analysis (`curve_points` gives the system curve and operating point), convert Kv and datasheet pressure drops to K and show it, hand-check one pressure drop, and give the report in the user's language.

@@ -950,13 +950,13 @@ def convert(
 
 VIEW_DESCRIPTION = (
     "Write a solid 3D CAD file (.step .stp .iges .igs .brep, mm) as a coloured GLB for 3D viewers and, by default, a PNG picture "
-    "of the same colours (isometric plus front, top, right views, legend, size in mm), also returned as an image in the reply (inline_image): hand over the PNG first. GLB: one "
+    "of the same colours (isometric plus front, top, right views, legend, size in mm), also an image in the reply: hand over the PNG first. GLB: one "
     "material per colour, each primitive's extras list its face ids (F<n>, as in geometry_measure); B-rep "
     "edges as lines if show_edges. color_by: 'none' (grey), 'face_kind' (plane, cylinder, cone, sphere, torus, bspline, other), "
     "'dfm' (worst geometry_check_dfm finding per face: error red, warn orange, info blue; process, tool_axis, limits as there) or "
     "'highlight' (faces in highlight, 'F3,F7', or named groups with a colour each: 'bends: F5,F12; holes: F3-F4'). GLB is metres, "
     "+Y up. 'focus': close-up panel of faces; 'dfm' rings mark findings. Also writes view.json. Returns "
-    "triangle_count, face_count, highlighted_face_count, finding_count. Shells, loose faces and .stl are refused. "
+    "triangle_count, face_count, highlighted_face_count, finding_count. Shells, loose faces, .stl refused. "
     f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')})."
 )
 

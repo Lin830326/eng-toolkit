@@ -19,7 +19,7 @@ Supply (range: worst case for a converter), every resistor and capacitor value *
 | Bias point `op`, sweep `dc`, small-signal `ac`, `tran` | `spice_simulate` |
 | Number from a result table | `spice_measure` (`value_at`, `steady_state`, `rise_time`, `overshoot`, `settling_time`, `bandwidth_3db` low-pass, `bandpass_3db`) |
 | Formula sizing of buck / boost / buck-boost (L, C, ripple, stresses, losses) | `electric_converter` |
-| Chart of `result.csv` | `plot_xy` / `plot_panels` as PNG, `format="png"` (skill `eng-plot-results`) |
+| Chart of `result.csv` | `plot_xy` / `plot_panels` (PNG by default, give `data.png_path`; skill `eng-plot-results`) |
 
 ## 3. Write the netlist (you write it from the words; there is no schematic reader)
 
@@ -42,14 +42,14 @@ Cout c out 4.7u
 RL out 0 22k
 .model Q1M npn (bf=250 cje=18p cjc=6p tf=0.4n)
 ```
-`op` with `outputs="v(b),v(e),v(c),i(vcc)"` gives 2.168 / 1.375 / 8.352 V and -2.203 mA (i of a source is negative when it supplies). `ac` with `start="1 Hz" stop="100 MHz" points=50 sweep="dec"` writes `result.csv` (`frequency, v(out).re, .im, .mag, .db, .phase_deg`); gain at 2 kHz 46.80 dB (219 V/V).
+`op` with `outputs="v(b),v(e),v(c),i(vcc)"` gives 2.168 / 1.375 / 8.352 V and -2.203 mA (i of a source is negative when it supplies). `ac` with `start="1 Hz" stop="100 MHz" points=50 sweep="dec"` writes `result.csv` (`frequency, v(out).re, .im, .mag, .db, .phase_deg, .phase_unwrapped_deg`); gain at 2 kHz 46.80 dB (218.8 V/V).
 
 ## 4. Pitfalls that change the answer
 
 - **A model with only `bf=` has no capacitances**: gain stays flat to 100 MHz and any upper bandwidth is meaningless. Say so. With the user's datasheet add `cje` (from Cibo), `cjc` (from Cobo) and `tf = 1/(2 pi fT)` (fT 400 MHz gives 0.40 ns); the model in the example gives an upper corner of 3.75 MHz; label it a datasheet-based estimate and add a Miller hand check. Without the user's datasheet say the model is generic.
 - **`bandwidth_3db` is for a low-pass response** (reference = first sample); on an AC-coupled or band-pass amplifier it answers `measure.not_found` that names **`bandpass_3db`**: it takes the peak gain, finds the -3.0103 dB corner on each side and returns the bandwidth `f_upper - f_lower` with `lower_corner_3db`, `upper_corner_3db`, `peak_frequency`, `peak_gain_db` in `values` (example above: 80.9 Hz and 3.75 MHz, peak 46.81 dB at 17.4 kHz). Report both corners; a corner outside the sweep is `measure.not_found`, so widen `start`/`stop`.
 - **Units follow the column**: `v(out).db` is decibel, `.phase_deg` degree, `v(out)` volt or ampere; on an ac table a bare `v(out)` means `v(out).mag` (a V/V gain for a 1 V source, labelled volt) for every measurement.
-- **Phase is wrapped** to +-180 deg: the example reads -177.6 deg at 2 kHz and +164.9 deg at 1 MHz (that is -195 deg). Use an unwrapped phase column if the table has one, else unwrap by hand, and say an inverting stage is 180 deg plus the lag.
+- **`.phase_deg` is wrapped** to +-180 deg: the example reads -177.6 deg at 2 kHz and +164.9 deg at 1 MHz. The ac table also has `<signal>.phase_unwrapped_deg` (-177.6 and -195.1 deg): use the unwrapped column for a Bode phase (`spice_measure value_at`, or `plot_panels`; on a wrapped column `unwrap_phase=true` does the same) and say an inverting stage is 180 deg plus the lag.
 - **Short `tran` runs include start-up** (coupling and bypass capacitors need many time constants). Use `start` to keep only the settled window (`start="100 ms" stop="101 ms" step="5 us"`) and compare the amplitude `(max - min)/2` with the ac gain times the input amplitude (1.091 V against 219 x 5 mV). For a converter use `use_initial_conditions=true` with `ic=` on the inductor and capacitor and a window of whole switching periods.
 - A switch-mode netlist needs a body diode and dead time: `S` switches with `.model sw sw(ron=.. roff=1meg vt=2.5 vh=0)`, PULSE gate drives with a gap, `D` across the low side; without it the switch node spikes.
 

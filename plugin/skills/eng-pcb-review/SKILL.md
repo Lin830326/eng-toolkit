@@ -20,14 +20,14 @@ Load `eng-toolkit` too. The tools read KiCad 5 to 10 files; `pcb_drc`, `pcb_erc`
 | Layers, outline size, parts, nets, track widths, vias, drills, thickness | `pcb_info` (own parser, no KiCad needed; `max_listed` to list parts) |
 | Design rule violations, missing connections | `pcb_drc` |
 | Schematic electrical errors | `pcb_erc` |
-| Fabrication files | `pcb_export` `gerbers` (zip plus job file), `drill`, `pos`, `pdf` / `svg` of chosen layers |
+| Fabrication files | `pcb_export` `gerbers` (layers, drill, job file, one zip), `drill`, `pos`, `pdf` / `svg` of chosen layers |
 
 ## 3. Inputs that work (verified on KiCad's pic_programmer demo, 2 copper layers, 63 parts, 111 nets, 160.0 x 99.1 mm)
 
 - `pcb_info board_path=".../pic_programmer.kicad_pcb" max_listed=0` reads `copper_layers`, `board_width`, `board_height` (Edge.Cuts centre lines), `data.tracks.width_mm` (min 0.35), `data.vias.drill_mm` (min 0.6) and `size_mm` (1.6), `data.board.thickness_mm` (1.6). Use these, not memory or a colleague's chat message, for layer count and outline.
 - `pcb_drc board_path=... min_clearance="0.2 mm" min_track_width="0.25 mm" max_violations=20` gives 0 errors, 0 unconnected and 63 warnings, all library warnings (`data.violations.library_warnings.count` 63, `design_warnings` 0).
 - `pcb_erc schematic_path=".../pic_programmer.kicad_sch"` gives 4 errors (`hier_label_mismatch`, design) and 168 warnings, of which 164 are library warnings; the 4 errors are real findings next to a clean DRC. Sub-sheets in other files are not checked.
-- `pcb_export board_path=... export="gerbers"` (10 files, `gerbers.zip`), then separately `export="drill"` (`board.drl`). Layers are checked against the board (`In1.Cu` on a 2-layer board is refused, with the list).
+- `pcb_export board_path=... export="gerbers"` writes the layer files, the Excellon drill `pic_programmer.drl` and the job file `pic_programmer-job.gbrjob` (all named after the board) and one `pic_programmer-gerbers.zip` holding all 11: that zip is the upload for a fabricator. `export="drill"` alone gives only the drill file. Layers are checked against the board (`In1.Cu` on a 2-layer board is refused, with the list).
 
 ## 4. Read the results
 
@@ -39,7 +39,7 @@ Load `eng-toolkit` too. The tools read KiCad 5 to 10 files; `pcb_drc`, `pcb_erc`
 
 ## 5. Coverage limits (outside the toolkit: say so)
 
-No 3D render, STEP or PNG export (use `pdf`: board true size on one page, layers overlaid; SVG may not open in common viewers), no signal integrity, impedance, thermal, EMC, BOM or assembly review, no stackup or panel check, no fab-specific CAM. Outputs land in the toolkit workspace (`artifacts` paths), files are named `board-*` and cannot be placed in a folder of the user's choosing: give the paths.
+No 3D render, STEP or PNG export (`pdf` autoscales the board to one page, layers overlaid; `svg` is cropped to the outline; `per_layer=true` writes one file per layer with Edge.Cuts on each), no signal integrity, impedance, thermal, EMC, BOM or assembly review, no stackup or panel check, no fab-specific CAM. Outputs land in the toolkit workspace (`artifacts` paths), named after the board, and cannot be placed in a folder of the user's choosing: give the paths.
 
 ## 6. Report
 

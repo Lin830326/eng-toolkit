@@ -20,7 +20,7 @@ Sheet (A3 landscape?), views (top/front/right, iso if room), projection (default
 | What is in a DXF or PDF (texts, dimensions, layers, title block, units) | `drawing_read` |
 | DXF to PDF, SVG, PNG, or another DXF version | `drawing_convert` |
 | Build the part first, with fit and thread text in the callouts | `geometry_make_part`, then pass its `features.json` as `features_path` |
-| A picture of the 3D part (coloured faces, DFM findings; not a drawing) | `geometry_view`: it writes a PNG (iso plus front, top, right views, legend, size in mm) next to a GLB, see `eng-3d-view` |
+| A picture of the 3D part (coloured faces, DFM findings; not a drawing) | `geometry_view`: a PNG (iso plus front, top, right views, legend, size in mm, shown in the reply) next to a GLB, see `eng-3d-view` |
 
 ## 3. Inputs that work (verified)
 
