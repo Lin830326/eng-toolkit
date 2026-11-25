@@ -59,7 +59,7 @@ def pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(T.brep, "closure", lambda solid: SimpleNamespace(closed=True))
     monkeypatch.setattr(T.brep, "mass_properties", lambda solid: SimpleNamespace(
         volume_mm3=config.volume, bbox_min_mm=tuple(config.nodes[:4].min(axis=0)),
-        bbox_max_mm=tuple(config.nodes[:4].max(axis=0))))
+        bbox_max_mm=tuple(config.nodes[:4].max(axis=0)), area_mm2=600.0))  # the surface of the 10 mm bounding cube: brep.mass_properties always has an area
     record = SimpleNamespace(seconds=0.0, returncode=0, stdout_tail="", stderr_tail="")
 
     def gmsh(solid, size, workdir):

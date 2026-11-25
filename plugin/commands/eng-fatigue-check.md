@@ -3,6 +3,8 @@ description: Fatigue check (infinite life, S-N, rainflow and Miner damage, strai
 argument-hint: <describe the part or load history, the material and what to check>
 ---
 
+First load the `eng-fatigue-check` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-fatigue-check` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this fatigue or fracture problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS

@@ -95,6 +95,75 @@ def _is_header(parts):
     return all(_HEADER_FIELD.fullmatch(p) and p.lower().lstrip("+-") not in ("nan", "inf", "infinity") for p in parts)
 
 
+SPIKE_SIGMAS = 6.0
+MAX_SPIKES_LISTED = 5
+
+
+def history_extremes(arr, times, header, unit):
+    """Min, max and range of the history, where they are, and the isolated single-sample spikes in it.
+
+    A spike is an interior sample that is more than ``SPIKE_SIGMAS`` robust sigmas away from BOTH neighbours, on the same side of both (an
+    excursion of one sample).  The robust sigma is 1.4826 times the median of the absolute sample-to-sample steps (for white noise this is the
+    standard deviation of a step), with a floor of 1e-6 of the history range so that a held (step-like) record does not make every change a spike.
+    """
+    lo, hi = float(np.min(arr)), float(np.max(arr))
+    i_lo, i_hi = int(np.argmin(arr)), int(np.argmax(arr))
+    time_name = header.split(",")[0] if header else "time"
+
+    def where(i):
+        return {"index": i} if times is None else {"index": i, "time": float(times[i])}
+
+    data = {
+        "history_min": lo,
+        "history_max": hi,
+        "history_range": hi - lo,
+        "history_unit": unit,
+        "history_extremes": {"min": {"value": lo, **where(i_lo)}, "max": {"value": hi, **where(i_hi)}, "index_base": 0,
+                             **({"time_column": time_name} if times is not None else {})},
+    }
+    warnings = []
+    spikes = []
+    if len(arr) >= 5:
+        step = np.diff(arr)
+        sigma = max(1.4826 * float(np.median(np.abs(step))), 1e-6 * (hi - lo))
+        before, after = step[:-1], -step[1:]  # x[i] - x[i-1] and x[i] - x[i+1] for the interior samples i = 1 .. n-2
+        hit = (np.abs(before) > SPIKE_SIGMAS * sigma) & (np.abs(after) > SPIKE_SIGMAS * sigma) & (np.sign(before) == np.sign(after))
+        idx = np.flatnonzero(hit) + 1
+        if idx.size:
+            depth = np.minimum(np.abs(before[idx - 1]), np.abs(after[idx - 1]))
+            order = idx[np.argsort(-depth, kind="stable")]
+            spikes = [{**where(int(i)), "value": float(arr[i]), "previous": float(arr[i - 1]), "next": float(arr[i + 1]),
+                       "sigmas": float(min(abs(arr[i] - arr[i - 1]), abs(arr[i] - arr[i + 1])) / sigma)} for i in order[:MAX_SPIKES_LISTED]]
+            data["spikes"] = {"count": int(idx.size), "listed": spikes, "robust_sigma": sigma, "threshold_sigmas": SPIKE_SIGMAS,
+                              "rule": "interior sample more than 6 robust sigmas (1.4826 x median |step|) from both neighbours, on the same side of both"}
+            parts = ", ".join(
+                f"index {s['index']}" + (f" ({time_name} = {s['time']:g})" if "time" in s else "") + f" = {s['value']:.6g} {unit}" for s in spikes)
+            warnings.append(
+                f"{int(idx.size)} isolated single-sample spike(s) (more than {SPIKE_SIGMAS:g} robust sigmas from both neighbours): {parts}"
+                + (" (largest ones listed)" if idx.size > len(spikes) else "")
+                + ". A spike is usually a logger glitch or a wrong scale, and it dominates a rainflow count; check the record before relying on the damage.")
+    if not spikes:
+        data["spikes"] = {"count": 0, "listed": [], "threshold_sigmas": SPIKE_SIGMAS}
+    return {"min": lo, "max": hi, "data": data, "warnings": warnings}
+
+
+def dominant_cycle(rows, total_damage):
+    """The single cycle with the largest damage and its share of ``total_damage`` (None without damage).
+
+    ``rows`` are the lines of rainflow_cycles.csv (range, mean, full, half, count, life, damage); a row is a class of identical cycles, so one
+    cycle of it carries ``damage / (full + half)``: a half cycle is one occurrence of the same range and mean with half the weight.
+    """
+    if not total_damage or total_damage <= 0:
+        return None
+    index = max(range(len(rows)), key=lambda i: (rows[i][6] or 0.0) / ((rows[i][2] + rows[i][3]) or 1))
+    ran, mean, full, half, count, life, dmg = rows[index]
+    if not dmg:
+        return None
+    occurrences = (full + half) or 1
+    return {"range": ran, "mean": mean, "index": index, "index_base": 0, "occurrences": occurrences, "weighted_count": count, "life_cycles": life,
+            "damage_of_one_cycle": dmg / occurrences, "damage_share": dmg / occurrences / total_damage, "damage_share_of_its_class": dmg / total_damage}
+
+
 def _history_literal(text, line):
     try:
         return literal(text, "history_file")
@@ -105,11 +174,12 @@ def _history_literal(text, line):
 
 
 def read_history(handle, inline, file):
-    """``(values, header)``: the samples of the inline list or of a CSV file, and the header line the file started with (else None)."""
+    """``(values, header, times)``: the samples of the inline list or of a CSV file, the header line the file started with (else None) and the
+    time column of a two-column file (else None)."""
     if bool(inline) == bool(file):
         invalid("history", "supply exactly one of history and history_file", "input.missing" if not inline else "input.invalid")
     if inline:
-        return json_numbers(inline, "history"), None
+        return json_numbers(inline, "history"), None, None
     if len(file) > 4096:
         invalid("history_file", "path cap is 4096 characters", "input.out_of_range")
     path = handle.input_file(file, param="history_file", extensions=(".csv",), max_bytes=48000000, too_large_family="input.out_of_range")
@@ -117,7 +187,7 @@ def read_history(handle, inline, file):
         text = path.read_bytes().decode("utf-8-sig")
     except UnicodeDecodeError:
         invalid("history_file", "expected UTF-8 numeric CSV")
-    values, columns, previous_time, header, header_line = [], None, None, None, None
+    values, times, columns, previous_time, header, header_line = [], [], None, None, None, None
     for i, row in enumerate(text.splitlines(), start=1):
         if not row.strip():
             continue
@@ -136,13 +206,14 @@ def read_history(handle, inline, file):
             if previous_time is not None and parsed[0] <= previous_time:
                 invalid("history_file", f"line {i}: the time column must be strictly increasing")
             previous_time = parsed[0]
+            times.append(parsed[0])
         values.append(parsed[-1])
         if len(values) > 1000000:
             invalid("history_file", "point cap is 1,000,000", "input.out_of_range")
-    return values, None if header is None else ",".join(header)
+    return values, None if header is None else ",".join(header), times or None
 
 
-@server.tool(description="ASTM E1049 three-point rainflow with half-cycle residue, optional hysteresis gate, range histogram and range-mean matrix. Basquin/Goodman-family Miner damage, endurance cutoff or Haibach extension. Uniaxial stress or count-only force histories; at most 1,000,000 samples; CSV artifacts.")
+@server.tool(description="ASTM E1049 three-point rainflow with half-cycle residue, optional hysteresis gate, range histogram and range-mean matrix. Basquin/Goodman-family Miner damage, endurance cutoff or Haibach extension. Uniaxial stress or count-only force histories; at most 1,000,000 samples; CSV artifacts. Reports the history min/max and warns about a dominant cycle (over 50 % of the damage) or isolated single-sample spikes.")
 def rainflow(
     history: Annotated[str, Field(description="Flat JSON number list, e.g. '[0,100,-100,0]'; <=1,000,000 points, 24 MB; '' uses history_file.")] = "",
     history_file: Annotated[str, Field(description="Numeric CSV path, one value column or time,value, optional header line, <=48 MB; '' uses inline history.")] = "",
@@ -180,7 +251,7 @@ def rainflow(
         mb = integer(mean_bins, "mean_bins", 1, 128)
         repeat = number(repeats, "repeats", 1e-12, 1e12)
         below = choice(below_knee, "below_knee", ("none", "elementary", "haibach"))
-        values, header_skipped = read_history(handle, history, history_file)
+        values, header_skipped, times = read_history(handle, history, history_file)
         if len(values) < 2:
             invalid("history", "at least two samples are required")
         raw = np.asarray(values, dtype=float)
@@ -191,6 +262,8 @@ def rainflow(
             invalid(f"history/{int(np.flatnonzero(bad)[0])}", "converted sample exceeds supported magnitude", "input.out_of_range")
         if np.ptp(arr) == 0:
             invalid("history", "constant history has no cycles")
+        unit = "MPa" if kind == "stress" else "N"
+        extremes = history_extremes(arr, times, header_skipped, unit)  # of the history as given, before closing or rotating it
         if closed:
             if arr[0] == arr[-1]:
                 arr = arr[:-1]
@@ -213,12 +286,15 @@ def rainflow(
         counts_total = [f + .5 * h for f, h in grouped.values()]
         ranges = [k[0] for k in grouped]
         means = [k[1] for k in grouped]
-        unit = "MPa" if kind == "stress" else "N"
         hist, edges = np.histogram(ranges, bins=nb, range=(0, max(ranges)), weights=counts_total)
         matrix, redges, medges = np.histogram2d(ranges, means, bins=(edges, mb), weights=counts_total)
         r.data.update(range_histogram={"edges": edges, "counts": hist, "unit": unit},
                       range_mean_matrix={"range_edges": redges, "mean_edges": medges, "counts": matrix, "unit": unit},
                       input_samples=len(values), reversal_count=len(rev), closed=closed)
+        r.data.update(extremes["data"])
+        r.add("history_max", extremes["max"], unit)
+        r.add("history_min", extremes["min"], unit)
+        r.warnings.extend(extremes["warnings"])
         r.add("full_cycles", sum(f for f, h in grouped.values()))
         r.add("half_cycles", sum(h for f, h in grouped.values()))
         r.add("weighted_cycles", math.fsum(counts_total), "count")
@@ -268,6 +344,14 @@ def rainflow(
         r.data["header_skipped"] = header_skipped
         if model is not None:
             damage = math.fsum(damage_terms)
+            dominant = dominant_cycle(rows, damage)
+            if dominant is not None:
+                r.data["dominant_cycle"] = dominant
+                if dominant["damage_share"] > .5 and len(rows) > 1:
+                    r.warnings.append(
+                        f"One cycle carries {100 * dominant['damage_share']:.0f} % of the damage: range {dominant['range']:.6g} {unit}, mean {dominant['mean']:.6g} {unit} "
+                        f"(row {dominant['index']}, counting from 0, of rainflow_cycles.csv; it occurs {dominant['occurrences']} time(s)). The result rests on that one cycle: "
+                        "check it is a real load and not a spike, a drift or a wrong scale before relying on the life.")
             r.add("damage_per_block", damage)
             r.add("damage", damage * repeat)
             if damage:

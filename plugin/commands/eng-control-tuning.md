@@ -3,6 +3,8 @@ description: PI/PID tuning, step response, margins and discretisation of a contr
 argument-hint: <describe the plant or datasheet numbers, the spec and the loop rate>
 ---
 
+First load the `eng-control-tuning` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-control-tuning` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this control loop problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS

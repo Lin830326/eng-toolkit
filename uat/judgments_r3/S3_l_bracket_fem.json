@@ -1,0 +1,156 @@
+{
+ "id": "S3_l_bracket_fem",
+ "verdict": "PASS",
+ "one_line": "Same outcome as round 2: bent-plate model (inner R6, outer R12), tip drop 2.29 mm separated from the 2.92 mm magnitude, sideways 1.82 mm reported, peak at the inner bend with an honest 'not converged' and a clear 'not OK for S235' verdict; the part is again drawn lying on its side, the eng-3d-view skill was not loaded, and the first answer used E = 200 GPa from memory instead of asking.",
+ "vs_round2": "PASS -> PASS. Better: the element-estimate bug is fixed (a 1.9 mm / 58,706 element run, round 2 stopped at 2.17 mm), the sideways ux is named, the wrong first hand check (200 MPa) was corrected unprompted in turn 3 (225 / 237.5 MPa), the person's wrong report sentence was refused with reasons. Not better: the L still lies on its side (Z-up rule ignored), eng-3d-view not loaded, a pass-flavoured hand number ('about 0.85 of yield, probably OK') appeared in turn 2, and turn 3 offered an ideal-elastoplastic run that turn 4 retracted.",
+ "goal_met": true,
+ "turns": 4,
+ "holdout": false,
+ "new_checks": {
+  "picture_seen": "fem_view.png (and legend.png) exist in rendered/ and the PNG path was given in words in turn 1 with a description (yellow band at the inner R6, rest green, deformation x2.3). The tool result carried the image inline (fem_view declares inline_image; 142 kB < 600 kB; the gateway code and an in-process plot_bar call confirm the mechanism). The persona never comments on the picture, so it is unverified that he looked at it. The description matched the picture, but it never said the part lies on its side (leg horizontal in the render, 'Z is up' in the legend).",
+  "domain_skill_before_first_tool": "Partly. Turn 1 loaded eng-toolkit and eng-structural-check before the first tool call, but NOT eng-3d-view, whose description is exactly this task ('stress picture', 'how much does it deflect' of a bracket: geometry_make_part, fem_static, fem_view). That skill holds the Z-up rule, the convergence recipe (halving sizes, singularity on clamped faces) and 'report ux when the magnitude differs'. As a result the bracket was built along y again (round-2 problem S3-r2-1 repeated). The structural skill's section 1 (ask material and yield) was not followed either.",
+  "ask_before_computing": "No. 'Forgets to say the material' is this scenario's built-in test: the assistant ran three FEM meshes with E = 200 GPa 'from memory' and returned 291-306 MPa and 2.40 mm before asking. It labelled E as recalled and refused a pass/fail without yield, so the harm is limited; but the first table had a 5 % wrong deflection and the person had to give the material in turn 2 anyway.",
+  "false_pass": "None in the final verdict. Intermediate: turn 2's verdict table lists 'nominal stress about 200 MPa = 0.85 of yield, more likely OK' next to 'peak 305 MPa: not OK'; the 200 MPa came from a wrong lever arm (48 mm instead of 54-57 mm, moment 96 vs 114 kN*mm). Turn 3 corrected it to 225 / 237.5 MPa (truth hand value 237.5) and said so. Turn 3 also offered an elastoplastic run that the toolkit cannot do; turn 4 retracted it when the person took it up."
+ },
+ "answers": [
+  {
+   "item": "tip vertical deflection",
+   "truth": "2.21 mm (hand 2.27 wide plate, 2.49 plain beam); the 2.86-2.92 mm magnitude must be labelled",
+   "assistant_said": "2.288 mm (E 210; 2.401 at E 200) from values.max_displacement_uy; sideways 1.82 mm named 'not the drop'; the magnitude is not quoted as the deflection",
+   "result": "right"
+  },
+  {
+   "item": "maximum von Mises and where",
+   "truth": "250-280 MPa (264-276 on the truth's sharp-outer model) at the inside of the 6 mm bend, not converged",
+   "assistant_said": "291-306 MPa at the inner R6, centre of the width; its outer R12 corner is stated in the assumptions. Judge re-run with a sharp outer corner (in-process, E 210 GPa): 264.4 / 274.8 MPa at 2.5 / 2 mm, tip 2.216 mm, so the 10 % gap is the assistant's (more realistic) outer-radius choice, not a tool error",
+   "result": "right"
+  },
+  {
+   "item": "is the mesh fine enough (convergence)",
+   "truth": "deflection and leg stress converged, max von Mises not; foot value is a support artefact",
+   "assistant_said": "deflection converged within 0.1 %; max stress 291 -> 306 MPa, 'not converged', the tool offers no local refinement; 'peak is not at the fixed face so not a singularity'",
+   "result": "right"
+  },
+  {
+   "item": "leg stress (converged number)",
+   "truth": "about 220 MPa von Mises (237.5 nominal hand)",
+   "assistant_said": "237.5 MPa nominal at the weld root (hand, labelled); the FEM leg stress was never read from results.csv ('fem_static did not output the base nodes')",
+   "result": "right"
+  },
+  {
+   "item": "6 mm bracket OK for 2 kN?",
+   "truth": "not acceptable for S235: leg at 94 % of yield, bend 10-18 % above yield",
+   "assistant_said": "turn 2: 'not OK' (peak about 30 % above yield, which overstates the 10-18 %); turn 4: weld root at yield, SF 0.99, local yield at R6, 'not recommended to treat as a pass'",
+   "result": "right"
+  },
+  {
+   "item": "permanent bend (outside the tools)",
+   "truth": "toolkit is linear elastic: say so",
+   "assistant_said": "'cannot give a permanent deformation, needs an elastoplastic analysis, outside this toolkit'; then a labelled hand estimate 'close to zero' and, in turn 3, an offer that implied it could run one",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "max_displacement is a magnitude, not the vertical drop",
+   "caught": true
+  },
+  {
+   "trap": "tip also moves sideways (1.7-1.8 mm)",
+   "caught": true
+  },
+  {
+   "trap": "converged deflection mistaken for converged stress",
+   "caught": true
+  },
+  {
+   "trap": "clamped-foot stress is a support singularity, not a result",
+   "caught": false
+  },
+  {
+   "trap": "part built along y lies on its side in the render",
+   "caught": false
+  },
+  {
+   "trap": "material not given: ask before computing",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 1 reports E = 200 GPa 'from memory' and a deflection computed with it. Labelled, with no pass/fail given, but the material should have been asked first.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 2 states the peak exceeds yield by 'about 30 %' (306/235) as the headline; the truth range is 10-18 % (the outer R12 geometry gives about 30 %). Both say 'not OK', but the person could quote '30 %' to his manager while the peak is a local, mesh-dependent value that has not converged.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 3's closing offer to run an ideal elastoplastic analysis contradicts its own opening sentence (the toolkit cannot). Retracted in turn 4 only after the person asked how.",
+   "severity": "medium"
+  },
+  {
+   "issue": "The hand estimate 'residual deformation close to zero' (M/My = 1.01) is labelled speculation and is correct in kind, but it does not say that local yield at the inner bend is not covered by it.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T171511Z-479275f6-fem_view_fem_view.png",
+   "score": 2,
+   "notes": "One large isometric view with title, colour bar, a 'max 306.4 MPa' marker at the right place (inner R6 band across the width), deformation x2.3 stated, size and Z-up statement, and the tool's warning that peaks depend on the mesh. Weaknesses: the L lies on its side (leg horizontal, width vertical), so it does not look like the bracket he described; no support or load marker; the colour scale runs green to pale beige, the peak is not 'red' and is hard to see against the light green; the picture is from the E = 200 GPa run (stress is E independent, the deformation scale is not); no yield line (235 MPa) on the bar."
+  },
+  {
+   "file": "rendered/20261124T171511Z-479275f6-fem_view_legend.png",
+   "score": 2,
+   "notes": "Stand-alone legend with ticks, readable, redundant with the bar in the main picture."
+  }
+ ],
+ "problems": [
+  {
+   "id": "S3-1",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "The assistant loaded eng-toolkit and eng-structural-check but not eng-3d-view for a 'stress picture of a bracket' request, so the Z-up and convergence recipes were never read. It repeats round-2 problem S3-r2-1 although the skill states the rule and a worked L-bracket spec.",
+   "evidence": "transcript.md: 'Skills loaded: eng-toolkit:eng-toolkit (turn 1), eng-toolkit:eng-structural-check (turn 1)'; geometry_make_part plane 'xy', leg path (6,0)-(6,88); fem_view legend 'Size X 60 x Y 100 x Z 80 mm'; the picture shows the leg horizontal.",
+   "fix": "eng-structural-check/SKILL.md section 1 or 3: one sentence 'a FEM or stress picture of a part: also load eng-3d-view first (Z-up modelling, convergence, picture hand-over)'. Tool-side: geometry_make_part or fem_view warns when the loaded direction is -y and the largest extent is along y ('gravity is -z in every viewer; this part will be drawn lying on its side')."
+  },
+  {
+   "id": "S3-2",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "No sentence tells the assistant to ask for the material before the first FEM run when the person gave none.",
+   "evidence": "Turn 1: E = 200 GPa 'from memory', 5 % off in deflection; the person supplied S235 / 210 GPa in turn 2 after a whole table was printed.",
+   "fix": "eng-3d-view/SKILL.md line 12 ('For FEM ask for E, nu, supports, loads, the field') is correct but short: make it 'if E, nu or yield is missing, ask BEFORE the first fem_static; do not run a first pass with handbook values'."
+  },
+  {
+   "id": "S3-3",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "No way to read the stress at a chosen place or to refine the mesh locally: the manager's 'is the stress converged' cannot be answered for the bend peak, and the leg stress (about 220 MPa, the converged number) cannot be reported without reading results.csv by hand.",
+   "evidence": "Turn 2: 'this tool only sets a global mesh size; local refinement I cannot do'; turn 3: 'fem_static did not output the base-node stress'.",
+   "fix": "fem_static: optional 'probe' list (points or faces) returning von Mises and components there and the average over a face; optional 'refine' box with a finer size around a named edge or face. Or fem_view field 'stress along a line'."
+  },
+  {
+   "id": "S3-4",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "The hand check in turns 1 and 2 used a wrong lever arm (48 mm) giving 200 MPa and a 'probably OK' line beside the FEM 'not OK'; corrected unprompted in turn 3.",
+   "evidence": "'M = 2 kN x 48 mm = 96 kN*mm ... sigma about 200 MPa' vs turn 3 '2 kN x 54 mm = 108' and '2 kN x 57 mm = 114 kN*mm, 237.5 MPa'.",
+   "fix": "Skill sentence: 'a hand check that differs from the tool by more than 20 % is wrong until explained: recheck the lever arm before showing it'. Low priority."
+  },
+  {
+   "id": "S3-5",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Offered a capability the toolkit lacks (an elastoplastic run with ideal plasticity) in the same turn as saying the toolkit has none.",
+   "evidence": "Turn 3: 'if you do not have the curve I can assume ideal elastoplastic ... tell me which'; turn 4: 'the toolkit cannot do a full elastoplastic FE analysis'.",
+   "fix": "eng-3d-view/SKILL.md section 5 limits: 'plasticity, contact, large displacement: say it cannot be done and do not offer to run it with other inputs; the only substitute is a labelled hand estimate'."
+  }
+ ],
+ "what_worked": [
+  "uy, ux and magnitude are separated and named in the first answer, with the physical reason for the sideways motion.",
+  "Refinement to 1.9 mm (58,706 elements) is now possible; the assistant used it, said the stress rose 5 % between 2.5 and 2 mm and called it not converged.",
+  "The recalculation with the person's S235 data was reasoned correctly (stress independent of E, deflection scales 200/210), and the person's proposed report sentence ('only 1 % over yield') was rejected with three concrete reasons and replaced by a better one."
+ ]
+}

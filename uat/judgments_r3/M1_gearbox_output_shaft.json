@@ -1,0 +1,275 @@
+{
+ "id": "M1_gearbox_output_shaft",
+ "verdict": "PARTIAL",
+ "one_line": "Headlines right (50 mm too small, 6210 too short at A, keys 18x11 and 14x9, STEP mass 8.63 kg) but: axial couple dropped (gear-plane moment -8 %), n=2 judged on Soderberg not the person's Goodman, a misread 65->50 shoulder reported as FAIL, key minimum lengths half the n=2 values while claimed to include n=2, 6210 C recalled unlabelled, and no usable 3D picture or dimensioned drawing.",
+ "goal_met": false,
+ "turns": 7,
+ "holdout": false,
+ "vs_round2": {
+  "verdict_before": "PASS",
+  "verdict_now": "PARTIAL",
+  "fixed": [
+   "M1-9 pitch diameter now 294 mm; Wt/Wr/Wa within 1 % of truth after x1.25",
+   "M1-14 no placeholder plot"
+  ],
+  "still_open": [
+   "M1-2 no tool for helical gear shaft loads",
+   "M1-4 numeric values printed in the ask-first turn"
+  ],
+  "new": [
+   "M1-r3-1",
+   "M1-r3-2",
+   "M1-r3-3",
+   "M1-r3-4",
+   "M1-r3-5",
+   "M1-r3-6",
+   "M1-r3-7",
+   "M1-r3-8"
+  ],
+  "regressed": [
+   "Bending moment and reactions (round 2 right, round 3 -8 %); key minimum lengths (round 2 exact truth minima, round 3 half). Round 2 judged the eng-machine-design example to be the scenario itself (M1-13); round 3 replaced it with a general recipe, which Haiku did not follow, so the drop is the honest benchmark."
+  ]
+ },
+ "answers": [
+  {
+   "item": "Output torque with KA 1.25",
+   "truth": "681.5 nominal / 851.8 Nm",
+   "assistant_said": "682 / 852 Nm",
+   "result": "right"
+  },
+  {
+   "item": "Gear forces Wt, Wr, Wa (with KA)",
+   "truth": "5794 / 2183 / 1553 N",
+   "assistant_said": "4637 / 1747 / 1243 N nominal; x1.25 gives 5796 / 2184 / 1554",
+   "result": "right"
+  },
+  {
+   "item": "Bearing reactions A radial / B radial",
+   "truth": "4047 / 2320 N",
+   "assistant_said": "3716 / 2478 N (couple ignored)",
+   "result": "wrong"
+  },
+  {
+   "item": "Moment at the gear plane (left, resultant)",
+   "truth": "485.6 Nm (417.7 right)",
+   "assistant_said": "446 Nm",
+   "result": "wrong"
+  },
+  {
+   "item": "Moment at the shoulder (160 mm from A)",
+   "truth": "324.9 Nm",
+   "assistant_said": "346-347 Nm",
+   "result": "wrong"
+  },
+  {
+   "item": "Minimum gear-seat diameter (DE-Goodman, n=2, 99 %)",
+   "truth": "55.5 mm (58.3 if Kf=Kt); 60 mm standard, n_f 2.50",
+   "assistant_said": "no minimum diameter; Goodman 2.29-2.68 at 60 mm, Soderberg 1.81-2.13; called 60 'marginal', recommended 65",
+   "result": "missing"
+  },
+  {
+   "item": "Is the person's 50 mm OK?",
+   "truth": "no (n_f about 1.49 at the keyseat)",
+   "assistant_said": "'Ø50 不能用在齒輪座', reason given is room for the keyway; no n_f at 50 mm keyseat computed",
+   "result": "right"
+  },
+  {
+   "item": "Shoulder fillet at the hub face (R d/10)",
+   "truth": "min d 45.8 mm; n_f 4.38 at 60 mm: passes",
+   "assistant_said": "'65->50 step, R5, does NOT pass n=2' (Soderberg 1.85-1.96, Goodman 2.27-2.42)",
+   "result": "wrong"
+  },
+  {
+   "item": "6210 L10h at the locating bearing (target 25000 h)",
+   "truth": "19294 h (C 37.1 kN): insufficient",
+   "assistant_said": "16484 h (C 35.1 kN recalled, P 4723 N): insufficient; B 114135 h (truth 164495)",
+   "result": "right"
+  },
+  {
+   "item": "Gear key and minimum length (n=2)",
+   "truth": "18x11; min 10.3 shear / 19.5 crushing; fitted length set by hub",
+   "assistant_said": "18x11 (20x12 once d=65); 'minimum 9.7 mm'; L=70",
+   "result": "wrong"
+  },
+  {
+   "item": "Coupling key",
+   "truth": "14x9; min 31.7 mm (crushing, n=2)",
+   "assistant_said": "14x9; minimum 15.9 mm; L=63",
+   "result": "wrong"
+  },
+  {
+   "item": "Bending-moment picture",
+   "truth": "peak 485.6 left / 417.7 right of gear (couple jump), 0 at the bearings",
+   "assistant_said": "triangle 0 -> 446 Nm at 120 mm -> 0 at 300 mm",
+   "result": "wrong"
+  },
+  {
+   "item": "3D shaft mass as specified",
+   "truth": "8.32 kg at d60 (tool_check) -> about 8.63 kg at d65",
+   "assistant_said": "8.636 kg, then 8.630 kg with the 20 mm keyway",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "Axial-force couple Wa*d/2 (axial toward A)",
+   "caught": false
+  },
+  {
+   "trap": "Service factor 1.25 on loads",
+   "caught": true
+  },
+  {
+   "trap": "Pitch diameter with cos(helix)",
+   "caught": true
+  },
+  {
+   "trap": "machine_key has no design factor (halve strengths / double minimum)",
+   "caught": false
+  },
+  {
+   "trap": "Minimum key length is not the fitted length (80 mm hub)",
+   "caught": true
+  },
+  {
+   "trap": "Person's 50 mm guess",
+   "caught": true
+  },
+  {
+   "trap": "Kf from notch sensitivity, not Kt",
+   "caught": true
+  },
+  {
+   "trap": "P = X Fr + Y Fa, Fa only on the locating bearing",
+   "caught": true
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "'machine_key ... 設計係數 2 由工具的 0.577Sy 規則計算' is false: the tool has no design factor, 0.577 Sy is only the shear allowable. The minimum lengths 9.7 / 15.9 mm are at n=1 (bearing_safety_factor 8.21 at L=80 gives 80/8.21 = 9.74) and were presented as meeting the person's factor 2.",
+   "severity": "high"
+  },
+  {
+   "issue": "6210 C = 35.1 kN was recalled and used without a label (only 'tool warns C needs 40.3 kN'); the person never gave C and the assistant never asked. Only the 6310 value 46.2 kN was labelled as recalled.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Bending-moment figure and reactions presented as a 'resultant' with 'all forces assumed in one plane'; the dropped axial couple is not disclosed as an omission.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Shoulder reported as failing n=2 on Soderberg (assistant's own choice 'most conservative') without saying that the person's criterion normally means Goodman, where the same sections pass.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Turn 1 prints provisional numbers (Ft about 4700 N, T about 690 Nm) although the skill says no numbers while inputs are missing; labelled 'my arithmetic'.",
+   "severity": "low"
+  },
+  {
+   "issue": "Turn 6 says shell and file-write are disabled and hands over an unexecuted script, 'PDF not seen': honest.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T170933Z-2195f683-plot_xy_plot.png",
+   "score": 2,
+   "notes": "Clean filled triangle with units and vlines (gear centre, step, bearing B); English labels for a Chinese-writing person. Data wrong (peak 446 instead of 485.6 Nm, no couple jump) and the 'step 65 to 50' line marks the misread shoulder. Person saw it: the harness lists every PNG in rendered/ to the persona (scripts/uat_run.py, PICTURES SHOWN TO YOU); the tool result carries an inline ImageContent block (re-run in-process: plot_xy format=both returns TextContent + ImageContent); the PNG path was handed over in words. Person: 彎矩圖我看到了."
+  },
+  {
+   "file": "rendered/20261124T171028Z-734e5efc-geometry_make_part_gearbox_output_shaft.png",
+   "score": 1,
+   "notes": "Harness raster of the GLB (geometry_make_part writes STEP+GLB only; geometry_view was never called): a 430 px pale silhouette, keyways and steps barely visible. The person never commented on it. Not a product picture."
+  },
+  {
+   "file": "rendered/20261124T171034Z-98ed1cca-drawing_make_views_drawing_p1.png",
+   "score": 1,
+   "notes": "Front and top view with hidden-line keyways, A2 at 1:1, only overall 420 and 72 (twice); no segment diameters or lengths. The assistant said correctly it is not a shop drawing."
+  },
+  {
+   "file": "rendered/20261124T171116Z-a039c406-geometry_make_part_gearbox_output_shaft.png",
+   "score": 1,
+   "notes": "Same silhouette after the 20 mm keyway change."
+  }
+ ],
+ "problems": [
+  {
+   "id": "M1-r3-1",
+   "kind": "model_error",
+   "severity": "high",
+   "what": "The axial-force couple Wa*d/2 (228 Nm in the radial plane) was left out; the axial force was called negligible. Gear-plane moment -8 %, reactions 8 % and 7 % off, fatigue factors optimistic.",
+   "evidence": "'Fa 1243 N ... 軸向應力約 0.55 MPa，可忽略'; 357 Nm nominal = sqrt(333.6^2 + 125.8^2) (radial plane without couple), x1.25 = 446 vs truth 485.6. Skill step 3.2 states the couple; structures_frame never called.",
+   "fix": "eng-machine-design 3.2: lead with 'The axial force is a bending load: never drop the couple; run one structures_frame per plane and read both sides of the gear'. Better a tool (see M1-2)."
+  },
+  {
+   "id": "M1-r3-2",
+   "kind": "tool_gap",
+   "severity": "high",
+   "what": "machine_key minimum lengths are at design factor 1 and nothing in the output says so; the assistant believed the tool applied the person's factor 2. The skill (step 5) says 'multiply', but the tool description says 'strength inputs are allowable stresses', which Haiku read as built-in.",
+   "evidence": "machine_key result: bearing_safety_factor 8.211 at 80 mm, minimum_length_bearing 9.743 mm; assistant: '設計係數 2 由工具的 0.577Sy 規則計算'; truth 19.5 mm.",
+   "fix": "machine_key: add design_factor (default 1) and echo 'minimum lengths at design factor X' in values/data; add one warning when design_factor is 1: 'no design factor applied'."
+  },
+  {
+   "id": "M1-r3-3",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Shoulder geometry misread as a step down to the 50 mm bearing seat, evaluated at d=50, and the criterion switched to Soderberg: a false 'does not pass n=2' where Goodman gives 2.27-2.42 and the hub-side fillet has n_f 4.4. The persona's '65->50' echo is partly a harness artifact.",
+   "evidence": "Person: '台階在輪轂右端面 ... 60 的話是 R6'; assistant: '台階（60→50，R6）Ø50'; turn 4: '65→50 台階 ... 不過 n = 2 (Soderberg 1.85～1.96)'.",
+   "fix": "eng-machine-design: 'Ask the diameter on both sides of each shoulder and say which section you check (the smaller one); judge n against the person's criterion (Goodman unless told) and show the other criteria as information'."
+  },
+  {
+   "id": "M1-r3-4",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "Bearing C and C0 are in the skill's ask list but turn 1 did not ask; a recalled 35.1 kN was then used for 6210 without a label (persona C 37.1 kN: L10 16484 h vs truth 19294 h, -14.6 %).",
+   "evidence": "Turn 1 items 1-8 have no C/C0; turn 2 mech_bearing_life dynamic_load_rating 35.1 kN.",
+   "fix": "eng-toolkit: 'A catalogue value typed from memory must carry the word recalled on the same line as the result that uses it, and must not be used for a verdict without asking'."
+  },
+  {
+   "id": "M1-r3-5",
+   "kind": "skill_gap",
+   "severity": "medium",
+   "what": "The 3D model was delivered as STEP/GLB paths only. geometry_view (PNG shown in the reply) was not called; skills eng-3d-view and eng-drawing were not loaded; text-to-cad:engineering-drawing was loaded and needs a shell the session did not have.",
+   "evidence": "skills_loaded: eng-toolkit, eng-machine-design, text-to-cad:engineering-drawing; geometry_make_part artifacts: json, step, json, json, glb.",
+   "fix": "eng-machine-design section 2: 'shaft 3D -> geometry_make_part then geometry_view; drawing -> eng-drawing'; geometry_make_part: render an iso PNG by default."
+  },
+  {
+   "id": "M1-r3-6",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "drawing_make_views cannot dimension a stepped shaft (overall size and holes only), which is the first thing a machine shop needs.",
+   "evidence": "PDF shows 420 and 72, 72 only; tool description 'one overall dimension per model axis, hole callouts'.",
+   "fix": "drawing_make_views dimensions='revolved': diameter and length of each cylindrical step plus slot width and length, derived from the STEP."
+  },
+  {
+   "id": "M1-2",
+   "kind": "tool_gap",
+   "severity": "medium",
+   "what": "(still open) no tool turns gear data into helical Wt/Wr/Wa, reactions, two-plane moments and the resultant diagram; all hand arithmetic, where Haiku dropped the couple.",
+   "evidence": "machine_gear is spur only; no resultant moment tool.",
+   "fix": "New machine_shaft_loads (T, z, mn, beta, an, positions, axial direction -> forces, reactions, M left/right per station, plot series)."
+  },
+  {
+   "id": "M1-r3-7",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Keyway depth for the 20x12 key kept at 7.0 mm (the 18x11 value); DIN 6885 t1 for 20x12 is 7.5 mm (recalled, labelled).",
+   "evidence": "geometry_make_part box at z 25.5 mm for both key widths.",
+   "fix": "machine_key: return the DIN 6885 b, h, t1 for the diameter."
+  },
+  {
+   "id": "M1-r3-8",
+   "kind": "harness_artifact",
+   "severity": "low",
+   "what": "Persona accepted a '65->50 step' that contradicts its own geometry (72 mm collar at 180..200) and did not question the C value; the 3D picture shown to the person is harness-rendered.",
+   "evidence": "turn 4 '台階現在 65→50'; turn 5 spec '180～200：Ø72 台階'.",
+   "fix": "none for the product."
+  }
+ ],
+ "what_worked": [
+  "Skills loaded before the first tool call; turn 1 asked the right items and stopped computing.",
+  "Gear forces with the correct pitch diameter, service factor on loads, locating-bearing logic, P built from X and Y and labelled as hand arithmetic.",
+  "Correct DIN 6885 sizes, L/d warning handled by shortening the coupling key to 63 mm, minimum vs fitted length separated.",
+  "Honest about the drawing limit and the unexecuted script; STEP mass matches the specified geometry; caught that the 27 mm wide 6310 does not fit the 20 mm seat."
+ ]
+}

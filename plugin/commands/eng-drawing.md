@@ -3,6 +3,8 @@ description: Dimensioned engineering drawing of a STEP part (PDF, PNG, DXF), hol
 argument-hint: <path to a STEP file or drawing, sheet size, views, what must be readable>
 ---
 
+First load the `eng-drawing` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-drawing` skill (and `eng-toolkit` for the unit and reporting rules) to make or read this engineering drawing with the eng-toolkit MCP tools:
 
 $ARGUMENTS

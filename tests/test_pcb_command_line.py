@@ -16,6 +16,7 @@ FIXED_WORDS = {
     "pcb", "sch", "drc", "erc", "export", "gerbers", "drill", "pos", "pdf", "svg", "stats",
     "--format", "json", "csv", "excellon", "--severity-all", "--units", "mm", "-o", "--refill-zones", "--layers",
     "--excellon-units", "--side", "both", "--mode-single", "--page-size-mode", "2",
+    "--scale", "0", "--mode-separate", "--mode-multi", "--common-layers",
 }  # fmt: skip
 LAYER_LIST = re.compile(r"[A-Za-z0-9_.]+(,[A-Za-z0-9_.]+)*\Z")
 
@@ -72,14 +73,19 @@ async def test_every_command_line_is_fixed_words_work_files_and_checked_layers(r
         await call("pcb_info", board_path=str(odd), check_with_kicad=True),
     ]
     assert [r.ok for r in results] == [True, True, True, True, True, True, True, True], [r.error for r in results if not r.ok]
-    # drc, erc, gerbers, drill, pos, pdf, svg, then stats and pos for the cross-check
-    assert len(recorder) == 9
-    for r, args in zip([results[0], results[1], results[2], results[3], results[4], results[5], results[6], results[7], results[7]], recorder):
+    # drc, erc, gerbers (plot, then drill), drill, pos, pdf, svg, then stats and pos for the cross-check
+    assert len(recorder) == 10
+    mapping = [results[0], results[1], results[2], results[2], results[3], results[4], results[5], results[6], results[7], results[7]]
+    for r, args in zip(mapping, recorder):
         assert_fixed(args, Path(r.data["job_dir"]) / "work")
         joined = " ".join(str(a) for a in args)
-        assert "calc" not in joined and "--help" not in joined and "板" not in joined and "%PATH%" not in joined
-        assert str(odd) not in joined and str(sch) not in joined  # the caller's own path never reaches the program
-        assert args[-1].name in ("board.kicad_pcb", "board.kicad_sch")  # the copy under its fixed name is the last argument
+        # the caller's text never reaches the program: no shell character, no option look-alike, no non-ASCII, not the path itself
+        assert not any(ch in joined for ch in ";&$`%板") and "--help" not in joined and " -o_" not in joined
+        assert str(odd) not in joined and str(sch) not in joined
+        assert args[-1].name in ("board.kicad_pcb", "board.kicad_sch", "x_calc_dir_id_id_PATH_o_help.kicad_pcb")  # the staged copy is the last argument
+    # only an export stages the copy under the board's own (sanitised) name, so that its outputs are named after the board
+    stem_name = "x_calc_dir_id_id_PATH_o_help.kicad_pcb"
+    assert [a[-1].name for a in recorder] == ["board.kicad_pcb", "board.kicad_sch", *[stem_name] * 6, "board.kicad_pcb", "board.kicad_pcb"]
     assert recorder[2][recorder[2].index("--layers") + 1] == "F.Cu,B.Cu"  # a space after the comma was stripped
     drc_args = recorder[0]
     assert drc_args[:2] == ["pcb", "drc"] and "--refill-zones" in drc_args and "--severity-all" in drc_args

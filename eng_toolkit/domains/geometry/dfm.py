@@ -56,6 +56,13 @@ WALL_REFINE_FACTOR = 2.0  # ray-sampled walls up to this multiple of min_wall ge
 SLOT_WALL_SIN = 0.1  # planar faces whose normal is this close to perpendicular to the tool axis are slot walls (6 degrees)
 MAX_FACE_IDS_LISTED = 50  # face ids a finding lists in geometry_check_dfm's output (the full list stays in-process)
 MAX_LIMITS_CHARS = 4096  # the limits JSON text
+# A bend whose inner and outer cylinders are further apart than 1e-3 of the thickness is still paired when their axes are
+# within this distance: 5 x the resolution of the coordinates the arcs were written with.  An STEP file does not keep
+# that resolution (an arc through three points becomes an exact circle), so 0.01 mm (two decimals) is assumed:
+# via points to 3 decimals leave the axes 3e-3 mm apart, to 2 decimals up to 4e-2 mm.
+BEND_RESOLUTION_MM = 0.01
+BEND_RESOLUTION_FACTOR = 5.0
+BEND_RELAXED_AXIS_MM = BEND_RESOLUTION_FACTOR * BEND_RESOLUTION_MM
 
 # key -> (kind, default, description); kind "length" takes a string with a unit, "ratio", "count" and "angle" (degrees)
 # a plain number
@@ -125,6 +132,33 @@ class Finding:
     # gives the count in ``extra['faces_total']``).  For in-process callers (geometry_view colours all of them); it is
     # never written into a tool result, so geometry_check_dfm's output is unchanged.
     full_face_ids: list[int] | None = field(default=None, repr=False, compare=False)
+
+
+DEFAULT_TOOL_AXIS = "+z"
+TOOL_AXIS_DEFAULTED_WARNING = "tool_axis defaulted to +z: the shop's setup may differ"
+
+
+def summarise(findings: list[Finding], counts: Any, by_rule: dict[str, dict[str, int]]) -> dict[str, Any]:
+    """The ``summary`` of ``geometry_check_dfm``: counts by severity and rule, and ``not_evaluated``, one sentence per rule
+    that skipped part of the model ("4 bend-like faces not evaluated"), repeated in ``headline`` so that "errors 0,
+    warnings 0" cannot hide a check that did not run."""
+    not_evaluated = sorted(
+        {f"{int(f.extra['not_evaluated'])} bend-like faces not evaluated" for f in findings if f.rule == "sheet.bend_unrecognised"}
+    )
+    headline = f"errors {counts['error']}, warnings {counts['warn']}, info {counts['info']}"
+    if not_evaluated:
+        headline += "; " + "; ".join(not_evaluated)
+    return {
+        "headline": headline,
+        "errors": counts["error"],
+        "warnings": counts["warn"],
+        "info": counts["info"],
+        "total": len(findings),
+        "by_rule": by_rule,
+        "not_evaluated": not_evaluated,
+        "exact_findings": sum(1 for f in findings if f.exact),
+        "heuristic_findings": sum(1 for f in findings if not f.exact),
+    }
 
 
 def all_face_ids(finding: Finding) -> list[int]:
@@ -312,10 +346,11 @@ def uncut_depth_mm(material_angle_deg: float, tool_radius_mm: float) -> float:
     return float(f"{tool_radius_mm * (1.0 / math.sin(half_air) - 1.0):.9g}")
 
 
-def _geometric_less(measured: float, limit: float, scale: float) -> bool:
-    """``measured`` below ``limit`` by more than the geometric tolerance of ``scale`` (:func:`brep.coaxial_tolerance_mm`):
-    a bend radius drawn through rounded points (2.99993 mm for 3) is not below a 3 mm limit."""
-    return measured < limit - brep.coaxial_tolerance_mm(scale)
+def _geometric_less(measured: float, limit: float, scale: float, tolerance_mm: float | None = None) -> bool:
+    """``measured`` below ``limit`` by more than the geometric tolerance of ``scale`` (:func:`brep.coaxial_tolerance_mm`,
+    or ``tolerance_mm`` when a bend was paired by the relaxed rule): a bend radius drawn through rounded points
+    (2.99993 mm for 3) is not below a 3 mm limit."""
+    return measured < limit - max(brep.coaxial_tolerance_mm(scale), tolerance_mm or 0.0)
 
 
 # --------------------------------------------------------------------------- cnc_milling
@@ -596,16 +631,30 @@ def check_cnc_milling(
 def _cluster(pairs: list[brep.FacingPair], inv: brep.Inventory) -> list[tuple[float, float, list[brep.FacingPair]]]:
     """``(thickness, weight, pairs)`` per thickness; weight is the face area the pairs cover.  Gaps within the geometric
     tolerance of the thickness (:func:`brep.coaxial_tolerance_mm`, 1e-3 of it) are one thickness: a bend whose radii come
-    from rounded points is 3.00007 mm thick in a 3 mm sheet."""
+    from rounded points is 3.00007 mm thick in a 3 mm sheet.  A cylinder pair accepted only by the relaxed axis rule
+    (arcs through via points of 2 or 3 decimals) joins the nearest thickness within that relaxed tolerance, after the
+    other pairs have set the thicknesses."""
+
+    def weight_of(pair: brep.FacingPair) -> float:
+        return pair.face_area_mm2 if pair.kind == "plane" else inv.faces[pair.face_ids[0] - 1].area_mm2
+
     clusters: list[tuple[float, float, list[brep.FacingPair]]] = []
-    for pair in sorted(pairs, key=lambda p: p.gap_mm):
-        weight = pair.face_area_mm2 if pair.kind == "plane" else inv.faces[pair.face_ids[0] - 1].area_mm2
+    for pair in sorted((p for p in pairs if not p.relaxed), key=lambda p: p.gap_mm):
         if clusters and abs(pair.gap_mm - clusters[-1][0]) <= brep.coaxial_tolerance_mm(clusters[-1][0]):
             gap, total, members = clusters[-1]
-            clusters[-1] = (gap, total + weight, members + [pair])
+            clusters[-1] = (gap, total + weight_of(pair), members + [pair])
         else:
-            clusters.append((pair.gap_mm, weight, [pair]))
-    return clusters
+            clusters.append((pair.gap_mm, weight_of(pair), [pair]))
+    for pair in sorted((p for p in pairs if p.relaxed), key=lambda p: p.gap_mm):
+        near = min(range(len(clusters)), key=lambda i: abs(clusters[i][0] - pair.gap_mm), default=None)
+        if near is not None and abs(pair.gap_mm - clusters[near][0]) <= max(
+            brep.coaxial_tolerance_mm(clusters[near][0]), pair.axis_tolerance_mm or 0.0
+        ):
+            gap, total, members = clusters[near]
+            clusters[near] = (gap, total + weight_of(pair), members + [pair])
+        else:
+            clusters.append((pair.gap_mm, weight_of(pair), [pair]))
+    return sorted(clusters, key=lambda c: c[0])
 
 
 def _merge_bends(
@@ -700,7 +749,9 @@ def check_sheet_metal(
     findings: list[Finding] = []
     warnings: list[str] = []
     cylinders = brep.cylinder_facts(solid, inv, deadline=deadline)
-    search = brep.facing_pairs(solid, inv, cylinders, max_gap_mm=limits["max_thickness"], deadline=deadline)
+    search = brep.facing_pairs(
+        solid, inv, cylinders, max_gap_mm=limits["max_thickness"], relaxed_axis_mm=BEND_RELAXED_AXIS_MM, deadline=deadline
+    )
     if deadline is not None:
         deadline("rules")
     if not search.complete:
@@ -709,7 +760,8 @@ def check_sheet_metal(
     checked = [
         "sheet.thickness and sheet.thickness_uniform: parallel planes and coaxial cylinders with material between them",
         "sheet.min_bend_radius: coaxial concave/convex cylinder pairs of the sheet thickness (axes within 1e-3 of the "
-        "thickness), the faces of one bend counted once, and sharp bends between sheet faces",
+        f"thickness, or within {BEND_RELAXED_AXIS_MM:g} mm with a sheet.bend_tolerance warning), the faces of one bend counted "
+        "once, and sharp bends between sheet faces; cylinders joining two legs that pair with nothing give sheet.bend_unrecognised",
         "sheet.joint: concave edges where one sheet stands on another (ribs, gussets, T-joints), reported as a fact, not as bends",
         "sheet.hole_to_edge: exact distance from each hole wall to the nearest edge or cutout face",
     ]
@@ -799,15 +851,29 @@ def check_sheet_metal(
     # bends: concentric cylinder pairs of the sheet thickness, one bend however many faces it is split into
     by_face = {c.face_id: c for c in cylinders}
     bend_pairs = [p for p in dominant if p.kind == "cylinder" and p.span_rad is not None and p.span_rad < FULL_TURN]
-    bends = _merge_bends(bend_pairs, by_face, brep.coaxial_tolerance_mm(thickness))
+    strict_tolerance = brep.coaxial_tolerance_mm(thickness)
+    relaxed_used = max((p.axis_tolerance_mm or 0.0 for p in bend_pairs if p.relaxed), default=0.0)
+    bends = _merge_bends(bend_pairs, by_face, max(strict_tolerance, relaxed_used))
     min_radius = limits["min_bend_radius_ratio"] * thickness
+    bend_pairing: list[dict[str, Any]] = []
     for bend in bends:
         if deadline is not None:
             deadline("rules")
         pair = min(bend, key=lambda p: (p.inner_radius_mm, p.face_ids))
         radius = float(pair.inner_radius_mm)
         faces = sorted({face for p in bend for face in p.face_ids})
-        if _geometric_less(radius, min_radius, thickness):
+        relaxed = [p for p in bend if p.relaxed]
+        offset = max(p.axis_offset_mm or 0.0 for p in bend)
+        tolerance = max(p.axis_tolerance_mm or 0.0 for p in relaxed) if relaxed else strict_tolerance
+        bend_pairing.append(
+            {
+                "face_ids": faces,
+                "axis_offset_mm": offset,
+                "tolerance_mm": tolerance,
+                "rule": "relaxed" if relaxed else "strict",
+            }
+        )
+        if _geometric_less(radius, min_radius, thickness, tolerance if relaxed else None):
             findings.append(
                 Finding(
                     rule="sheet.min_bend_radius",
@@ -825,12 +891,50 @@ def check_sheet_metal(
                     location_mm=pair.point_mm,
                     basis=(
                         "exact inner radius of a concave/convex cylinder pair whose radii differ by the sheet thickness; "
-                        "radii within 1e-3 of the thickness of the limit count as equal to it"
+                        + (
+                            f"radii within {tolerance:.3g} mm of the limit count as equal to it (relaxed pairing, see sheet.bend_tolerance)"
+                            if relaxed
+                            else "radii within 1e-3 of the thickness of the limit count as equal to it"
+                        )
                     ),
                     extra={
                         "bend_angle_deg": math.degrees(max(p.span_rad for p in bend)),
                         "outer_radius_mm": pair.outer_radius_mm,
                         "ratio": radius / thickness,
+                        "face_pairs": len(bend),
+                        "axis_offset_mm": offset,
+                        "axis_tolerance_mm": tolerance,
+                        "pairing": "relaxed" if relaxed else "strict",
+                    },
+                )
+            )
+        if relaxed:
+            findings.append(
+                Finding(
+                    rule="sheet.bend_tolerance",
+                    severity="warn",
+                    exact=False,
+                    message=(
+                        f"Bend {', '.join(f'F{f}' for f in faces)} was recognised with a relaxed tolerance: its inner and outer "
+                        f"cylinders are {offset:.3g} mm off-axis, the exact rule allows {strict_tolerance:.3g} mm (1e-3 of the "
+                        f"thickness) and the relaxed rule {tolerance:.3g} mm. Arcs drawn through rounded 'via' points are not "
+                        f"exactly concentric, so the inner radius {radius:.4g} mm is good to about {offset:.2g} mm; "
+                        "rebuild the bend with radius and turn for an exact check"
+                    ),
+                    measured=offset,
+                    limit=tolerance,
+                    test="axis offset <= relaxed tolerance",
+                    face_ids=faces,
+                    location_mm=pair.point_mm,
+                    basis=(
+                        "heuristic: the concave and convex cylinders are parallel, their radii differ by the sheet thickness "
+                        f"within {tolerance:.3g} mm and a radial ray crosses only these two faces; the axes are not on one line"
+                    ),
+                    extra={
+                        "axis_offset_mm": offset,
+                        "exact_tolerance_mm": strict_tolerance,
+                        "relaxed_tolerance_mm": tolerance,
+                        "inner_radius_mm": radius,
                         "face_pairs": len(bend),
                     },
                 )
@@ -910,10 +1014,36 @@ def check_sheet_metal(
         if inv.faces[f - 1].kind == "cylinder" and f not in in_holes and _joins_two_legs(neighbours.get(f, set()) & covered, partners)
     )
     if unrecognised:
+        count = len(unrecognised)
+        listed = ", ".join(f"F{f}" for f in unrecognised[:20]) + (" ..." if count > 20 else "")
+        findings.append(
+            Finding(
+                rule="sheet.bend_unrecognised",
+                severity="warn",
+                exact=False,
+                message=(
+                    f"{count} bend-like faces not evaluated: {listed} join two different legs of the sheet but have no inner or "
+                    f"outer partner at the sheet thickness within {BEND_RELAXED_AXIS_MM:g} mm, so their bend radius was not "
+                    "checked. The bend inner and outer radii are not concentric (arcs drawn through rounded 'via' points?) or "
+                    "this is not a bend; rebuild the arcs with radius and turn so both are exactly concentric, then run the "
+                    "check again"
+                ),
+                measured=float(count),
+                measured_unit="count",
+                test="bend-like faces not evaluated == 0",
+                limit=0.0,
+                face_ids=unrecognised[:MAX_FACE_IDS_LISTED],
+                location_mm=inv.faces[unrecognised[0] - 1].origin_mm or tuple(inv.faces[unrecognised[0] - 1].bbox_min_mm),
+                basis=(
+                    "heuristic: a cylinder face that joins two sheet legs but is in no inner/outer pair at the sheet thickness "
+                    "is read as a bend that was skipped"
+                ),
+                extra={"faces_total": count, "not_evaluated": count, "pairing_tolerance_mm": BEND_RELAXED_AXIS_MM},
+                full_face_ids=list(unrecognised),
+            )
+        )
         warnings.append(
-            f"Cylinder faces {', '.join(f'F{f}' for f in unrecognised[:20])} join two different legs of the sheet but have no "
-            "concentric partner at the sheet thickness, so they were not checked as bends: a bend whose inner and outer "
-            "radii are not concentric, or not a bend (measurements.unrecognised_bend_faces)"
+            f"{count} bend-like faces not evaluated ({listed}): no bend radius was checked there (rule sheet.bend_unrecognised)"
         )
 
     # holes against edges and cutouts
@@ -960,6 +1090,11 @@ def check_sheet_metal(
             "sharp_bends": sharp_bends,
             "joints": len(joints),
             "unrecognised_bend_faces": unrecognised,
+            "bend_pairing": {
+                "exact_tolerance_mm": strict_tolerance,
+                "relaxed_tolerance_mm": BEND_RELAXED_AXIS_MM,
+                "bends": bend_pairing,
+            },
             "holes_checked_against_edges": holes_checked,
             "off_thickness_faces": len(off),
         }
@@ -1033,11 +1168,13 @@ def run(
 
 __all__ = [
     "AXES",
+    "DEFAULT_TOOL_AXIS",
     "LIMIT_DEFAULTS",
     "MAX_FACES",
     "MAX_FACE_IDS_LISTED",
     "NOT_PERFORMED",
     "PROCESSES",
+    "TOOL_AXIS_DEFAULTED_WARNING",
     "Finding",
     "Report",
     "all_face_ids",
@@ -1046,5 +1183,6 @@ __all__ = [
     "parse_limits",
     "require_closed_solids",
     "run",
+    "summarise",
     "unsupported_process",
 ]

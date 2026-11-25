@@ -1,0 +1,166 @@
+{
+ "id": "S2_roof_truss_wind_uplift",
+ "verdict": "PASS",
+ "one_line": "Asked before computing, then every member force (snow and wind, eave joints included), the Euler loads, the governing case (wind uplift), the failing diagonal under his factor 2 and a passing fix (L50x50x6, SF 2.24) are right in 3 turns; remaining faults are a wrong opening sentence 'wind is not stronger than snow', a chart title that contradicts its data, no hold-down/reaction figure for the governing uplift case, and no L60x60x6 suggestion.",
+ "vs_round2": "PARTIAL -> PASS. Round 2: wind bottom-chord forces 8-14 % too high (eave joints unloaded), no reactions, 'below 100 %' said before the factor was known, a full unit-load run before asking, chart never reached the person, 5 turns. Round 3: bottom chord -13.54 / -7.59 kN exact, load totals cross-checked against the tool's load check, no calculation before the layout/loads/criterion were in (turn 1 asked and refused to fill in numbers), SF 1.90 'does not meet your 2' in the first computed answer, bar chart PNG produced with correct data, 3 turns instead of 5. New faults: the 'wind is not stronger' sentence, the chart title, no reaction figure.",
+ "goal_met": true,
+ "turns": 3,
+ "holdout": false,
+ "new_checks": {
+  "picture_seen": "The PNG exists in rendered/ (the harness lists it to the person) and its full path was given in words in turn 3 together with a description of the colours and bars. The tool result carried an inline image block (re-verified in-process: plot_bar returns ['text','image'] for a valid call; PNG 104 kB < 600 kB). The person's closing line says 'the bar chart is given' but does not describe it, so whether he looked at it is unverified. The assistant described the bars from its own input numbers and did not say it had looked at the picture.",
+  "domain_skill_before_first_tool": "Yes. Turn 2: Skill eng-toolkit:eng-structural-check and eng-toolkit:eng-toolkit before the first tool call; turn 1 used no tool. eng-plot-results was not loaded; the chart still came out acceptable. The structural skill's sentences helped directly (polygon + principal I2 for an angle, 'ask which safety factor', 'resolve normal pressure into Fx and Fy', 'load the eave joints too', 'compare load totals'). No skill sentence misled it. The first plot_bar call used a non-existent parameter 'grouping' (refused, unexpected_keyword_argument) and was repeated with 'stacking': harmless.",
+  "ask_before_computing": "Yes, correctly. Turn 1 listed what was missing (loads, layout, purlins, steel) and ran no tool and used no placeholder value. Slightly heavy for a non-engineer (6 items, wind coefficients) but the persona answered everything in one turn. Recalled values were labelled: angle sections are built as polygons and called idealised (no root radius, 'not checked against the table'); E and fy came from the person; 'my arithmetic' tags on hand numbers.",
+  "false_pass": "None. The item that could have been a false pass (the diagonal with the weak axis) was done with Imin 4.59e4 mm^4, so SF 1.90 'does not meet your 2'. L50x50x6 at SF 2.24 is a correct pass of his rule (about 0.89 utilisation) with a thin margin that the assistant itself pointed out; it offered L60x60x5 for more margin."
+ },
+ "answers": [
+  {
+   "item": "snow+dead: all members",
+   "truth": "top -25.445, bottom +23.625 / +15.75, diagonals +10.085, verticals -6.3 / 0 kN",
+   "assistant_said": "-25.44, +23.62 / +15.75, +10.08, -6.30 / 0 (turn 2 table)",
+   "result": "right"
+  },
+  {
+   "item": "wind+dead: diagonals B1-T2 / B3-T2",
+   "truth": "-7.626 kN",
+   "assistant_said": "-7.63 kN (joint loads t1 -2.16/3.9, t2 0/3.9, t3 2.16/3.9, n1 -1.08/1.95, n5 1.08/1.95 kN)",
+   "result": "right"
+  },
+  {
+   "item": "wind+dead: top chord, verticals",
+   "truth": "+15.75 / +18.08, +4.76 kN",
+   "assistant_said": "+15.75 / +18.08, +4.76",
+   "result": "right"
+  },
+  {
+   "item": "wind+dead: bottom chord",
+   "truth": "-13.545 end, -7.59 middle kN",
+   "assistant_said": "-13.54 / -7.59",
+   "result": "right"
+  },
+  {
+   "item": "reactions / uplift anchor force",
+   "truth": "snow 12.6 kN up each end; wind 7.8 kN down (hold-down) each end",
+   "assistant_said": "12.6 kN appears only inside a joint-equilibrium check for the snow case; the net wind hold-down force was never stated",
+   "result": "missing"
+  },
+  {
+   "item": "Euler loads L50x50x5 diagonal / L80x80x8 top / L60x60x6 bottom",
+   "truth": "14.27 / 132.0 / 49.0 kN",
+   "assistant_said": "14.50 / 134.3 / 49.31 kN (polygon Imin, sharp corners)",
+   "result": "right"
+  },
+  {
+   "item": "governing case and critical member",
+   "truth": "wind uplift; diagonals B1-T2 / B3-T2",
+   "assistant_said": "turn 2: diagonals d1, d2 under dead + wind; turn 3 opens 'wind is not stronger than snow' but then explains that wind uplift turns the diagonals into compression and buckling governs",
+   "result": "right"
+  },
+  {
+   "item": "utilisation of the diagonal with his factor 2",
+   "truth": "1.07, FAILS",
+   "assistant_said": "SF 1.90 vs his 2: 'does not meet the requirement' (utilisation 2/1.90 = 1.05)",
+   "result": "right"
+  },
+  {
+   "item": "fix and bottom chord",
+   "truth": "L60x60x6 gives 0.51; bottom chord OK (0.55)",
+   "assistant_said": "L50x50x6 SF 2.24 passes, L60x60x5 SF 3.34 more margin; bottom chord SF 3.64 OK",
+   "result": "right"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "Ix instead of minor principal Iv for the angle",
+   "caught": true
+  },
+  {
+   "trap": "snow governs because 0.8 > 0.65",
+   "caught": true
+  },
+  {
+   "trap": "top chord (largest force) is the critical member",
+   "caught": true
+  },
+  {
+   "trap": "wind normal to the slope resolved into Fx and Fy",
+   "caught": true
+  },
+  {
+   "trap": "eave joints carry half a panel of the wind load",
+   "caught": true
+  },
+  {
+   "trap": "pinned ends K = 1, Euler with his factor 2",
+   "caught": true
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 3 opens with the bold sentence 'wind is not stronger than snow'. The person asked 'is wind worse than snow?'; for the governing check the true answer is yes (wind uplift makes the diagonals buckle at SF 1.90 while snow leaves everything above 2). The text under it explains this correctly and the person's closing line shows he got the right message, but the headline contradicts turn 2.",
+   "severity": "medium"
+  },
+  {
+   "issue": "The chart title says wind suction makes the DIAGONAL the most compressed member, but the plotted bars show the bottom-chord end panels at -14 kN, larger than the diagonals at -7.6 kN. The assistant meant 'buckling-critical'. A reader of the chart alone is misled.",
+   "severity": "medium"
+  },
+  {
+   "issue": "Recalled or idealised values were labelled (no root radius, not checked against the angle table, single-angle eccentricity not included, unreviewed). Load factors not applied, as he asked. No claim of a check that was not run.",
+   "severity": "low"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T171612Z-303bc18a-plot_bar_plot.png",
+   "score": 2,
+   "notes": "Grouped bars of the 13 members, dead+snow (solid blue) vs dead+wind (dashed orange), signed kN, zero line, legend, readable CJK, value labels at 2 significant figures (-14 for -13.54, 24 for 23.6). Data match the truth for all 26 bars including the wind bottom chord. Weaknesses: the title is wrong about which member is most compressed under wind; categories are 'top chord 1..4 / diagonal 1,2' that the person must map from a note in the x label; no reference line for the Euler limit; 2-digit labels lose the small differences. Good enough to look at, not to paste in a report without fixing the title."
+  }
+ ],
+ "problems": [
+  {
+   "id": "S2-1",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "The opening sentence of turn 3 answers the person's question the wrong way round.",
+   "evidence": "'風不是比雪更強。' after the person asked '風比雪還嚴重？' and after turn 2 had said the dead+wind case controls (SF 1.90 vs all >= 2 for snow).",
+   "fix": "eng-structural-check/SKILL.md reporting section: 'when the person's belief was that case A governs and case B does, say so in the first sentence in the same yes/no form as the question'."
+  },
+  {
+   "id": "S2-2",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "The chart title states a conclusion the bars contradict.",
+   "evidence": "plot_bar title '雪載使上弦受壓最大；風吸力使斜桿受壓最大' while the orange bottom-chord bars are -14 kN against -7.6 kN for the diagonals.",
+   "fix": "eng-plot-results/SKILL.md: 'a chart title says what the plotted numbers show (largest compression), not the design conclusion (buckling-critical); check it against the series before the call'."
+  },
+  {
+   "id": "S2-3",
+   "kind": "skill_gap",
+   "severity": "low",
+   "what": "For a roof under typhoon suction the person never got the hold-down (anchor uplift) force although the tool prints reactions.",
+   "evidence": "Reactions are stated only for the snow case (12.6 kN) inside a hand check; the wind case (7.8 kN downward per support) is in no answer.",
+   "fix": "eng-structural-check/SKILL.md reporting section: 'give the support reactions of the governing case; for uplift say hold-down force and direction'."
+  },
+  {
+   "id": "S2-4",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "No angle (L) section in structures_section: the assistant builds a sharp-corner polygon, giving Euler loads 1.6 % above the catalogue (14.50 vs 14.27 kN). Harmless here, but the skill's 'polygon + principal_I2' path must be remembered each time.",
+   "evidence": "structures_section polygon '0 mm,0 mm;50 mm,0 mm;50 mm,5 mm;5 mm,5 mm;5 mm,50 mm;0 mm,50 mm' -> Imin 4.589e4 mm^4 (catalogue about 4.5e4).",
+   "fix": "Optional: structures_section shape 'angle' with root radius, returning principal I1/I2 and the axis angle."
+  },
+  {
+   "id": "S2-5",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "plot_bar refuses a 'grouping' parameter; the first call in turn 3 was wasted (the second, with 'stacking', worked).",
+   "evidence": "In-process: plot_bar {'mode':'bar','series':...,'grouping':'grouped'} -> ok false, input.invalid, unexpected_keyword_argument; with 'stacking':'grouped' -> text + image.",
+   "fix": "plot_bar: accept 'grouping' as an alias of 'stacking', or start the description with 'stacking: grouped|stacked'."
+  }
+ ],
+ "what_worked": [
+  "Refused to compute until layout, loads and criterion were in, said what it would do with them, and used no placeholder numbers: the ask-first rule worked.",
+  "Eave joints loaded and the totals compared with the tool's load check; every force matches the independent script to 0.01 kN in both cases.",
+  "Correct weak-axis section from a polygon and principal I2, K = 1 Euler, his factor 2 applied as written, verdict 'does not meet the requirement' with the cause (buckling, not yield: 16 MPa vs 235).",
+  "The fix was computed with the tool for two sizes, noting that member forces do not change for a statically determinate truss."
+ ]
+}

@@ -11,7 +11,7 @@ from ._server import server
 from ._sn import FIT_METHODS, RELIABILITY, SURFACES, correction, curve, sn_points
 
 
-@server.tool(description="Basquin S-N fit or Shigley steel estimate with Marin factors; Goodman, Gerber, Soderberg, Morrow, SWT or Walker mean stress and proportional-load safety. Peterson/Neuber notch sensitivity. Uniaxial elastic fatigue; runouts excluded; compressive mean benefit omitted.")
+@server.tool(description="Basquin S-N fit or Shigley steel estimate with Marin factors; Goodman, Gerber, Soderberg, Morrow, SWT or Walker mean stress and proportional-load safety. Peterson/Neuber notch sensitivity. Uniaxial elastic fatigue; runouts excluded; compressive mean benefit omitted. Safety factors assume PROPORTIONAL loading (mean and alternating grow together): NOT valid for preloaded bolts, where the mean is fixed.")
 def sn(
     mode: Annotated[str, Field(description="fit, curve, estimate, correction or notch; choose the source of the stress-life calculation.")] = "fit",
     points: Annotated[str, Field(description="Fit records 'stress,cycles[,failure|runout]', e.g. '400 MPa,1000'; ;/newline separators, <=2000; '' omits.")] = "",
@@ -48,7 +48,7 @@ def sn(
                     "Marin": "Se=ka*kb*kc*kd*ke*min(.5*Su,700 MPa); anchors (f*S,1e3),(Se,1e6): bending .9Su, axial .75Su, torsion .9Ssu, Ssu=.67Su default",
                     "mean_stress": "Goodman Sa/(1-Sm/Su); Gerber Sa/(1-(Sm/Su)^2); Soderberg Sy; Morrow sigma_f'; SWT sqrt(Sa*Smax); Walker Sa^gamma*Smax^(1-gamma); torsion estimate uses Ssu and Ssy=.577Sy",
                     "notch": "Peterson q=1/(1+a/r); Neuber q=1/(1+sqrt(a_N/r)); Kf=1+q*(Kt-1)"},
-                   "Uniaxial constant amplitude, tensile sign positive. Mean compression clamped to zero. Safety scales mean and amplitude together. Cycles N, not reversals.",
+                   "Uniaxial constant amplitude, tensile sign positive. Mean compression clamped to zero. The safety factor assumes proportional loading: mean and alternating stress scale together along a load line through the origin. It is NOT valid where the mean stays fixed and only the alternating part grows (a preloaded bolt, a pressure-vessel cover): the factor is then far too conservative. Cycles N, not reversals.",
                    "Steel estimates Su=400..2000 MPa, N>=1000; measured fits may extrapolate with warning. Elastic peak must not exceed supplied yield. No statistical design allowables.")
         corr = correction(mean_method, ultimate_strength, yield_strength, fatigue_strength_coefficient, walker_gamma)
         sa = q(alternating_stress, "alternating_stress", "stress", optional=True)
@@ -168,8 +168,9 @@ def sn(
             r.warnings.append("Empirical steel estimate; the 1000-cycle anchor (bending .9 Su, axial .75 Su, torsion .9 Ssu) is approximate. "
                               "Torsion uses shear amplitudes, kc=.59, Ssu and Ssy=.577 Sy, not von Mises stresses.")
         else:
-            if points or basquin_a or knee is not None or life is not None:
-                invalid("mode", "correction mode accepts endurance as safety strength, not a curve or cycles")
+            for name, given in (("points", points), ("basquin_a", basquin_a), ("knee_cycles", knee is not None), ("cycles", life is not None)):
+                if given:
+                    invalid(name, f"drop '{name}' in correction mode (it takes the endurance as the safety strength, no curve or life), or use mode=curve, fit or estimate")
             if sa is None:
                 invalid("alternating_stress", "correction mode needs an amplitude", "input.missing")
         if kind != "estimate" and (diameter or size_factor or surface_finish != "polished" or load_type != "bending" or temperature_factor != 1 or reliability != 50):
@@ -209,6 +210,15 @@ def sn(
                 strength = se
             if strength is not None:
                 r.add("safety_factor", corr.safety(kf * sa, kval * sm, strength))
+                if kind == "correction" or sm > 0:
+                    text = (
+                        "The safety factor assumes proportional loading: mean and alternating stress grow together along a load line through the origin. "
+                        "It is NOT valid when the mean stays fixed and only the alternating part grows, as in a preloaded bolt (mean = preload stress): "
+                        "the factor is then far too conservative (for a bolt it can be several times too low). Use the preloaded-bolt form with the constant preload."
+                    )
+                    if sa > 0 and sm > 20 * sa:
+                        text += f" Here the mean is {sm / sa:.3g} times the amplitude, the pattern of a preloaded joint."
+                    r.warnings.append(text)
             if corr.yield_strength is None:
                 r.warnings.append("Yield strength omitted; elastic peak validity was not checked.")
         if sm < 0:

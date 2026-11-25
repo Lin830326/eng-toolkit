@@ -199,24 +199,28 @@ async def test_gerbers_come_as_files_with_their_hashes_and_one_zip():
     r = await call("pcb_export", board_path=fixture("clean.kicad_pcb"), export="gerbers", layers="F.Cu,B.Cu,Edge.Cuts")
     assert r.ok, r.error
     names = sorted(f["name"] for f in r.data["files"])
-    assert names == ["board-B_Cu.gbl", "board-Edge_Cuts.gm1", "board-F_Cu.gtl", "board-job.gbrjob", "gerbers.zip"]
+    # round 3: the files carry the board's own name (clean.kicad_pcb -> clean-*), the Excellon drill file is in the set, the zip has the name too
+    assert names == sorted(["clean-B_Cu.gbl", "clean-Edge_Cuts.gm1", "clean-F_Cu.gtl", "clean-job.gbrjob", "clean.drl", "clean-gerbers.zip"])
     by_path = {Path(a.path).name: a for a in r.artifacts}
     for f in r.data["files"]:
         raw = Path(by_path[f["name"]].path).read_bytes()
         assert f["bytes"] == len(raw) and f["sha256"] == hashlib.sha256(raw).hexdigest() == by_path[f["name"]].sha256
-    with zipfile.ZipFile(io.BytesIO(Path(by_path["gerbers.zip"].path).read_bytes())) as archive:
-        assert sorted(archive.namelist()) == names[:4]
+    with zipfile.ZipFile(io.BytesIO(Path(by_path["clean-gerbers.zip"].path).read_bytes())) as archive:
+        assert sorted(archive.namelist()) == sorted(n for n in names if n != "clean-gerbers.zip")  # layers, job file AND the drill file
         assert archive.testzip() is None
     # the copper layer is a Gerber file: X2 header and the end-of-file code
-    top = Path(by_path["board-F_Cu.gtl"].path).read_text(encoding="utf-8")
+    top = Path(by_path["clean-F_Cu.gtl"].path).read_text(encoding="utf-8")
     assert top.startswith("%TF.GenerationSoftware,KiCad") and top.rstrip().endswith("M02*")
-    assert v(r, "file_count") == 4
+    assert v(r, "file_count") == 5
+    assert r.data["board_name"] == "clean" and r.data["package"]["zip"] == "clean-gerbers.zip"
+    # the board's own name is also the project id inside the files, so a fabricator sees it
+    assert "%TF.ProjectId,clean," in top
 
 
 async def test_the_default_gerber_set_is_every_copper_mask_silk_paste_and_edge_layer():
     r = await call("pcb_export", board_path=fixture("clean.kicad_pcb"), export="gerbers")
-    # 2 copper + mask, silk, paste on both sides = 8, + Edge.Cuts = 9, + the job file = 10 files (the zip is the 11th item of data.files)
-    assert v(r, "file_count") == 10 and len(r.data["files"]) == 11
+    # 2 copper + mask, silk, paste on both sides = 8, + Edge.Cuts = 9, + the job file + the drill file = 11 files (the zip is the 12th item of data.files)
+    assert v(r, "file_count") == 11 and len(r.data["files"]) == 12
     assert sorted(r.data["layers"]) == sorted(["F.Cu", "B.Cu", "B.Paste", "F.Paste", "B.SilkS", "F.SilkS", "B.Mask", "F.Mask", "Edge.Cuts"])
 
 
@@ -224,7 +228,7 @@ async def test_drill_file_lists_the_via_and_the_through_hole_pad():
     r = await call("pcb_export", board_path=fixture("clean.kicad_pcb"), export="drill")
     assert r.ok, r.error
     (f,) = r.data["files"]
-    raw = Path(next(a.path for a in r.artifacts if a.path.endswith("board.drl"))).read_bytes()
+    raw = Path(next(a.path for a in r.artifacts if a.path.endswith("clean.drl"))).read_bytes()
     text = raw.decode("utf-8")
     # via drill 0.4 at (10,16) and pad drill 0.6 at (15,16); an Excellon file has y pointing up, so -16
     assert "T1C0.400" in text and "T2C0.600" in text
@@ -246,9 +250,9 @@ async def test_position_file_agrees_with_our_own_reader():
 async def test_pdf_and_svg_are_single_files_of_the_chosen_layers():
     pdf = await call("pcb_export", board_path=fixture("clean.kicad_pcb"), export="pdf", layers="F.Cu,Edge.Cuts")
     assert pdf.ok, pdf.error
-    assert Path(next(a.path for a in pdf.artifacts if a.path.endswith("board.pdf"))).read_bytes().startswith(b"%PDF-")
+    assert Path(next(a.path for a in pdf.artifacts if a.path.endswith("clean.pdf"))).read_bytes().startswith(b"%PDF-")
     svg = await call("pcb_export", board_path=fixture("clean.kicad_pcb"), export="svg", layers="Edge.Cuts")
-    text = Path(next(a.path for a in svg.artifacts if a.path.endswith("board.svg"))).read_text(encoding="utf-8")
+    text = Path(next(a.path for a in svg.artifacts if a.path.endswith("clean.svg"))).read_text(encoding="utf-8")
     assert "<svg" in text
     assert pdf.data["layers"] == ["F.Cu", "Edge.Cuts"] and svg.data["layers"] == ["Edge.Cuts"]
 

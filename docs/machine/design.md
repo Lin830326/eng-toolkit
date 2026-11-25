@@ -10,6 +10,17 @@ Each computed result includes formulas, assumptions and validity in `data`. An u
 
 ## `machine_shaft`
 
+**Round 3 (judge M1-12): which loads the static block uses.** The static block (`bending_stress`, `torsional_shear`, `von_mises`,
+`static_safety_factor`, `worst_fibre_*`) is built from `bending_moment`, `torque` and `axial_force`. With only alternating and mean loads it used to be
+all zero (no safety factor), and beside an explicit `torque` it left the alternating bending out of the yield check (4.08 reported for d = 60 mm,
+523 N*m alternating bending and 848 N*m torque, against 3.52 at the maximum load). Now: (a) when none of the three static loads is given, the static
+block takes the maximum of the fatigue loads, bending `|mean_bending| + alternating_bending` and torque `|mean_torque| + alternating_torque` (sign of the mean dropped,
+the two peak together: conservative), says so in `data.static_load_basis` and in a warning; (b) when static loads are given they are used alone, and with fatigue loads
+too the extra values `peak_von_mises` and `peak_safety_factor` give the yield check at the maximum fatigue load (warning, because passing the same torque twice
+is a common mistake); (c) `kt` and `kts` multiply the static stresses (that is the tool's definition), and a warning says that for a ductile steel at yield they
+are usually left at 1 (`kf`, `kfs` act on the fatigue stresses only): the judge's nominal static von Mises of 41.6 MPa is the `kt = kts = 1` value. The fatigue block
+is unchanged. Tests: `tests/test_machine_round3.py`.
+
 Inputs describe a solid shaft or concentric hollow shaft. `bending_moment`, `torque` and `axial_force` default to zero; at least one static or explicit fatigue load must be nonzero. `inner_diameter` defaults to zero. Let d and di be the outer and inner diameters.
 
 The elementary section formulas are
@@ -71,7 +82,9 @@ When both length L and shear modulus G are supplied, `theta=T L/(G J)`, `J=pi(d^
 
 ## `machine_gear`
 
-This tool models external, unshifted, full-depth involute spur gears. Give module m or diametral pitch Pd, exactly one, with `m=1/Pd` in consistent units. Tooth counts N1,N2 and face width F are required. The input gear is gear 1; speed is its rotational speed. Supply torque or power and speed for loading. Torque and power together are refused. Geometry alone is supported.
+This tool models external, unshifted, full-depth involute spur gears. It has no helix angle and returns `d = m N`; for a helical gear the caller passes the
+transverse module `m_n/cos(beta)` (71 teeth, m_n = 4 mm, beta = 15 degrees: d = 294.0 mm). Judge M1-9's 284 mm instead of 294 mm was the assistant's own arithmetic, not the tool,
+and the tool description now says so (tested by giving the transverse module). Give module m or diametral pitch Pd, exactly one, with `m=1/Pd` in consistent units. Tooth counts N1,N2 and face width F are required. The input gear is gear 1; speed is its rotational speed. Supply torque or power and speed for loading. Torque and power together are refused. Geometry alone is supported.
 
 ```
 di = m Ni; C = (d1+d2)/2; dbi = di cos(phi)

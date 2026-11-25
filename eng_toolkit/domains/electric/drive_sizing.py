@@ -8,7 +8,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from eng_toolkit.domains.electric._common import Result, choice, fields, invalid, number, q, records, run
+from eng_toolkit.domains.electric._common import Result, choice, count, fields, invalid, number, q, records, run
 from eng_toolkit.domains.electric._server import server
 
 
@@ -63,14 +63,15 @@ def _statistics(segments, rotor):
             "regenerative_energy": regenerated, "net_shaft_energy": energy, "rows": rows}
 
 
-@server.tool(name="drive_sizing", description="Chapman/Fitzgerald rigid-body power-balance sizing for rotary, direct, belt, rack and screw drives. Piecewise linear load speed and constant external effort; exact RMS torque/power, gear losses, regeneration and candidate margin CSVs. Constant efficiency and friction; no elastic motion, jerk, inverter losses, cooling dynamics or rating certification. All results are unreviewed.")
+@server.tool(name="drive_sizing", description="Chapman/Fitzgerald rigid-body power-balance sizing for rotary, direct, belt, rack and screw drives. Piecewise linear load speed and constant external effort; the distance shortcut models strokes_per_cycle strokes (default 1) per cycle_time, so an out-and-back axis needs 2; exact RMS torque/power, gear losses, regeneration and candidate margin CSVs. Constant efficiency and friction; no elastic motion, jerk, inverter losses, cooling dynamics or rating certification. All results are unreviewed.")
 def drive_sizing(
     model: Annotated[str, Field(description="Transmission model: rotary, direct, belt, rack, or screw; direct is unity-ratio rotary drive.")] = "rotary",
     profile: Annotated[str, Field(description="Up to 100 duration,start/end load speed,load effort rows; e.g. 1 s,0 rad/s,2 rad/s,1 N*m; linear uses m/s and N.")] = "",
     distance: Annotated[str, Field(description="Signed generated move, e.g. 2 rad for rotary/direct or 1 m for linear models; exclusive with profile.")] = "",
     move_time: Annotated[str, Field(description="All models: rest-to-rest move duration, e.g. 2 s; required with distance.")] = "",
     acceleration_time: Annotated[str, Field(description="All models: symmetric acceleration/deceleration time, e.g. 0.5 s; blank gives a triangle with half the move time.")] = "",
-    cycle_time: Annotated[str, Field(description="With distance: repeat period, e.g. 4 s (>= move_time); the rest is a zero-speed dwell so RMS covers the cycle. Blank: move only.")] = "",
+    cycle_time: Annotated[str, Field(description="With distance: repeat period, e.g. 4 s (>= strokes_per_cycle*move_time); rest is a zero-speed dwell after each stroke. Blank: no dwell.")] = "",
+    strokes_per_cycle: Annotated[int, Field(description="With distance: strokes in one cycle_time, 1..4; 2 = out and back (return mirrors speed and load). Default 1: one stroke.")] = 1,
     dwell_load: Annotated[str, Field(description="With cycle_time: signed external effort held in the dwell, e.g. 2 N*m; default zero (linear gravity always acts).")] = "",
     load_torque: Annotated[str, Field(description="Rotary/direct signed external torque for generated motion, e.g. 2 N*m; not allowed with profile.")] = "",
     load_force: Annotated[str, Field(description="Linear models: signed external force for generated motion, e.g. 50 N; not allowed with profile.")] = "",
@@ -127,11 +128,14 @@ def drive_sizing(
         gravity = inertia*9.80665*math.sin(angle) if linear else 0.0
         profile_rows = records(profile, "profile")
         motion = []
+        strokes, cycle, stroke_time = 1, None, 0.0
         if profile_rows:
             for name, value in (("distance", distance), ("move_time", move_time), ("acceleration_time", acceleration_time),
                                 ("cycle_time", cycle_time), ("dwell_load", dwell_load), ("load_torque", load_torque), ("load_force", load_force)):
                 if value:
                     invalid(name, "explicit profile and generated-motion inputs are mutually exclusive")
+            if strokes_per_cycle != 1:
+                invalid("strokes_per_cycle", "explicit profile and generated-motion inputs are mutually exclusive: write every stroke as profile rows")
             for index, row in enumerate(profile_rows):
                 prefix = f"profile/{index}"
                 fields(row, (4,), prefix)
@@ -154,19 +158,25 @@ def drive_sizing(
             top = travel/(duration-ramp)
             if abs(top) > 1e9:
                 invalid("move_time", "generated speed exceeds the supported range", "input.out_of_range")
-            motion.append((ramp, 0.0, top, load))
-            if duration > 2*ramp:
-                motion.append((duration-2*ramp, top, top, load))
-            motion.append((ramp, top, 0.0, load))
+            stroke_time = duration
+            strokes = count(strokes_per_cycle, "strokes_per_cycle", 1, 4)
             cycle = q(cycle_time, "cycle_time", "s", optional=True, lo=1e-9, hi=1e9)
             held = q(dwell_load, "dwell_load", effort_unit, zero=True, signed=True, optional=True, hi=1e12)
             if cycle is None and held is not None:
                 invalid("dwell_load", "dwell_load needs cycle_time")
+            dwell = 0.0
             if cycle is not None:
-                if cycle < duration*(1-1e-12):
-                    invalid("cycle_time", "cycle_time cannot be shorter than move_time", "input.out_of_range")
-                dwell = cycle-duration
-                if dwell > 1e-12*cycle:
+                if cycle < strokes*duration*(1-1e-12):
+                    invalid("cycle_time", "cycle_time cannot be shorter than strokes_per_cycle*move_time", "input.out_of_range")
+                dwell = (cycle-strokes*duration)/strokes
+            for stroke in range(strokes):
+                # The return stroke mirrors the first: speed and the external load (which resists travel) change sign; gravity does not.
+                sign = 1.0 if stroke % 2 == 0 else -1.0
+                motion.append((ramp, 0.0, sign*top, sign*load))
+                if duration > 2*ramp:
+                    motion.append((duration-2*ramp, sign*top, sign*top, sign*load))
+                motion.append((ramp, sign*top, 0.0, sign*load))
+                if dwell > 1e-12*(cycle or 1.0):
                     motion.append((dwell, 0.0, 0.0, held or 0.0))
         # Split at velocity and load-side power sign changes so gear efficiency
         # and Coulomb friction are constant within each exact polynomial segment.
@@ -216,6 +226,25 @@ def drive_sizing(
                                    "otherwise the RMS torque compared with the continuous rating is too high.")
         if not profile_rows and cycle_time:
             result.add("cycle_time", with_rotor["duration"], "s")
+        if not profile_rows:
+            period = with_rotor["duration"]
+            active = strokes*stroke_time
+            result.data["cycle"] = {"strokes_per_cycle": strokes, "move_time_s": stroke_time, "active_time_s": active,
+                                    "dwell_per_stroke_s": (period-active)/strokes, "period_s": period,
+                                    "active_fraction": active/period}
+            result.add("cycle_active_fraction", active/period)
+            result.data["assumptions"].append(
+                f"The RMS torque covers {strokes} stroke(s) of {stroke_time:.6g} s per period of {period:.6g} s ({active/period:.0%} moving, "
+                f"the rest at rest); strokes alternate direction, the return stroke mirrors speed and external load. Set strokes_per_cycle "
+                "for the real number of strokes, or give an explicit profile.")
+            if strokes == 1:
+                result.warnings.append(
+                    f"RMS covers 1 stroke per {'cycle_time of ' if cycle_time else 'move of '}{period:.6g} s; if the axis returns "
+                    "(out and back), set strokes_per_cycle=2 or give an explicit profile, otherwise the RMS torque is too low by up to sqrt(2).")
+            else:
+                result.warnings.append(
+                    f"RMS covers {strokes} strokes per cycle_time of {period:.6g} s (alternating direction, mirrored return); "
+                    "if the real cycle differs, change strokes_per_cycle or give an explicit profile.")
         for suffix, stats in (("without_rotor", without), ("with_rotor", with_rotor)):
             for key in ("peak_torque", "rms_torque", "peak_power", "rms_power", "regenerative_energy", "net_shaft_energy"):
                 unit = "N*m" if "torque" in key else "W" if "power" in key else "J"
@@ -315,6 +344,19 @@ def drive_sizing(
                                            rated_speed-segment_speed, max_speed-segment_speed,
                                            candidate_table[-1]["status"]])
         result.data["candidates"] = candidate_table
+        if not profile_rows:
+            thin = []
+            if rated is not None and 0 <= (rated-with_rotor["rms_torque"])/rated < 0.3:
+                thin.append(f"rated_torque ({(rated-with_rotor['rms_torque'])/rated:.0%})")
+            for row in candidate_table:
+                fraction = row["rated_torque_margin_N_m"]/(row["rms_torque_N_m"]+row["rated_torque_margin_N_m"])
+                if row["status"].startswith("pass") and 0 <= fraction < 0.3:
+                    thin.append(f"candidate {row['name']} ({fraction:.0%})")
+            if thin:
+                result.warnings.append(
+                    "Pass with RMS torque margin below 30 %: " + ", ".join(thin) + ". The margin depends on the stroke assumption "
+                    f"({strokes} stroke(s) per period of {with_rotor['duration']:.6g} s, {active/period:.0%} moving) and on the stated friction, efficiency and inertia: "
+                    "confirm the stroke count and cycle before calling it a pass.")
         result.data["candidate_speed_note"] = "A candidate fails when the RMS torque exceeds its continuous torque, the peak torque exceeds its maximum torque or the peak speed exceeds its maximum speed. Peak speed above the rated speed but within the maximum speed passes with a warning (the rated-speed margin is negative): the continuous torque derates there, so check the datasheet torque-speed curve; field-weakening power curves are not inferred."
         if candidate_table:
             headers = list(candidate_table[0])

@@ -11,7 +11,7 @@ from eng_toolkit.domains.structures._model import parse_nodes, reference, solve_
 from eng_toolkit.domains.structures._server import server
 
 
-@server.tool(description="2D/3D pin-jointed truss direct stiffness, thermal initial strain, nodal displacement/reactions, axial tension/compression, stress and elongation. Reports equilibrium residual and refuses mechanisms. Optional member I gives pinned Euler load. Linear small displacement, axial bars only; <=200 nodes/400 members.")
+@server.tool(description="2D/3D pin-jointed truss direct stiffness, thermal initial strain, nodal displacement/reactions, axial tension/compression, stress and elongation. Reports equilibrium residual and refuses mechanisms. Optional member I gives pinned Euler load. data.applied_total_fx/fy and loaded_nodes show the joint loads summed: compare with your hand total. Linear small displacement, axial bars only; <=200 nodes/400 members.")
 def truss(
     nodes: Annotated[str, Field(description="Required nodes 'id,x,y[,z]' with lengths, e.g. 'a,0 m,0 m;b,2 m,0 m'; <=200, semicolon/newline separators.")] = "",
     members: Annotated[str, Field(description="Required bars 'id,node_i,node_j,E,A[,I]', e.g. 'e,a,b,200 GPa,100 mm^2'; I enables Euler compression checks; <=400.")] = "",
@@ -124,6 +124,12 @@ def truss(
                     r.warnings.append(f"Member {name} exceeds its ideal Euler compression load.")
             r.data["members"].append(entry)
         applied = (external+reactions).reshape(-1,dim)
+        totals,reaction_totals = external.reshape(-1,dim).sum(axis=0),reactions.reshape(-1,dim).sum(axis=0)
+        for axis,total,reaction_total in zip("xyz"[:dim],totals,reaction_totals):
+            r.data["applied_total_f"+axis] = r.quantity(float(total),"force")
+            r.data["reaction_total_f"+axis] = r.quantity(float(reaction_total),"force")
+        r.data["loaded_nodes"] = [name for name,row in zip(ids,external.reshape(-1,dim)) if np.any(row != 0)]
+        r.data["load_check"] = "applied_total_fx/fy/fz are the sums of the joint loads you gave (every joint, supports included); compare them with your hand total: a joint left out of 'loads' shows here and in loaded_nodes. Reactions always balance what was applied, so they cannot show a missing load."
         r.data["equilibrium_residual"] = {axis:r.quantity(float(sum(applied[:,i])),"force") for i,axis in enumerate("xyz"[:dim])}
         position = coords-coords[0]
         if dim == 2:

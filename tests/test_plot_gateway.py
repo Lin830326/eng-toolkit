@@ -29,7 +29,8 @@ async def _call(client: Client, tool: str, args: dict, *, expect_ok: bool | None
         assert expect_ok is not True, (tool, result.content)
         return None
     for block in result.content:
-        json.loads(block.text, parse_constant=_no_constants)
+        if block.type == "text":  # the PNG comes back as an extra image block
+            json.loads(block.text, parse_constant=_no_constants)
     parsed = ToolResult.model_validate(result.structured_content)
     assert_finite(result.structured_content)
     assert parsed.review_status == "unreviewed" and parsed.provenance.engine == "eng_toolkit.plot"

@@ -18,6 +18,11 @@ natural convection, Ra = g beta dT L^3 rho^2 Pr / mu^2
 * Churchill-Chu, vertical plate (all Ra):  Nu = {0.825 + 0.387 Ra^(1/6) / [1 + (0.492/Pr)^(9/16)]^(8/27)}^2
 * Churchill-Chu, vertical plate (laminar, Ra < 1e9):  Nu = 0.68 + 0.670 Ra^(1/4) / [1 + (0.492/Pr)^(9/16)]^(4/9)
 * Churchill-Chu, horizontal cylinder:  Nu = {0.60 + 0.387 Ra^(1/6) / [1 + (0.559/Pr)^(9/16)]^(8/27)}^2
+* natural_channel, symmetric isothermal parallel vertical plates (a finned heatsink; Elenbaas 1942, Bar-Cohen & Rohsenow 1984):
+  Nu_S = h S / k = [576 / Ra*^2 + 2.873 / Ra*^(1/2)]^(-1/2),  Ra* = Ra_S S / L,  Ra_S = g beta dT S^3 / (nu alpha),
+  S the gap between the plates, L the length the fluid flows along.  Limits: Ra* -> 0 fully developed Nu = Ra*/24; Ra* large the
+  isolated plate 0.59 Ra*^(1/4).  Optimum gap (most heat from a fixed width): S_opt = 2.714 L / Ra_L^(1/4), Nu_opt = 1.307,
+  Ra_L = g beta dT L^3 / (nu alpha).  Validity range quoted for the formula: 0.1 < Ra* < 1e5 (warned outside it).
 """
 
 from __future__ import annotations
@@ -63,6 +68,7 @@ CORRELATIONS = (
     "natural_vertical_plate",
     "natural_vertical_plate_laminar",
     "natural_horizontal_cylinder",
+    "natural_channel",
 )
 NATURAL = {c for c in CORRELATIONS if c.startswith("natural")}
 
@@ -96,6 +102,16 @@ def churchill_chu_plate_laminar(ra: float, pr: float) -> float:
     return 0.68 + 0.670 * ra**0.25 / (1.0 + (0.492 / pr) ** (9.0 / 16.0)) ** (4.0 / 9.0)
 
 
+def elenbaas_channel_nusselt(ra_star: float) -> float:
+    """Nu_S = h S / k of symmetric isothermal parallel plates (Bar-Cohen & Rohsenow composite) for the modified Rayleigh number Ra*."""
+    return (576.0 / ra_star**2 + 2.873 / math.sqrt(ra_star)) ** -0.5
+
+
+CHANNEL_OPTIMUM_FACTOR = 2.714  # S_opt = 2.714 L / Ra_L^(1/4)
+CHANNEL_OPTIMUM_NUSSELT = 1.307  # Nu_S at S_opt (isothermal plates)
+CHANNEL_RA_STAR_RANGE = (0.1, 1e5)
+
+
 def churchill_chu_cylinder(ra: float, pr: float) -> float:
     return (0.60 + 0.387 * ra ** (1.0 / 6.0) / (1.0 + (0.559 / pr) ** (9.0 / 16.0)) ** (8.0 / 27.0)) ** 2
 
@@ -107,14 +123,15 @@ def churchill_chu_cylinder(ra: float, pr: float) -> float:
         "(no property tables): conductivity, density, dynamic viscosity and cp (or Prandtl number). correlation: "
         "internal_laminar_constant_temperature (Nu 3.66), internal_laminar_constant_flux (4.36), dittus_boelter, gnielinski "
         "(Petukhov friction factor), flat_plate_laminar, flat_plate_mixed, cylinder_cross_flow (Churchill-Bernstein), sphere "
-        "(Whitaker), natural_vertical_plate / natural_vertical_plate_laminar / natural_horizontal_cylinder (Churchill-Chu). "
-        "'length' is the pipe or cylinder or sphere diameter, or the plate length / height. Returns Re (or Ra), Pr, Nu, h "
-        "and warns outside the correlation's stated range."
+        "(Whitaker), natural_vertical_plate / natural_vertical_plate_laminar / natural_horizontal_cylinder (Churchill-Chu), "
+        "natural_channel (finned heatsink: Elenbaas / Bar-Cohen-Rohsenow, needs 'fin_gap', returns h and the optimum gap). "
+        "'length' is the diameter, or the distance the fluid flows along (upright heatsink: the base height, NOT the fin height). "
+        "Returns Re (or Ra), Pr, Nu, h; warns outside the correlation's range."
     ),
 )
 def convection(
-    correlation: Annotated[str, Field(description="One of: internal_laminar_constant_temperature, internal_laminar_constant_flux, dittus_boelter, gnielinski, flat_plate_laminar, flat_plate_mixed, cylinder_cross_flow, sphere, natural_vertical_plate, natural_vertical_plate_laminar, natural_horizontal_cylinder")],
-    length: Annotated[QuantityIn, Field(description="Characteristic length: diameter (pipe, cylinder, sphere) or plate length / height, e.g. '25 mm'")],
+    correlation: Annotated[str, Field(description="One of: internal_laminar_constant_temperature, internal_laminar_constant_flux, dittus_boelter, gnielinski, flat_plate_laminar, flat_plate_mixed, cylinder_cross_flow, sphere, natural_vertical_plate, natural_vertical_plate_laminar, natural_horizontal_cylinder, natural_channel")],
+    length: Annotated[QuantityIn, Field(description="Diameter, or the distance the fluid flows along (upright heatsink: base height, NOT fin height), e.g. '100 mm'")],
     conductivity: Annotated[QuantityIn, Field(description="Fluid thermal conductivity, e.g. '0.026 W/(m*K)'")],
     density: Annotated[QuantityIn, Field(description="Fluid density, e.g. '1.2 kg/m^3'")],
     dynamic_viscosity: Annotated[QuantityIn, Field(description="Fluid dynamic viscosity, e.g. '1.8e-5 Pa*s'")],
@@ -127,9 +144,12 @@ def convection(
     expansion_coefficient: Annotated[str, Field(description="Natural convection: volumetric expansion coefficient beta, e.g. '0.0034 1/K'. Blank = ideal gas, 1/T_film.")] = "",
     viscosity_surface: Annotated[str, Field(description="sphere optional: dynamic viscosity at the surface temperature (Whitaker mu/mu_s), e.g. '1.9e-5 Pa*s'")] = "",
     pipe_length: Annotated[str, Field(description="internal flow optional: pipe length, to check the entry region (L/D), e.g. '3 m'")] = "",
+    fin_gap: Annotated[str, Field(description="natural_channel: clear gap between adjacent fins/plates, e.g. '5 mm'. On a plate correlation it only triggers a warning.")] = "",
+    fin_height: Annotated[str, Field(description="natural_channel optional: fin height off the base (channel depth), e.g. '24 mm'; only used for a validity check")] = "",
     unit_system: UnitSystemIn = "metric",
 ) -> ToolResult:
     inputs = {
+        "fin_gap": fin_gap, "fin_height": fin_height,
         "correlation": correlation, "length": length, "conductivity": conductivity, "density": density,
         "dynamic_viscosity": dynamic_viscosity, "specific_heat": specific_heat, "prandtl": prandtl, "velocity": velocity,
         "heating": heating, "surface_temperature": surface_temperature, "ambient_temperature": ambient_temperature,
@@ -162,6 +182,8 @@ def convection(
         values: dict[str, QuantityOut] = {}
         data: dict[str, Any] = {"correlation": corr}
         re = ra = None
+        h_len = big_l  # the length in h = Nu k / L: the gap for natural_channel
+        gap = depth = None
         if natural:
             if is_blank(surface_temperature) or is_blank(ambient_temperature):
                 raise UnitsError("input.missing", "natural convection needs 'surface_temperature' and 'ambient_temperature'", {"param": "surface_temperature|ambient_temperature"})
@@ -177,12 +199,47 @@ def convection(
             if not is_blank(velocity):
                 warnings.append("'velocity' is not used for natural convection and was ignored")
             d_t = abs(ts - ta)
+            gap = None if is_blank(fin_gap) else positive_quantity(fin_gap, name="fin_gap", dimension="length", unit="m", lo=1e-5, hi=1.0)
+            depth = None if is_blank(fin_height) else positive_quantity(fin_height, name="fin_height", dimension="length", unit="m", lo=1e-5, hi=10.0)
+            if corr == "natural_channel" and gap is None:
+                raise UnitsError("input.missing", "natural_channel needs 'fin_gap' (the clear gap between adjacent fins); 'length' is the flow length", {"param": "fin_gap"})
             gr = GRAVITY * beta * d_t * big_l**3 * rho * rho / (mu * mu)
             ra = gr * pr
             values["grashof"] = plain(gr, label="grashof")
             values["rayleigh"] = plain(ra, label="rayleigh")
             data["rayleigh_definition"] = "Ra = g beta |Ts - Tinf| L^3 rho^2 Pr / mu^2, g = 9.80665 m/s^2"
-            if corr == "natural_vertical_plate":
+            if corr == "natural_channel":
+                # Rayleigh numbers of the gap: Ra_S = Ra (S/L)^3, Ra* = Ra_S S/L = Ra (S/L)^4
+                ra_s = ra * (gap / big_l) ** 3
+                ra_star = ra_s * gap / big_l
+                nu = elenbaas_channel_nusselt(ra_star)
+                h_len = gap
+                s_opt = CHANNEL_OPTIMUM_FACTOR * big_l / ra**0.25
+                values["rayleigh_gap"] = plain(ra_s, label="rayleigh_gap")
+                values["rayleigh_modified"] = plain(ra_star, label="rayleigh_modified")
+                values["optimum_gap"] = out(s_opt, "small_length", units, label="optimum_gap")
+                values["h_at_optimum_gap"] = out(CHANNEL_OPTIMUM_NUSSELT * k / s_opt, "h", units, label="h_at_optimum_gap")
+                data.update(
+                    rayleigh_definition_channel="Ra_S = g beta dT S^3 rho^2 Pr / mu^2 (gap S); Ra* = Ra_S S/L; 'rayleigh' above is based on the flow length L",
+                    formula_channel="Nu_S = h S/k = [576/Ra*^2 + 2.873/Ra*^0.5]^-0.5 (Elenbaas; Bar-Cohen & Rohsenow composite, symmetric isothermal plates)",
+                    h_basis="h is per wetted plate surface (both faces of every fin and the base between fins), referred to Ts - Tinf; Nu_S uses the gap S",
+                    optimum_gap_formula="S_opt = 2.714 L / Ra_L^(1/4), Nu_S = 1.307 there; maximises the heat flow of a fixed-width array of thin fins",
+                    gap_over_optimum=gap / s_opt,
+                    h_isolated_plate_same_length_W_per_m2_K=churchill_chu_plate(ra, pr) * k / big_l,
+                )
+                lo_s, hi_s = CHANNEL_RA_STAR_RANGE
+                if not lo_s <= ra_star <= hi_s:
+                    warnings.append(
+                        f"Ra* = {ra_star:.3g} is outside {lo_s:g} .. {hi_s:g}, the range the Elenbaas / Bar-Cohen-Rohsenow formula is quoted for; "
+                        "the two limits (fully developed channel, isolated plate) still hold but treat the result as an extrapolation"
+                    )
+                if ra > 1e9:
+                    warnings.append(f"Ra_L = {ra:.3g} based on the flow length is above 1e9: the flow turns turbulent, the laminar channel formula does not apply")
+                if depth is not None and depth < gap:
+                    warnings.append(f"fin_height {depth:.4g} m is smaller than the gap {gap:.4g} m: this is not a channel (fins too short), the plate correlation or a 3-D model fits better")
+                if gap < 0.5 * s_opt or gap > 2.0 * s_opt:
+                    warnings.append(f"the gap {gap * 1e3:.3g} mm is {gap / s_opt:.2g} times the optimum {s_opt * 1e3:.3g} mm: more or fewer fins in the same width would move more heat")
+            elif corr == "natural_vertical_plate":
                 nu = churchill_chu_plate(ra, pr)
                 if ra > 1e12:
                     warnings.append(f"Ra = {ra:.3g} is above 1e12, beyond the data behind the Churchill-Chu correlation")
@@ -194,6 +251,20 @@ def convection(
                 nu = churchill_chu_cylinder(ra, pr)
                 if not 1e-5 <= ra <= 1e12:
                     warnings.append(f"Ra = {ra:.3g} is outside 1e-5 .. 1e12, the range of the Churchill-Chu horizontal-cylinder correlation")
+            if corr == "natural_horizontal_cylinder" and (gap is not None or depth is not None):
+                warnings.append("'fin_gap' / 'fin_height' are not used by natural_horizontal_cylinder and were ignored")
+            if corr in ("natural_vertical_plate", "natural_vertical_plate_laminar") and (gap is not None or depth is not None):
+                hint = ""
+                if gap is not None:
+                    h_channel = elenbaas_channel_nusselt(ra * (gap / big_l) ** 4) * k / gap
+                    h_plate = nu * k / big_l
+                    hint = f" The channel formula (natural_channel) gives h = {h_channel:.3g} W/m^2/K at this gap against {h_plate:.3g} here ({h_plate / h_channel:.2g} times higher)."
+                    data["h_channel_for_comparison_W_per_m2_K"] = h_channel
+                warnings.append(
+                    "fin_gap / fin_height was given: this looks like a finned array. The isolated-plate correlation holds only when the boundary layers "
+                    "do not meet (gap above about 2 boundary-layer thicknesses, roughly 10 mm for air near a 100 mm plate); in narrower gaps it overstates h. "
+                    "Use natural_channel with 'length' = the flow length." + hint
+                )
         else:
             if is_blank(velocity):
                 raise UnitsError("input.missing", "forced convection needs 'velocity'", {"param": "velocity"})
@@ -269,12 +340,14 @@ def convection(
                     warnings.append(f"Pr = {pr:.4g} is outside 0.71 .. 380, the Whitaker range")
             if not is_blank(surface_temperature) or not is_blank(ambient_temperature) or not is_blank(expansion_coefficient):
                 warnings.append("temperatures and expansion_coefficient are only used for natural convection and were ignored")
+            if not is_blank(fin_gap) or not is_blank(fin_height):
+                warnings.append("'fin_gap' / 'fin_height' are only used for natural convection and were ignored")
         values["prandtl"] = plain(pr, label="prandtl")
         values["nusselt"] = plain(nu, label="nusselt")
-        h = nu * k / big_l
+        h = nu * k / h_len
         values["h"] = out(h, "h", units, label="h")
         data.update(
-            h_definition="h = Nu k / L",
+            h_definition="h = Nu k / S with the gap S" if corr == "natural_channel" else "h = Nu k / L",
             assumptions=[
                 "fluid properties as given, taken at the temperature the correlation prescribes (film or bulk); no property tables are built in",
                 "smooth surfaces, no radiation, no mass transfer, uniform surface condition as stated by the correlation",
@@ -298,4 +371,4 @@ def convection(
     )
 
 
-__all__ = ["churchill_bernstein", "churchill_chu_cylinder", "churchill_chu_plate", "convection", "dittus_boelter", "gnielinski", "petukhov_friction_factor", "whitaker_sphere"]
+__all__ = ["churchill_bernstein", "churchill_chu_cylinder", "churchill_chu_plate", "convection", "dittus_boelter", "elenbaas_channel_nusselt", "gnielinski", "petukhov_friction_factor", "whitaker_sphere"]

@@ -3,6 +3,8 @@ description: ISO 286 fits, bearing seat fits, tolerance stack-ups, true position
 argument-hint: <mating parts, sizes, fit or chain, limits>
 ---
 
+First load the `eng-tolerancing` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-tolerancing` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this fit or tolerance chain with the eng-toolkit MCP tools:
 
 $ARGUMENTS

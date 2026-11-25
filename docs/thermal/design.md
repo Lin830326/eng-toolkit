@@ -117,6 +117,18 @@ Not covered: tapered, annular, pin-fin arrays with shared tips, base contact res
 
 * `lumped`: `tau = rho V cp/(h As)`, `theta/theta_i = exp(-t/tau)`, Biot with `Lc = V/As`; **warns when Bi >= 0.1** (the result is still returned);
   `time` or `target_temperature` (returns the time). `surface_area` below the surface of a sphere of the same volume is refused (impossible body).
+* `lumped` with a heat input and the warm-up table (round-3 addition): `heat_input` (power, lumped only) is a constant `Q` from `t = 0`;
+  `C dT/dt = Q - h As (T - Tinf)` gives `T(t) = Tinf + Q R + (Ti - Tinf - Q R) exp(-t/tau)`, `R = 1/(h As)`, steady state `Tinf + Q R`
+  (with `Ti = Tinf` this is `Tinf + Q R (1 - exp(-t/tau))`). `times` (a list such as `'0 s; 60 s; 600 s'`, strictly ascending, at most 2000)
+  or `t_end` with `points` (default 101, evenly spaced from 0 to `t_end`) returns the whole curve in one call: CSV artifact
+  `temperature_vs_time.csv` (header `time_s,temperature_degC`, or `temperature_degF` with `unit_system='imperial'`; the time column is always
+  seconds) and `values` `final_temperature` (primary: the steady state), `temperature_at_t_end`, `time_constant`, `t_end`, `thermal_resistance`,
+  `heat_capacity`, `heat_input`, `biot`. A table ending before 3 tau warns that the final temperature is not reached. `time` / `target_temperature`
+  also respect `heat_input` (the target must lie between the initial and the steady-state temperature; extra values `final_temperature`,
+  `energy_stored`, `heat_rate_to_ambient`). Exactly one of `time`, `target_temperature`, `times`/`t_end` is accepted; the table and the heat input
+  are refused for the other models. A junction behind a series resistance is not modelled here: the tool has a single lump, so the caller adds the
+  constant offset `Q (R_jc + R_cs)` to the heat-sink curve (die and pad capacity negligible). Tests: `tests/test_thermal_transient_table.py`
+  (closed form at several times, initial offset, target time, imperial header, refusals).
 * `plane_wall` / `cylinder` / `sphere`: one-term series with the first eigenvalue found by bisection (the eigenconditions `z tan z = Bi`,
   `z J1/J0 = Bi`, `1 - z cot z = Bi`; Bessel functions by power series, small-argument series where `sin z - z cos z` would cancel), `C1`,
   Fourier number (**warns below 0.2**), temperature at `position` (0 centre .. 1 surface), the centre temperature, the energy fraction and the
@@ -142,6 +154,15 @@ Re/Pr/Ra, Nu, `h = Nu k/L`. Correlations: internal laminar `Nu = 3.66` / `4.36`;
 Gnielinski with the Petukhov friction factor; flat plate laminar `0.664 Re^(1/2) Pr^(1/3)` and mixed `(0.037 Re^(4/5) - 871) Pr^(1/3)`;
 Churchill-Bernstein (cylinder); Whitaker (sphere, `mu/mu_s` optional); Churchill-Chu vertical plate (full range and the laminar form) and horizontal cylinder.
 Natural convection: `Ra = g beta |Ts - Tinf| L^3 rho^2 Pr/mu^2`; if `beta` is blank an ideal gas `1/T_film` is assumed and said so in a warning.
+`natural_channel` (finned heatsink, round-3 addition): symmetric isothermal parallel vertical plates, Elenbaas / Bar-Cohen-Rohsenow
+`Nu_S = h S/k = [576/Ra*^2 + 2.873/Ra*^(1/2)]^(-1/2)` with `Ra* = Ra_S S/L`, `Ra_S = g beta dT S^3/(nu alpha)`, `S` = `fin_gap`, `L` = `length` = the
+distance the air flows along (upright heatsink: the base height, **not** the fin height). `h = Nu_S k/S`. Returned: `h`, `nusselt`, `rayleigh_gap`,
+`rayleigh_modified` (Ra*), `optimum_gap` `S_opt = 2.714 L/Ra_L^(1/4)` (`Nu_S` = 1.307 there) and `h_at_optimum_gap`; `data` carries the isolated-plate h of the
+same length for comparison. The formula is quoted for `0.1 < Ra* < 1e5`: outside it the tool **warns** (extrapolation; both limits Ra*/24 and the
+isolated plate `0.59 Ra*^(1/4)` still hold) instead of refusing, because the composite is well behaved at both ends. Further warnings: `Ra_L > 1e9`
+(turbulent), `fin_height` smaller than the gap (not a channel), a gap below half or above twice the optimum. Test check: for the 100 mm / 5.25 mm
+air case h = 3.23 W/m2/K against 5.79 for the isolated plate (1.8 times higher). `natural_vertical_plate` / `_laminar` with a `fin_gap` or
+`fin_height` still return the plate value but add a warning that the problem looks like a finned array, with the channel h for the same gap.
 Prandtl is given directly or as `cp mu/k` (the latter wins if both differ by more than 5 %, with a warning). Warnings: Dittus-Boelter Re < 1e4, Pr outside
 0.6..160, L/D < 10 (if `pipe_length` is given); Gnielinski Re outside 3000..5e6 or Pr outside 0.5..2000; laminar constants for Re > 2300 or
 inside the thermal entry length; flat-plate Re/Pr ranges; Churchill-Bernstein Re Pr <= 0.2; Whitaker Re 3.5..7.6e4, Pr 0.71..380, mu/mu_s 1..3.2;

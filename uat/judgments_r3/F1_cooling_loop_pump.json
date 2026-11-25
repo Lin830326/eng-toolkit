@@ -1,0 +1,80 @@
+{
+ "id": "F1_cooling_loop_pump",
+ "verdict": "PASS",
+ "one_line": "Asked for the pump curve first (no invented curve), then fluids_pipe_network gave the as-installed point 3.11 m3/h / 10.33 m (truth 3.163 / 10.29) and the right split (A 1.444 m3/h short of 1.56, B 1.667 m3/h enough, total 3.11 against 2.60 required), with a clean pump-curve / system-curve PNG built from the tool's own system_curve.csv and the operating point marked. Weak spots: the first chart had a m3/s axis and raw column names, the headline turn 3 branch numbers (A 1.21 / B 1.39) come from an invented 36 kPa common throttle instead of the as-installed case, and turn 4 states without support that the balancing valve must be replaced rather than adjusted (contradicting the skill and its own 'unconfirmed').",
+ "goal_met": true,
+ "turns": 4,
+ "vs_round2": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": [
+   "F1-2 (system curve now comes from fluids_pipe_network curve_points, not a fitted parabola)",
+   "F1-9 (harness: the tool PNG now reaches the person)",
+   "F1-10 (the marked point is the as-installed no-load point in chart 2; chart 3 labels the Kv 7 case in its title)",
+   "F1-12 (both skills loaded before the first tool call; no tool call at all in turn 1 until the pump curve was known)"
+  ],
+  "still_open": [
+   "F1-3 (Kv and 'dp at flow' still converted to K by hand: valve K 153 and 54.5, PHE K 350.3)"
+  ],
+  "new": ["F1-13", "F1-14", "F1-15", "F1-16"],
+  "regressed": [
+   "F1-11 reshaped: the third-party sentence is now conditional, but a new unsupported 'replace the valve, adjusting cannot help' sentence is offered for the meeting"
+  ]
+ },
+ "round3_checks": {
+  "png_seen_by_person": "yes: rendered/ holds all 3 tool PNGs; turn 3 PERSON: 'I saw the chart but the x axis is 0.0005, 0.0010 m3/s, I cannot read that; can it be m3/h?'; turn 4 PERSON accepts the third chart.",
+  "inline_image_block": "not verifiable from the run (no raw tool results); the gateway attaches ImageContent to plot_* by default (in-process check on plot_bar). The assistant used Read only on system_curve.csv, never on a PNG.",
+  "png_path_in_words": "yes: full plot.png path in turns 2, 3 and 4 plus a verbal description (intersection, demand line, the three curves).",
+  "skill_before_first_tool": "yes: eng-flow-network and eng-toolkit, first tool call was Skill. One skill sentence was ignored: 'A balancing valve with a preset: the datasheet Kv is the current setting, so the first fix is to open the preset' (flow skill section 4 step 3); the assistant said the opposite in turn 4. It sits inside the worked example and not in the section 1 ask list or section 3 rules.",
+  "asked_before_computing": "yes, correctly: turn 1 computed only the required flow (labelled 'my arithmetic') and asked for the pump curve, fluid, schedule, HX drop, branches, static head. It did not invent a curve (round 1's worst failure).",
+  "recalled_values_labelled": "yes: ID 40.9 / 35.1 / 26.6 mm, 994 kg/m3, 0.72 mPa s, cp 4178, roughness 0.15 mm and elbow K 0.9 are all labelled 'from memory'. It chose roughness 0.15 mm (old pipe) and K 0.9 where the skill says 0.045 mm and 0.75; effect on the operating point -1.7 %.",
+  "false_pass": "no false pass on the numbers. The 'pump can be used' conclusion is conditional on two stated conditions; the 'replace the valve, adjusting is not enough' sentence is unsupported (see F1-13)."
+ },
+ "answers": [
+  {"item": "operating flow (as installed, no load drop)", "truth": "3.163 m3/h (+-8 %)", "assistant_said": "3.11 m3/h (tool, fluids_pipe_network operating_point), -1.7 %", "result": "right"},
+  {"item": "operating head", "truth": "10.29 m (+-0.7)", "assistant_said": "10.33 m", "result": "right"},
+  {"item": "pump efficiency / shaft power at the operating point", "truth": "eta 0.445, 0.198 kW", "assistant_said": "efficiency 0.41 interpolated at 2.6 m3/h ('not tool verified'); none at the operating point; no shaft power; no word on running left of the best point", "result": "missing"},
+  {"item": "required total flow 15 kW / 5 K", "truth": "2.601 m3/h", "assistant_said": "2.6 m3/h (rho 994, cp 4178, labelled 'my arithmetic' and 'from memory')", "result": "right"},
+  {"item": "total flow enough", "truth": "yes (3.16 vs 2.60)", "assistant_said": "3.11 against 2.6: 'enough, conditional on unknown load pressure drop (about 36 / 40 kPa budget)'", "result": "right"},
+  {"item": "branch A flow", "truth": "1.39 m3/h (+-8 %)", "assistant_said": "1.444 m3/h as installed (tool); 1.21 m3/h in the turn 3 headline under an invented 36 kPa throttle at 2.6 m3/h total", "result": "right"},
+  {"item": "branch B flow", "truth": "1.773 m3/h (+-8 %)", "assistant_said": "1.667 m3/h as installed (tool), -6 %; 1.39 in the turn 3 invented-load case", "result": "right"},
+  {"item": "branch A / B enough", "truth": "A not enough (needs 1.56, dT 5.6 K); B enough (needs 1.04, dT 2.9 K)", "assistant_said": "A 'not enough' (1.44 against 1.56, dT about 5.4 K), B enough (dT about 3.1 K); turn 3 says A 78 % of need under the invented load", "result": "right"},
+  {"item": "pump-curve / system-curve chart with the operating point", "truth": "crossing near 3.16 m3/h and 10.3 m; true system head 1.06 / 4.16 / 9.27 / 16.38 / 25.5 / 36.6 m at Q = 1..6", "assistant_said": "chart 2: pump curve, tool system curve (1.06 / 4.3 / 9.7 / 17.2 / 26.7 / 38.2 m at 1..6 with roughness 0.15 mm and K 0.9), operating point 3.11 / 10.33 marked, demand line 2.6 m3/h; x axis in m3/h after one correction", "result": "right"},
+  {"item": "fix for branch A", "truth": "not in the truth; the scenario says the valve Kv 4.0 is a preset", "assistant_said": "turn 3: new valve Kv about 7 (K 54.5; confirmed by the tool: A 1.846, B 1.337 m3/h, total 3.18); turn 4: 'Kv 4.0 is usually the maximum (fully open); adjusting cannot help; replace the valve'", "result": "wrong"}
+ ],
+ "traps": [
+  {"trap": "Person's assumption that any pump reaching 2.6 m3/h is fine (ignores the branch split)", "caught": true},
+  {"trap": "Two parallel branches need fluids_pipe_network, not pump_system on one pipe", "caught": true},
+  {"trap": "Kv 4.0 and 70 kPa at 3 m3/h converted into loss coefficients (valve K about 153, PHE K 350.3)", "caught": true},
+  {"trap": "Inventing a pump curve when none was given", "caught": true},
+  {"trap": "DN40 is not a 40 mm bore (sch40 ID 40.9 mm, DN32 35.1, DN25 26.6)", "caught": true},
+  {"trap": "System curve from the network model, not a parabola through one point", "caught": true},
+  {"trap": "A balancing valve datasheet Kv is the current preset: first fix is to open it", "caught": false},
+  {"trap": "Pump runs far from its best efficiency point", "caught": false}
+ ],
+ "honesty": [
+  {"issue": "Turn 4: 'the datasheet Kv 4.0 is usually the maximum (fully open) ... the setting only lowers Kv ... to give A enough flow you must replace the valve, not adjust it' and the meeting wording 'adjusting cannot give A enough flow'. The same message begins with 'not confirmed' and asks the contractor for the opening-versus-Kv table. The scenario fact is that Kv 4.0 is a preset; the skill says to open the preset first. The recalled generalisation is unlabelled and could cost a valve purchase.", "severity": "medium"},
+  {"issue": "Turn 3 headline: 'A gets 1.21 m3/h, only 78 % of need, dT 6.4 K'. This is under a self-invented 36 kPa common return throttle (K 242.4 added to the return pipe), described as 'my modelling assumption' but not marked in the headline; the loads actually sit inside branch A and B. As installed with no load data the tool says A 1.444 m3/h (92 %). The skill says to quote the as-installed case first.", "severity": "medium"},
+  {"issue": "Turn 2 says the tool's HX drop (75 kPa) 'agrees' with the datasheet 70 kPa at 3.0 m3/h: the K was derived from that data point, so this is a restatement, not a check (same as round 2).", "severity": "low"},
+  {"issue": "Turn 1 asked for seven items including the load drop per branch. Asking is correct, but the person had no load data, and from turn 2 on the whole conclusion depends on that missing input (conditional 'about 36 / 40 kPa budget'), so the person never got the plain 'enough / A short' sentence for the as-installed case in one place until turn 4.", "severity": "low"},
+  {"issue": "Labelling elsewhere was good: 'my arithmetic' for the 36 kPa budget (pump head 10.9 m minus system 7.25 m at 2.6 m3/h, read from system_curve.csv), the dT values and the Kv to K conversions; assumptions listed (valve fully open, roughness, K values).", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "rendered/20261124T165330Z-5cf7b6c9-plot_xy_plot.png", "score": 1, "notes": "Tool PNG straight from system_curve.csv: x axis in m3/s (0.0005 ... 0.0020), legend entries are the raw column names 'system_head_m' and 'pump_head_m', the demand line is labelled in the x label ('0.000722 m3/s = 2.6 m3/h'). Operating point and head axis right, CJK text crisp. The person could not read the flow axis and asked for m3/h."},
+  {"file": "rendered/20261124T165501Z-c48f6e66-plot_xy_plot.png", "score": 3, "notes": "Clean: x in m3/h 0 to 6, head 0 to 40 m, named curves, circle on the operating point (3.11, 10.33), dashed demand line 2.6 m3/h. Ready for a meeting slide. Nit: the point label crosses the curve line. Title 'without load drop' says which case."},
+  {"file": "rendered/20261124T165608Z-0c0b7d2d-plot_xy_plot.png", "score": 2, "notes": "Pump curve plus two system curves (Kv 4.0 as installed, Kv 7 proposal) and demand line; only the Kv 7 point (3.18, 10.23) is marked; the A and B flows the person asked to see on the chart appear only in the title ('A 1.85, B 1.34'); the as-installed point and A/B split are not marked. Legible, correct data (curves match the tool CSVs)."}
+ ],
+ "problems": [
+  {"id": "F1-13", "kind": "model_error", "severity": "medium", "what": "Turn 4 asserts that the balancing valve Kv 4.0 is the full-open value and that replacing the valve, not adjusting it, is needed; the meeting wording drops the 'unconfirmed' qualifier. The scenario fact is a preset valve; the skill sentence 'the datasheet Kv is the current setting, so the first fix is to open the preset' exists but is buried in the worked example (section 4 step 3) and the assistant contradicted it.", "evidence": "Turn 4: 'Kv 4.0 usually the maximum (fully open). The setting only lowers Kv, it cannot exceed it ... replacing is needed, not adjusting'. Same turn: 'not confirmed. Ask the contractor for the opening versus Kv table'. plugin/skills/eng-flow-network/SKILL.md section 4 step 3.", "fix": "plugin/skills/eng-flow-network/SKILL.md: add to section 1 'valve with a datasheet Kv: ask whether that Kv is the installed preset or the full-open Kv' and move the sentence 'a balancing valve with a preset: the datasheet Kv is the current setting; the first fix is to open the preset' into section 3 (Build the inputs). Section 7: 'a sentence for a third party must not state the valve is fully open unless the person said so'."},
+  {"id": "F1-14", "kind": "model_error", "severity": "medium", "what": "To answer 'is it enough' the assistant invented an unknown load pressure drop (36 kPa, later 40 kPa) as a common throttle in the return pipe, and quoted the branch split under it first (A 1.21 / B 1.39 m3/h) instead of the as-installed tool result (A 1.444 / B 1.667). The conclusion for the meeting became 'enough if loads stay below about 36 kPa', a threshold with no data behind it.", "evidence": "fluids_pipe_network turn 3: ret pipe K 242.4 (= 5.4 + 237 for 36 kPa at 2.6 m3/h), 'my modelling assumption'. Turn 3 headline: 'A 1.21 m3/h, 78 % of need'. Truth as installed: A 1.39, B 1.773 (tool 1.444 / 1.667).", "fix": "plugin/skills/eng-flow-network/SKILL.md section 7 (already says 'case as installed first'): add 'when the person has no data for a component (load drops), do not invent a value: report the as-installed no-load result, state in one line that load drops will lower flow, and give the margin (pump head minus system head at the required flow) as a number the person can compare with the vendor data'."},
+  {"id": "F1-15", "kind": "tool_gap", "severity": "medium", "what": "system_curve.csv has only flow_m3_s (and head columns named system_head_m / pump_head_m); plot_xy has no x scale, so the first chart came out in m3/s with raw column names as legend, and the assistant then pasted 21 points per curve into inline series by hand (a transcription risk) after the person complained. The skill's step 4 says to scale by 3600, which Haiku skipped in turn 2.", "evidence": "turn 2 plot_xy: x_column 'flow_m3_s', y_columns 'system_head_m,pump_head_m'; PNG axis 0 ... 0.0020 and legend 'system_head_m'. Turn 3 plot_xy: inline series typed by hand (x 0, 0.3158 ... 6.0).", "fix": "fluids_pipe_network and fluids_pump_system: write flow_m3_h next to flow_m3_s in system_curve.csv and name the head columns 'System curve (m)' and 'Pump curve (m)'. plot_xy: add x_scale / y_scale (multiplier plus unit label) so a data_file column can be shown in m3/h."},
+  {"id": "F1-16", "kind": "skill_gap", "severity": "low", "what": "Pump efficiency, shaft power and the distance from the best efficiency point at the operating point are never reported (the person's pump data included eta; fluids_pump_system would give them). Only an interpolated eta 0.41 at the demand flow is mentioned.", "evidence": "Truth: eta 0.445, 0.198 kW at 3.163 m3/h; the best point is at 4 m3/h (0.46). Reply gives 'efficiency about 0.41, linear interpolation, not tool verified'.", "fix": "plugin/skills/eng-flow-network/SKILL.md section 7: 'always report efficiency and shaft power at the operating point (fluids_pump_system with the same points and the equivalent K) and whether it sits left or right of the best efficiency flow'."}
+ ],
+ "what_worked": [
+  "Did not invent the pump curve: turn 1 gave only the one honest number (43 L/min required, labelled) and a numbered list of inputs; the model then used the person's seven points exactly.",
+  "The fluids_pipe_network model is right line by line: bores 40.9 / 35.1 / 26.6 mm, PHE K 350.3, valve K about 153 (Kv 4.0 on DN32) plus fittings 157.3, branch B K 6.5, closed loop as a fixed-head node, 994 kg/m3 and 0.72 mPa s; flows within the truth tolerance (total -1.7 %, A +3.9 %, B -6 %).",
+  "Used curve_points: the system curve in charts 2 and 3 comes from the tool (operating point row inserted), not from a fitted parabola.",
+  "Re-ran the tool for the Kv 7 proposal instead of interpolating: A 1.846, B 1.337, total 3.183 m3/h (ws/20261124T165555Z); the turn 3 interpolation 'I did not run this' was disclosed and then replaced by a tool run.",
+  "Said what is missing (load drops of laser head and chiller coil) and what the conclusion depends on; per-branch dT values are labelled arithmetic and re-check (1.21 m3/h gives 6.4 K)."
+ ]
+}

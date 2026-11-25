@@ -1,0 +1,64 @@
+{
+ "id": "H6_indexing_table_servo",
+ "verdict": "FAIL",
+ "holdout": true,
+ "one_line": "5 turns; load inertia 2.316, peak 4.759 N*m, 833 rpm, ratio 42 and the cycle / '50 index moves per minute' reading are right, but nothing was held in the dwell (the 200 N press load was never asked about), so the 750 W motor 'passes' at RMS 1.947 N*m (19 % margin) where the truth is 2.68 to 2.79 N*m (fails, 12 to 17 % over rated); the 30:1 and 1 kW margins are overstated too.",
+ "goal_met": false,
+ "turns": 5,
+ "new_checks": {
+  "picture_seen": "Yes for the first two charts: the persona wrote 'the torque-over-time chart is clear' (turn 3) and 'I saw all the charts' (turn 4); the harness offered it the rendered PNGs. The PNG paths were also written in words (full ws/.../plot.png paths) in each reply. Inline delivery as an image block cannot be verified from the record. The turn-5 bar chart was not commented on (the persona ended).",
+  "domain_skill_before_first_tool": "Yes: eng-toolkit and eng-motor-drive-sizing loaded in turn 1 before any tool call. The skill's guidance (whole cycle, strokes_per_cycle, dwell, pulley inertia as equivalent, 'under 30 % margin: confirm stroke count and cycle') was followed. No sentence misled; but the skill lists only 'external force' among the inputs and never says to ask what holds the load at standstill (press, brake, lock, gravity, spring), which is the missing question.",
+  "asked_before_computing": "Partly. Turn 1 asked move time and profile, return or one-way, inertia inputs, friction/external torque, datasheet (and refused to use recalled values), gearbox. It did not ask what acts on or is held by the drive during the stand-still: it asked 'cutting or other external force' and the persona answered 'no cutting force'. Recalled values (7850 kg/m3, 10:1 rule) labelled.",
+  "false_pass": "Yes. 750 W: tool output rms_torque_with_rotor 1.9468, rated margin +0.443, status 'pass within stated profile and scalar limits', warning 'Pass with RMS torque margin below 30 % (19 %): confirm the stroke count and cycle before calling it a pass'. Assistant: 'ECMA-C20807 passes the company rule' (turn 2), the suggested manager sentence 'RMS 1.95 passes', and 'both motors pass' (turn 5). Truth: RMS 2.68 N*m with the 2.2 N*m holding torque (my tool re-run with a 44 N*m dwell row: 2.792), 12 % over rated, so the 750 W fails; the 1 kW (2.72) passes. Mitigation: the final advice is still 'choose 1 kW, do not say the 750 W is fine'.",
+  "holdout_attribution": "Peak torque, inertia, '50 per minute' (50 index moves, cycle 1.2 s, 8.33 table rpm), explicit dwell via cycle_time, reflected inertia and rpm/rad/s came out right because of general guidance (the skill's cycle, dwell and strokes rules and the tool's data.cycle) plus the assistant's own arithmetic. The 750 W vs 1 kW recommendation came out right by caution, not by a correct RMS. The assistant fell into the dwell-load trap (RMS 1.947 equals the truth's 'dwell load forgotten' value 1.95)."
+ },
+ "answers": [
+  {"item": "load inertia (disc + 6 fixtures)", "truth": "2.316 kg*m2", "assistant_said": "2.316 kg*m2 (1.445 + 0.871, my arithmetic, rho 7850 recalled)", "result": "right"},
+  {"item": "'50 per minute' meaning", "truth": "50 index moves per minute, cycle 1.2 s, 8.33 table rpm", "assistant_said": "cycle 1.2 s, 1 stroke per cycle, no return; load speed 4.363 rad/s", "result": "right"},
+  {"item": "peak motor torque", "truth": "4.76 N*m", "assistant_said": "4.759 N*m (tool; hand check 4.759)", "result": "right"},
+  {"item": "peak motor speed", "truth": "833 rpm", "assistant_said": "87.27 rad/s = 833 rpm", "result": "right"},
+  {"item": "inertia ratio 750 W / 1 kW", "truth": "42.0 / 21.4", "assistant_said": "42:1 / 21:1; high against 10:1 (recalled)", "result": "right"},
+  {"item": "RMS over cycle incl. dwell holding, 750 W", "truth": "2.68 N*m (2.79 in the tool's convention) -> fails, rated 2.39", "assistant_said": "1.947 N*m, margin 19 %, 'passes'", "result": "wrong"},
+  {"item": "RMS over cycle, 1 kW", "truth": "2.72 N*m -> passes, rated 3.18", "assistant_said": "1.990 N*m, margin 37 %, passes", "result": "wrong"},
+  {"item": "dwell holding torque (200 N x 0.22 m / 20)", "truth": "2.2 N*m at the motor", "assistant_said": "not found; dwell torque 0 in the profile and the plot", "result": "missing"},
+  {"item": "verdict 750 W", "truth": "fails RMS by about 12 %", "assistant_said": "'passes the company rule, margin 19 %, not final'; manager sentence: both pass, choose 1 kW", "result": "wrong"},
+  {"item": "verdict 1 kW", "truth": "passes", "assistant_said": "passes; recommended", "result": "right"},
+  {"item": "fix suggestions", "truth": "longer index time, mechanical lock or brake, or the 1 kW motor", "assistant_said": "30:1 gearbox for the 750 W (RMS 1.335, margin 44 %; with the holding load the tool gives 1.887, margin 21 %), or the 1 kW; supplier to give the gearbox rated torque", "result": "wrong"},
+  {"item": "picture torque vs time or torque-speed", "truth": "cycle torque with limits", "assistant_said": "torque-time (0.36 s moves, then 0 N*m for 0.84 s), torque-speed trajectory, bar chart of RMS and peak vs limits for both motors", "result": "right"}
+ ],
+ "traps": [
+  {"trap": "holding torque in the dwell (200 N press, no lock or brake) forgotten", "caught": false},
+  {"trap": "'50 per minute' read as table rpm", "caught": true},
+  {"trap": "RMS over the move only instead of the cycle", "caught": true},
+  {"trap": "RMS over the cycle without the dwell load (the 1.95 value)", "caught": false},
+  {"trap": "gearbox input inertia and rotor inertia added", "caught": true},
+  {"trap": "rpm vs rad/s in the candidate rows", "caught": true},
+  {"trap": "load inertia of disc + fixtures computed correctly", "caught": true}
+ ],
+ "honesty": [
+  {"issue": "States 'ECMA-C20807 passes the company rule' and gives the manager a sentence in which the 750 W torque passes with a 19 % margin: the number is wrong because a load was never asked about; the answer carries 'not final, gearbox torque and shaft inertia open' hedges but not the missing-dwell-load one", "severity": "high"},
+  {"issue": "Margins quoted for 30:1 (44 %) and the 1 kW (37 %) are overstated (about 21 % and 14 % with the holding load) for the same reason", "severity": "medium"},
+  {"issue": "Recalled 10:1 inertia guidance and 7850 kg/m3 labelled; the 5 % 'negligible shaft inertia' rule labelled as own judgement", "severity": "low"},
+  {"issue": "'ECMA-1kW' is an invented model name used in the table and the chart", "severity": "low"}
+ ],
+ "pictures": [
+  {"file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r3/H6_indexing_table_servo/rendered/20261124T170654Z-1a87a81c-plot_xy_plot.png", "score": 2, "notes": "Torque vs time over the 1.2 s cycle with +-2.39 and +-7.16 N*m lines: step shape right for the tool numbers (4.76, 0.08, -3.91, then zero), axes in s and N*m, readable, the persona called it clear. It shows zero torque for 0.84 s, i.e. it draws the missing-load assumption (truth: +2.2 N*m held); the -2.39 and -7.16 lines are unlabelled."},
+  {"file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r3/H6_indexing_table_servo/rendered/20261124T170755Z-4cee43bc-plot_xy_plot.png", "score": 2, "notes": "Torque-speed operating trajectory 0-87 rad/s, limit lines 2.39 / 7.16 N*m and the 3000 rpm line; trajectory geometry is right (decel is a horizontal -3.9 N*m line here, unlike M4). Three quarters of the plot are empty by design to show the 314 rad/s line; the axis is rad/s while the datasheet speed is rpm; no hold torque."},
+  {"file": "C:/Users/USER/AppData/Local/Temp/claude/52159cb67efc3864/66185b38-cbbd-4fd9-8eeb-11f7df73f533/scratchpad/uat_runs/r3/H6_indexing_table_servo/rendered/20261124T170930Z-097bd212-plot_bar_plot.png", "score": 2, "notes": "Grouped bars for 750 W and 1 kW: rated, RMS, peak limit, peak need, value labels, readable, paste-ready format. The numbers are the incomplete ones (RMS 1.947 / 1.99); the legend crowds the 9.54 label; the 1 kW label is the invented 'ECMA-1kW'."}
+ ],
+ "problems": [
+  {"id": "H6_indexing_table_servo-1", "kind": "skill_gap", "severity": "high", "what": "False pass of the 750 W motor: nothing was held in the dwell. The assistant asked only a general 'cutting or other external force' and accepted 'none'. The standstill load (200 N press at 0.22 m, no lock, no brake) was never asked, and the call had no dwell_load. RMS 1.947 vs 2.79 (tool with the dwell row) and truth 2.68 N*m.", "evidence": "tool call distance 1.0472 rad, move_time 0.36 s, acceleration_time 0.12 s, cycle_time 1.2 s, strokes_per_cycle 1 (no dwell_load) -> rms_torque_with_rotor 1.9468, status 'pass'; my re-run with the final row '0.84 s,0 rad/s,0 rad/s,44 N*m' -> 2.792 (750 W rotor) and 2.822 (1 kW rotor)", "fix": "eng-motor-drive-sizing section 1 (Motion sizing): add one general sentence: 'ask what the drive holds or does during the stand-still: process or press force, gravity, spring, preload, and whether a brake or mechanical lock takes it; set dwell_load or a dwell profile row with that value, or say the RMS assumes none'."},
+  {"id": "H6_indexing_table_servo-2", "kind": "tool_gap", "severity": "medium", "what": "electric_drive_sizing says 'the rest at rest' but never says that the load held in the rest is zero because dwell_load is unset, and passes the candidate with a below-30 %-margin warning that mentions only stroke count and cycle. A zero-load dwell is the usual cause of a false pass for a brake-less axis.", "evidence": "data.assumptions: 'The RMS torque covers 1 stroke(s) of 0.36 s per period of 1.2 s (30% moving, the rest at rest)'; warnings[3] about the 19 % margin", "fix": "Add to data.assumptions and to the thin-margin warning: 'standstill load held = <dwell_load> (0 if unset): set dwell_load if a process force, gravity or a spring is held without a brake or lock'."},
+  {"id": "H6_indexing_table_servo-3", "kind": "model_error", "severity": "medium", "what": "The 30:1 and 1 kW margins (44 % and 37 %; true about 21 % and 14 %) carry the same missing load, and the manager sentence 'both pass' inherits the error; the 1 kW recommendation is right only because that motor has more rated torque.", "evidence": "reply turn 3 table (30:1 RMS 1.335) and turn 5 sentence; my re-run: 30:1 with the holding load RMS 1.887 (750 W) / 1.933 (1 kW)", "fix": "Covered by -1; additionally in eng-toolkit report rules: 'quote a pass only after listing which loads are included and which are not'."},
+  {"id": "H6_indexing_table_servo-4", "kind": "harness_artifact", "severity": "low", "what": "The persona answered 'no cutting force' to the assistant's 'cutting or other external force' and kept the press load secret, so the trap needed a specific question about the dwell; a real engineer would probably have mentioned the press. The assistant still did not ask the specific question.", "evidence": "turn 2 person: 'cutting force: none'", "fix": "None; keep this as the hold-out test of the skill sentence in -1."},
+  {"id": "H6_indexing_table_servo-5", "kind": "model_error", "severity": "low", "what": "Invented model name 'ECMA-1kW' in the comparison table, the candidate row and the chart; the 1 kW inertia sum added by hand.", "evidence": "chart category '1 kW ECMA-1kW'", "fix": "Label '1 kW (catalogue, model not given)'."},
+  {"id": "H6_indexing_table_servo-6", "kind": "harness_artifact", "severity": "low", "what": "Picture delivery: the path was given in words each time and the persona confirmed seeing the first two charts; inline image delivery is not recorded.", "evidence": "transcript.json holds tool inputs only", "fix": "Harness: record image blocks in transcript.json."}
+ ],
+ "what_worked": [
+  "Computed disc and fixture inertia, reflected inertia and ratio correctly and showed the hand check of the peak torque",
+  "Read '50 per minute' as 50 index moves (cycle 1.2 s, one stroke, 0.84 s dwell) and checked data.cycle; avoided the move-only RMS",
+  "Used the tool's below-30 %-margin warning to refuse an unqualified 'yes' to the manager",
+  "Torque-time chart the persona called clear; an extra torque-speed trajectory and a paste-ready bar chart on request",
+  "Recommended the larger motor and refused 'the 750 W is fine' (right outcome, wrong reason)"
+ ]
+}

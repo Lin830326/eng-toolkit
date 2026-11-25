@@ -1,11 +1,11 @@
 ---
 name: eng-drawing
-description: Use FIRST for a dimensioned engineering drawing (A4 to A0 sheet, PDF, PNG, DXF) of a STEP, IGES or BREP part with views, overall sizes, hole callouts and a hole list, and to read or convert a DXF or PDF drawing, with drawing_make_views, drawing_read and drawing_convert.
+description: Use FIRST for "drawing of a STEP part", dimensioned views on an A4 to A0 sheet (PDF, PNG, DXF), overall size, hole callouts and a hole list, and to read or convert a DXF or PDF drawing (drawing_make_views, drawing_read, drawing_convert).
 ---
 
 # Engineering drawing workflow (eng-toolkit)
 
-Load `eng-toolkit` first for unit rules and the report format. For a drawing of a STEP part use `drawing_make_views` before any other drawing skill or a script: it runs in the toolkit, hidden lines are removed exactly, and no `uvx` or shell is needed. The sheet is **not a complete manufacturing drawing**: no tolerances, centre lines, counterbores or countersinks, title block says UNREVIEWED.
+Load `eng-toolkit` too for unit rules and the report format. For a drawing of a STEP part use `drawing_make_views` before any other drawing skill or a script: it runs in the toolkit, hidden lines are removed exactly, and no `uvx` or shell is needed. The sheet is **not a complete manufacturing drawing**: no tolerances, centre lines, counterbores or countersinks, title block says UNREVIEWED.
 
 ## 1. Pin down the problem (one short list)
 
@@ -20,15 +20,15 @@ Sheet (A3 landscape?), views (top/front/right, iso if room), projection (default
 | What is in a DXF or PDF (texts, dimensions, layers, title block, units) | `drawing_read` |
 | DXF to PDF, SVG, PNG, or another DXF version | `drawing_convert` |
 | Build the part first, with fit and thread text in the callouts | `geometry_make_part`, then pass its `features.json` as `features_path` |
-| A picture of the 3D part (coloured faces, DFM findings; not a drawing) | `geometry_view`: it writes a PNG (iso plus front, top, right views, legend, size in mm) next to a GLB, see `eng-3d-view` |
+| A picture of the 3D part (coloured faces, DFM findings; not a drawing) | `geometry_view`: a PNG (iso plus front, top, right views, legend, size in mm, shown in the reply) next to a GLB, see `eng-3d-view` |
 
 ## 3. Inputs that work (verified)
 
-Raspberry Pi Pico board (KiCad's `RaspberryPi_Pico.step`, in `<KiCad>/share/kicad/3dmodels/Module.3dshapes/`), four views on A3, PDF and PNG:
+A 90 x 60 x 6 mm mounting plate (built with `geometry_make_part`: four holes of 5.5 mm at 10 mm from the corners, one 12 mm hole in the centre), four views on A3, PDF and PNG:
 
-`drawing_make_views model_path="<path>/RaspberryPi_Pico.step" views="top,front,right,iso" sheet="A3" formats="pdf,png" title="Raspberry Pi Pico"`
+`drawing_make_views model_path="<path>/plate_demo.step" views="top,front,right,iso" sheet="A3" formats="pdf,png" title="Mounting plate"`
 
-gives scale 2:1, 4 views, 11 dimensions (21 x 52.3 x 3.7), callouts `4× Ø2.1 THRU` and `43× Ø1 THRU`. Output files `drawing.dxf`, `drawing.pdf`, `drawing.png` are in the job folder (`artifacts`).
+gives scale 1:1, 4 views, 11 dimensions (90 x 60 x 6), callouts `4× Ø5.5 THRU` and `Ø12 THRU` with their centres in `data.callouts[].entry_points_mm`. Output files `drawing.dxf`, `drawing.pdf`, `drawing.png` are in the job folder (`artifacts`). The same plate on A4 comes out at 1:2.
 
 - `sheet` auto or A4..A0 (landscape); `scale` auto or an ISO scale from 1:100 to 10:1; `dimensions` auto, overall or none; `notes` up to 6 separated by `;`.
 - `features_path` makes a callout such as `2x D10 H7 THRU`; it only applies when it belongs to this exact STEP file (hash), else a warning and no fit text.
@@ -36,17 +36,17 @@ gives scale 2:1, 4 views, 11 dimensions (21 x 52.3 x 3.7), callouts `4× Ø2.1 T
 
 ## 4. Run, then verify
 
-1. Read `warnings` and `data.layout_warnings` before showing the sheet. Look at the PNG (Read it) and check readability.
+1. Read `warnings` and `data.layout_warnings` before showing the sheet. **Look at the PNG (Read it) and check every dimension text**: an empty `layout_warnings` does not prove that texts do not overlap (in the plate sheet the ordinate "45" printed over the overall width "90").
 2. **Known layout limits**:
-   - **No y ordinates** when the holes lie at more than 16 distinct y values (the Pico has 23): the sheet then cannot show the 47 mm hole spacing. Give hole centres from `data.callouts[].entry_points_mm` as a table in your answer (mounting holes: x = +-5.7, y = +-23.5, so spacing 11.4 x 47 mm) and say the sheet does not show them.
-   - **Overlapping ordinate texts** (warning "x ordinates 0 and 1.61 ... overlap"): raise the scale or the sheet. A3 allows 2:1; `scale=5:1` on A3 is refused with `drawing.layout_failed` and the message names the fit (A2 at 5:1 has no overlap). Never drop to a smaller sheet silently.
-   - The part may fill only part of the sheet; the numbers on the sheet use a decimal comma in dimensions and a point in callouts (`52,3` and `4× Ø2.1`): tell the user if that matters.
+   - **No y ordinates** when the holes lie at more than 16 distinct y values (a 2 x 20 pin strip has 20): the sheet then cannot show the hole spacing. Give hole centres from `data.callouts[].entry_points_mm` as a table in your answer and say the sheet does not show them. Say it in the first reply when the person wants a centre distance read off the drawing.
+   - **Overlapping texts**: raise the scale or the sheet; a scale that does not fit is refused with `drawing.layout_failed` and the message names the fit. **Say which sheet and scale the delivered file has; never offer a sheet size you did not run**, and never drop to a smaller sheet silently.
+   - Check the number format on the sheet (an earlier version printed a decimal comma in dimensions and a point in callouts): tell the person if the two differ.
 3. **Hand check** the overall size against `geometry_measure` size_x/size_y/size_z, and the hole count against `data.holes`. Castellated half-holes on a board edge are not holes in the callout. A bounding box includes protruding parts (a connector can add 1 to 2 mm to the board length): say so when the size differs from a datasheet.
-4. If `ok=false` with `drawing.layout_failed`, use the sheet or scale the message names.
+4. "Holes" usually means the mounting holes: list the groups (diameter, count) and let the person pick before drawing.
 
 ## 5. Coverage limits (outside the toolkit: say so)
 
-No section or detail views, no tolerances or GD&T frames, no surface finish, thread symbols, centre lines, counterbore or countersink callouts, bills of material, 3D PDF or weldments. DWG needs the user's LibreDWG. A drawing is a picture of this model: model errors are not found. For tolerances use `eng-tolerancing`.
+No section or detail views, no tolerances or GD&T frames, no surface finish, thread symbols, centre lines, counterbore or countersink callouts, bills of material, 3D PDF or weldments. No dimensions of your own choosing (a centre distance between two holes) and no DXF editing: say so in the first reply and offer the hole table. DWG needs the user's LibreDWG. A drawing is a picture of this model: model errors are not found. For tolerances use `eng-tolerancing`.
 
 ## 6. Report
 

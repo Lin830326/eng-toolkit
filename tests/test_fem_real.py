@@ -330,9 +330,9 @@ def test_mesh_reports_counts_quality_and_the_exact_volume(tmp_path):
     assert abs(v(r, "volume_relative_difference")) < 1e-9  # flat faces: the mesh fills the box exactly
     assert 0.2 < v(r, "min_quality") <= v(r, "mean_quality") <= 1.0
     assert r.data["quality"]["slivers"] == 0
-    # the estimate is 6 sqrt(2) * 10000 / 5^3 = 678.8; Gmsh makes fewer, in the same order of magnitude
-    assert r.data["estimated_elements"] == pytest.approx(678.82, abs=0.01)
-    assert 0.3 * 678.8 < v(r, "element_count") < 1.5 * 678.8
+    # the estimate is 4 * 10000 / 5^3 + 1.7 * 4200 / 5^2 = 605.6 (volume and surface terms, see tests/test_fem_estimate.py); Gmsh makes 434
+    assert r.data["estimated_elements"] == pytest.approx(605.6, abs=0.01)
+    assert 0.5 * 605.6 < v(r, "element_count") < 1.0 * 605.6  # 434 made: below 900 elements the estimate is 1.4 times high (the calibration starts at 900)
     msh = artifact(r, "mesh.msh").read_text()
     assert msh.startswith("$MeshFormat\n2.2 0 8")
 
@@ -400,7 +400,7 @@ def test_too_fine_a_mesh_is_refused_before_gmsh_starts(tmp_path, monkeypatch):
     monkeypatch.setattr(X, "run", fail)
     message = failure(static(bar(tmp_path), element_size="1e-9 mm"), "input.too_large")
     assert "1/1000" in message and "at least 0.101 mm" in message
-    failure(static(bar(tmp_path), element_size="0.5 mm"), "input.too_large")  # 6 sqrt(2) * 10000 / 0.125 = 679 000 elements
+    failure(static(bar(tmp_path), element_size="0.5 mm"), "input.too_large")  # 4 * 10000 / 0.125 + 1.7 * 4200 / 0.25 = 337 000 elements
     failure(T.mesh(model_path=bar(tmp_path), element_size="0.5 mm"), "input.too_large")
 
 
@@ -481,3 +481,7 @@ def test_per_axis_displacement_maxima_are_values_next_to_the_magnitude(tmp_path)
     assert r.values["max_displacement_uy"].unit == "millimeter"
     assert [v(r, f"max_displacement_u{a}") for a in "xyz"] == pytest.approx(r.data["max_displacement_components_mm"], rel=1e-12)
     assert v(r, "max_displacement") >= max(v(r, f"max_displacement_u{a}") for a in "xyz")
+    # round 3, S3 r2-3: the note says what the headline is, quotes the per-axis maxima and tells to report sideways motion
+    note = r.data["displacement_note"]
+    assert "MAGNITUDE" in note and "max_displacement_ux/uy/uz" in note and "sideways" in note
+    assert f"{v(r, 'max_displacement_ux'):.4g}" in note and f"{v(r, 'max_displacement'):.4g} mm" in note

@@ -1,60 +1,68 @@
 ---
 name: eng-thermal-check
-description: Use for a heat-transfer check with the eng-toolkit thermal_* tools - transistor or chip on a heatsink (junction temperature, fan or not), insulated walls and pipes, fins, radiation, exchanger duty and UA, warm-up time. Covers datasheet traps and coverage limits. Load eng-toolkit first.
+description: Use FIRST for "fan or heatsink for a transistor, regulator or chip", junction temperature, warm-up curve of a hot part, insulated pipe or wall loss, fins, radiation, exchanger duty (thermal_* tools). Catalogue Rth trap, Tj limit, pad vs paste, outside-toolkit list.
 ---
 
 # Thermal check workflow (eng-toolkit)
 
-Load `eng-toolkit` first (units, errors, report format). Results are unreviewed textbook estimates: steady or lumped, constant properties, correlation scatter 10-25 %.
+Load `eng-toolkit` too. Unreviewed estimates: steady or lumped, constant properties, scatter 10-25 %.
 
-## 1. Pin down the problem (ask if it changes the answer)
+## 1. Pin down the problem (ask BEFORE any verdict)
 
-Heat (W) and whether it is constant; ambient (air at the part, not room air); every resistance in the path (junction-case, pad, heatsink); **the limit and who sets it** (datasheet Tj max is NOT the user's reliability rule: ask "what Tj do you design to?"); orientation, enclosure, fan data; heatsink geometry and mass; for a catalogue Rth, **the temperature rise it is quoted at** (footnote, often 75 K) and the length.
+Heat (W); ambient (air at the part, not room air); every resistance in the path (Rjc, interface pad or paste, heatsink); **the junction limit and who sets it**: a fan decision needs it, so ask "what Tj do you design to?" first (the datasheet Tj max is not the user's reliability rule); orientation, enclosure, fan data; heatsink geometry (fin gap, height, flow length) and mass; for a catalogue Rth, **the temperature rise it is quoted at** (footnote, often 50 to 80 K). Do not write "no fan needed" before the limit, Rjc, the interface and the catalogue conditions are known.
 
 ## 2. Choose the tool
 
 | Question | Tool |
 |---|---|
-| Layers in series (wall, pipe plus insulation), interface temperatures, heat loss | `thermal_conduction` (`geometry` plane / cylinder / sphere) |
-| h of a surface from Re/Ra (pipe flow, plate, cylinder, sphere, natural plate) | `thermal_convection` |
+| Layers in series (wall, pipe plus insulation), heat loss | `thermal_conduction` (`geometry` plane / cylinder / sphere) |
+| h of a surface from Re/Ra (pipe, plate, cylinder, sphere, natural plate) | `thermal_convection` (`correlation`) |
+| h of a finned heatsink, natural convection | `thermal_convection` `natural_channel` (`fin_gap`, `fin_height`) |
 | Straight or pin fin, array of fins with a given h | `thermal_fin` |
 | Radiation between plates, cylinders, spheres, body in enclosure | `thermal_radiation` |
 | Exchanger duty, outlet temperatures, UA, area, NTU | `thermal_exchanger` |
 | Lumped or one-term transient, time to a temperature | `thermal_transient` |
-| Warm-up CURVE of a lumped body with a heat source | `control_response` (first-order step) then `plot_xy` as PNG |
-| Pump head, flow, pressure drop of the water side | `eng-flow-network` skill |
+| Warm-up CURVE of a lumped body with a heat source | `thermal_transient` `model lumped`, `heat_input`, `times` (or `t_end` + `points`): one call gives `temperature_vs_time.csv` |
+| Pump head, flow, pressure drop of the water side | skill `eng-flow-network` |
 
 ## 3. Build the inputs
 
-- Fluid properties are inputs (no tables): air at 60 degC `k 0.0285 W/(m*K)`, `rho 1.05 kg/m^3`, `mu 1.95e-5 Pa*s`, `cp 1007 J/(kg*K)`; water at 35 degC `0.62`, `994`, `0.72e-3`, `4178`. Use the film temperature.
-- Absolute temperatures `"80 degC"`, `"600 K"`; differences in K. `thermal_radiation` emissivities are plain numbers; a fin radiating mostly to its neighbours has far less than its full area.
-- `thermal_conduction` layers: `'3 mm @ 50 W/(m*K); 30 mm @ 0.04 W/(m*K)'`; cylinder needs `inner_radius`, `length`; `h_outer` gives film and critical radius.
-- `thermal_exchanger`: both mass flows and cp are required (flow = P / (cp dT)); sizing with `duty`, rating with `ua`.
-- Returned temperatures are degC. `thermal_transient` lumped: `volume`, `surface_area`, `h` and a Biot check (< 0.1).
+- Fluid properties are inputs (no tables): air at 60 degC `conductivity 0.0285 W/(m*K)`, `density 1.05 kg/m^3`, `dynamic_viscosity 1.95e-5 Pa*s`, `specific_heat 1007 J/(kg*K)`; water at 35 degC 0.62, 994, 0.72e-3, 4178. Use the film temperature.
+- Absolute temperatures `"80 degC"`; differences in K. `thermal_radiation` emissivities are plain numbers; a fin facing its neighbours radiates far less than its full area.
+- `thermal_conduction` layers: `'3 mm @ 50 W/(m*K); 30 mm @ 0.04 W/(m*K)'`; cylinder needs `inner_radius`, `length`; `h_outer` gives film and critical radius. `thermal_exchanger`: both mass flows and cp; `duty` sizes, `ua` rates.
+- `natural_channel`: `length` is the distance the air flows along (upright sink: base height, NOT fin height), `fin_gap` the clear gap; it returns `h` per wetted surface, `optimum_gap`, `h_at_optimum_gap`. A plate correlation given `fin_gap` warns that it overstates h.
 
-## 4. Recipe: power part on a heatsink (verified on 8 W TO-220, 45 degC, catalogue 3.0 K/W at 75 K)
+## 4. Recipe: power part on a heatsink (example inputs, not datasheet values: 7 W, 35 degC air, Rjc 2.2 K/W, pad 1.0 K/W, catalogue 4.0 K/W at a 70 K rise, fins 75 mm long, 20 mm high, 6.6 mm gap, 85 g, Tj rule 88 degC)
 
-1. Series chain `Tj = Ta + P (Rjc + Rcs + Rsa)`. Take Rjc and the pad from the datasheet or the user (1.15 and 1.4 K/W), not typical values.
-2. **Catalogue Rsa is valid only at its quoted rise.** Real rise is `P Rsa`, much lower, and natural-convection Rth grows as the rise falls. Scale with the tool: call `thermal_convection` `natural_vertical_plate` (`length "100 mm"` = fin length, air above) with `surface_temperature "120 degC"` (75 K) then `"75 degC"` (30 K), `ambient_temperature "45 degC"`: h = 6.91 and 5.48 W/m2K, ratio 0.79. `Rsa(30 K) = 3.0 / 0.79 = 3.8 K/W`; iterate once (rise = 8 x 3.8 = 30 K, converged). Use only the RATIO.
-3. `Tj = 45 + 8 (1.15 + 1.4 + 3.8) = 95.8 degC` against the user's 90 degC rule: **fan needed** (truth by channel correlation 102 degC). Say the scaling is an engineering estimate.
-4. **Never conclude "no fan" from the isolated-plate h** (5.7 W/m2K here): the tool has no channel correlation, and fins with gaps under about 10 mm (here 5.25 mm) choke each other, real h about 3. Say "outside the toolkit, closely spaced fins" and derate the catalogue value as in step 2. Fan sizing needs the vendor Rth-vs-airflow curve; ask for it.
-5. `thermal_fin` (`fin_type "rectangular"`, `length "24 mm"`, `thickness "2 mm"`, `width "100 mm"`, `tip "convective"`, `fin_count 9`, `base_unfinned_area "0.0042 m^2"`, h 3.1) gives `array_heat_rate` 4.64 W at a 30 K base rise, convection only: a cross-check of the order of magnitude, not a replacement for the catalogue.
-6. **Warm-up curve** (`thermal_transient` has no heat input and returns one time per call): `tau = Rsa x m cp = 3.8 x 0.2 x 900 = 682 s`, final rise `P Rsa = 30.3 K`. `control_response numerator "30.3" denominator "[682, 1]" t_final "3600 s" samples 121` returns `response.csv` (`time_s,output`, output = K above ambient; ignore its "dimensionless" unit); `plot_xy` it (`format="png"`, hand over `data.png_path`) with `hlines` at the final rise and label the axis "rise above 45 degC (K)". Check: `thermal_transient` lumped (`initial_temperature "45 degC"`, `ambient_temperature "75.3 degC"`, `volume "7.407e-5 m^3"`, `surface_area "0.1 m^2"`, `h "2.64 W/(m^2*K)"`, `density 2700`, `specific_heat 900`, `conductivity 200`, `time "682 s"`) returns 64.16 degC = 63.2 % of the rise.
+1. Series chain `Tj = Ta + P (Rjc + Rcs + Rsa)`; Rjc and the pad come from the datasheet or the user.
+2. **Catalogue Rsa holds only at its quoted rise.** The real rise `P Rsa` is lower, and natural-convection Rth grows as the rise falls. Scale with the channel model, using only the RATIO: `Rsa = 4.0 x h(quoted surface temperature) / h(real surface temperature)`. `thermal_convection correlation natural_channel length "75 mm" fin_gap "6.6 mm" fin_height "20 mm" ambient_temperature "35 degC"` gives h = 7.383 W/m2K at the quoted 105 degC and 5.695 at 71.4 degC. Iterate (surface = 35 + 7 Rsa): 68.6, 72.7, 70.7, 71.6 ... converges at 71.4 degC, Rsa = 5.19 K/W (my arithmetic).
+3. Naive `35 + 7 (2.2 + 1.0 + 4.0) = 85.4 degC` passes an 88 degC rule; corrected `35 + 7 (2.2 + 1.0 + 5.19) = 93.7 degC` fails: **a fan (or a bigger sink) is needed**. The isolated-plate model (`natural_vertical_plate`: 7.211 and 6.005 W/m2K, Rsa 4.80, Tj 91.0 degC) overstates h for a 6.6 mm gap, as its warning says.
+4. **Never conclude "no fan" from the isolated-plate h.** A fan decision needs the vendor Rth-versus-airflow curve: ask for it; a duct correlation is not a fan size.
+5. Cross-check: `thermal_fin` with 7 rectangular fins (20 x 1.5 x 75 mm, `tip "convective"`, `base_unfinned_area "0.002963 m^2"`, h 5.69, base 71.4 degC) gives `array_heat_rate` 5.19 W = 7.0 K/W for convection only; the catalogue figure also holds radiation. Report both.
+6. **Insulating pad or paste.** A silicone pad is usually the electrical insulation: removing it is not an option unless the sink is isolated. Offer a thinner or better isolator and ask the isolation voltage; paste alone is for a non-isolated case.
 
-## 5. Other jobs
+## 5. Warm-up curve of the junction
 
-- Insulated pipe 25 mm inner radius, 3 mm steel, 30 mm insulation, 80 to 20 degC, `h_outer "10 W/(m^2*K)"`: 18.9 W per m (call verified); read the critical-radius warning.
-- Exchanger sizing, counterflow, hot 40 degC 0.717 kg/s, cold 25 degC 1.2 kg/s, `duty "15 kW"`: UA 1367 W/K, LMTD 10.97 K; the tool refuses duties beyond what the arrangement can reach (a result).
-- `thermal_convection` forced flow: give `velocity`; it warns outside the correlation range.
+`thermal_transient model lumped heat_input "7 W"`, initial and ambient `"35 degC"`, aluminium (`conductivity "200 W/(m*K)"`, `density "2700 kg/m^3"`, `specific_heat "900 J/(kg*K)"`), `volume "3.148e-5 m^3"`, `surface_area "0.05 m^2"`, `h "3.854 W/(m^2*K)"` (= 1/(Rsa A), my arithmetic) and `times "0 s; 100 s; 200 s; 400 s; 800 s; 1200 s; 2400 s"` returns the SINK: `final_temperature` 71.33 degC, `time_constant` 397 s (= Rsa m cp) and `temperature_vs_time.csv` (`time_s,temperature_degC`: 35.0, 43.1, 49.4, 58.1, 66.5, 69.6, 71.2). `t_end` with `points` gives a dense table.
 
-## 6. Verify (label it "independent hand check")
+There is **no two-lump (junction plus sink) model**. The die and pad hold almost no heat: the junction follows the sink at a constant offset and **jumps by `P (Rjc + Rcs)` at once**: `Tj(t) = Tsink(t) + 7 x 3.2 = Tsink(t) + 22.4 K` (add it by hand, "my arithmetic").
 
-Series sum of resistances; `Q = m cp dT` for exchangers; `tau = rho V cp / (h A)`; energy balance fields in the result (`energy_balance`) must agree to 1e-9. A Tj that changes the decision (within 10 degC of the limit) needs a margin statement.
+- **Check before plotting:** Tj at t = 0+ equals `Ta + P (Rjc + Rcs)` = 57.4 degC; the final Tj equals step 3 (71.33 + 22.4 = 93.7 degC). A curve that starts at ambient is wrong.
+- Plot with `plot_xy` and inline series (sink from the CSV, junction = sink + 22.4), `hlines="88,Tj rule"`, labels with units, the case in the title; give `data.png_path` (skill `eng-plot-results`).
 
-## 7. Outside the toolkit
+## 6. Other jobs
 
-Fin arrays with narrow gaps, chimney and enclosure natural convection, fans and airflow, PCB spreading, thermal vias, temperature-dependent heat sources (MOSFET Rds(on) rises with Tj), phase change, 2D/3D conduction. Say so; do not fake it.
+- Insulated pipe (25 mm inner radius, 3 mm steel, 30 mm insulation, 80 to 20 degC, `h_outer "10 W/(m^2*K)"`): 18.9 W per m; read the critical-radius warning.
+- Exchanger sizing (counterflow, 70 degC 0.8 kg/s against 20 degC 1.1 kg/s, cp 4180, `duty "40 kW"`): UA 1009 W/K, outlets 58.0 and 28.7 degC; an unreachable duty is refused (a result).
 
-## 8. Report
+## 7. Verify (label "independent hand check")
 
-As in `eng-toolkit`: result (Tj, Rsa used, margin to the user's limit, fan yes/no), inputs (limit source, rise correction), checks (hand check, energy balance), limits (above list, unreviewed).
+Series sum of resistances; `Q = m cp dT`; `tau = rho V cp / (h A)`. State the margin when Tj is within 10 degC of the limit.
+
+## 8. Outside the toolkit
+
+Fan curves and airflow, enclosure natural convection, PCB spreading, thermal vias, a two-lump junction model, temperature-dependent heat (Rds(on) rises with Tj), phase change, 2D/3D conduction.
+
+## 9. Report
+
+As in `eng-toolkit`: Tj, Rsa used, margin to the user's limit, fan yes/no; inputs (limit source, quoted rise, pad); checks (Tj at t = 0+); limits.

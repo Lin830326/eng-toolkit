@@ -25,13 +25,15 @@ them; coordinates are clamped); every refusal has a family and a `details.param`
 
 Every tool writes `plot.svg` and `plot_data.json` (series statistics, axis ranges, every tick and label actually used, the
 data-to-pixel mapping, decimation, truncated texts, warnings) and returns the same summary in `data` (plus `svg_inline`, or
-`svg_inline_omitted` with the reason when the SVG is larger than 150 000 bytes).  `format="png"` or `"both"` also writes `plot.png`
-(next section); the default `format="svg"` changes nothing.
+`svg_inline_omitted` with the reason when the SVG is larger than 150 000 bytes).  The default `format="both"` also writes `plot.png`
+(next section); `format="svg"` writes the SVG only.
 
 ## PNG output (`format`)
 
-Most people who asked for a chart could not open an SVG path (a chat shows text, slides want a bitmap), so every tool takes
-`format`: `svg` (default: `plot.svg` and the inline SVG), `png` (`plot.png` and `plot_data.json`, no SVG) or `both`.  The result has
+Most people who asked for a chart could not open an SVG path (a chat shows text, slides want a bitmap; simple SVG viewers also
+garble CJK titles), so every tool takes `format`: `both` (**default**: `plot.svg`, the inline SVG and `plot.png`), `svg` (`plot.svg`
+and the inline SVG only) or `png` (`plot.png` and `plot_data.json`, no SVG).  Until round 3 the default was `svg`: assistants left it
+and handed over a path to an SVG nobody could open.  The result has
 `data.png_path` (the absolute path, also in `artifacts[]` with `format: "png"`), `data.png_width`, `data.png_height`,
 `data.format` (what was written) and `data.png` (size, bytes, SHA-256, `pixels_per_svg_px`).
 
@@ -57,10 +59,35 @@ Most people who asked for a chart could not open an SVG path (a chat shows text,
   `dark` and `print` are drawn as chosen.
 * Reproducibility: the same input gives the same PNG bytes on one machine and one PDFium build in any process; across machines the
   anti-aliasing (PDFium build), the substituted fonts and the zlib stream may differ (the same promise as `drawing_make_views`).
+* `plot_data.json` holds `png.width_px`, `height_px`, `bytes`, `sha256` and `pixels_per_svg_px` but **not** the PNG path (the path has
+  the job id in it, and the file must be the same bytes on every run of the same input); the path is in the result's `data.png_path`
+  and `data.png.path` only.
+* **The picture in the reply** (`inline_image`, default true; `plot_xy`, `plot_panels`, `plot_bar`, `geometry_view`, `fem_view`):
+  a path in a chat message cannot be opened, so the gateway (`eng_toolkit/gateway/images.py`, a FastMCP middleware over every tool
+  that declares the parameter) attaches the result's PNG artifact as an MCP `ImageContent` block (base64, `image/png`) after the
+  usual `TextContent`.  The structured result (the unified `ToolResult`, `data.png_path` included) is unchanged.  Rules: only the
+  PNG artifact inside the result's own job directory whose SHA-256 matches the artifact record is read; only an `ok` result gets an
+  image; a PNG above 600 000 bytes (`eng_toolkit/inline_image.py`) is not attached and a warning (`The PNG is N kB, above the 600
+  kB limit ... open it from data.png_path`) is appended to the returned `warnings` (and to the text block, not to `result.json`);
+  `inline_image=false` returns the path only; `format="svg"` writes no PNG and so attaches none.  The parameter is not part of the
+  hashed inputs (it changes no file).  A 1600 px chart is typically 40..120 kB.
 * Without `pypdfium2` (`ImportError`, or the library cannot load) the tool does **not** refuse: it returns the chart as SVG (it
   writes `plot.svg` even for `format="png"`), `data.png_path` is null, `data.png.error` holds `{code: "engine.unavailable", message,
   install: "uv sync --extra png", module}` and the first warning after the standing one says that no PNG was written and how to
-  install the extra.  The provenance still names `pypdfium2` as a requested engine.
+  install the extra.  The provenance still names `pypdfium2` as a requested engine.  This also holds for the default `format="both"`:
+  a machine without the extra gets the SVG and the warning, never a refusal.
+
+## Bode phase (`unwrap_phase`)
+
+A phase that wraps at +-180 deg (an inverting stage: the angle passes -180 in the mid-band and re-enters at +180) is a data fact, and a
+line plot of it is a vertical line across the panel.  `unwrap_phase=true` (`plot_xy`, `plot_panels`; default **false**) unwraps every
+series whose name contains `phase` (case-insensitive) with `numpy.unwrap` **in data order** (the series must be in the order the
+curve runs, as the CSV tools write it), period 360 deg, or 2 pi when the name has the word `rad` (`phase_rad`).  Other series are
+not touched.  A warning names each series with its range before and after; `data.series[].phase_unwrapped` is `"360 deg"`,
+`"2*pi rad"` or null; the statistics, axes and drawing use the unwrapped values, so the curve can leave -180..180 (the CE-amplifier
+example in `tests/test_plot_r3.py` runs from -95 deg to -268 deg).  If no series name contains `phase` the call still succeeds,
+changes nothing and says so.  Example: `plot_panels(panels="Gain|gain_db|dB;Phase|v(nout).phase_deg|deg", data_file=...,
+x_scale="log", unwrap_phase=true)`.
 
 ## Data input
 
@@ -126,7 +153,9 @@ All positions follow from these, so a test can derive a pixel by hand (see `test
 * text width estimate: 0.6 x font size per character (1.0 for east-asian wide characters) — generous for digits, so labels never collide;
 * panels: a panel title adds 20 (font 13), panels are 14 apart and equally tall;
 * tick targets: about one x tick per 90 px and one y tick per 45 px (2..12 and 2..10);
-* legend: font 12, rows of 18, padding 8, sample 26, text at most 200 px (ellipsis beyond); `auto` shows it for 2+ series, in the inside
+* legend: font 12, rows of 18, padding 8, sample 26, text at most `max(200, min(420, 0.45 x plot width - 40))` px (ellipsis beyond; round 3:
+  the fixed 200 px cut `v(nout).phase_deg (right a...` on an 800 px chart, which now keeps it whole; below a plot width of about 530 px the
+  budget is the old 200 px); `auto` shows it for 2+ series, in the inside
   corner that covers the least drawing — score = length in px of the drawn (clipped) line and stem segments inside the box + 10 per
   marker centre inside + 1000 per reference or band label it would cover; ties: top right, top left, bottom right, bottom left —
   and outside to the right when it is taller than the plot or wider than half of it;
@@ -161,7 +190,10 @@ Bars are axis-aligned rectangles and are cut at the plot area grown by 4 px.
   warnings — never a division by zero, never a refusal.
 * Log: whole decades around the data, equally spaced (the mapping is linear in log10); every `stride`-th decade labelled (stride 1, 2,
   5, 10, ... so that at most `target` labels appear); 2x and 5x labelled when the axis spans at most two decades; minor grid at 2..9 x
-  10^n when every decade is labelled and there are at most 15. Labels are plain for 1e-4 .. 1e5 and `1e6`, `2e-7` otherwise. A fixed
+  10^n when every decade is labelled and there are at most 15. Labels are plain for 1e-4 .. 1e5 and `1e6`, `2e-7` otherwise, but **one style per axis** (round 3: a frequency axis read
+  `10000, 100000, 1e6, 1e7, 1e8`): when some ticks would be plain and others exponent, ticks of 1 and above get `k`, `M`, `G`
+  (`10, 100, 1k, 10k, 100k, 1M, 10M, 100M`; 2x and 5x as `200k`, `5M`) and any other set uses exponents for every tick
+  (`1e-6, 1e-3, 1e0, 1e3`); `verified_labels` reads `100k` back as 100000. A fixed
   log range inside one decade with fewer than two 1..9 multiples (`2,2.5`, `30,31`, `2e-6,2.5e-6`) gets linear nice ticks labelled by
   their spacing (`2.0, 2.1, ...`, `30.0, 30.1, ...`, `2e-6, 2.05e-6, ..., 2.5e-6`), verified as above. Zero or
   negative data on a log axis is **refused** with a pointer to the series value or to the CSV column and line — never dropped.
@@ -180,6 +212,12 @@ Bars are axis-aligned rectangles and are cut at the plot area grown by 4 px.
   placed by the reference-line label placer (never over another label).  The point takes part in the automatic ranges (and is refused
   on a log axis when not positive); outside a fixed range it is not drawn and a warning says so; `data.marked_point` has its data and
   pixel position.  First panel and left axis only; `plot_panels` and `plot_bar` have no marker.
+* **Seconds axes** (`plot_xy`, `plot_panels`; the left axes, the right axis and the shared x axis; not `plot_bar`): a linear axis whose
+  title gives seconds (`Time (s)`, `Time [s]`, `Time, s`, `Time / s` or just `s`) and whose largest magnitude is below 1 s (and not zero)
+  gets tick labels with one SI prefix chosen by that magnitude: `ms` from 1e-3, `us` from 1e-6, `ns` from 1e-9, else `ps`.  A 2.100 ..
+  2.106 ms window reads `2.1 ms, 2.101 ms, ... 2.106 ms` instead of `2.1e-3, 2.102e-3`.  The title stays the caller's text; the data,
+  the axis range, `ticks` and the mapping stay in seconds; `data.panels[].axes.<axis>.si_prefix` (`prefix`, `factor_s`, `unit`,
+  `tick_labels`) and a warning say that the labels are scaled.  Axes up to 1 s and any other unit keep the plain labels.
 * Tick labels never overlap: every k-th label is kept, the smallest k for which estimated label boxes are at least 8 px (x) or 2 px
   (y) apart; tick marks and grid lines stay at every tick.
 
@@ -260,6 +298,11 @@ A line with `markers=true` uses the envelope for the line and the cells for the 
   remain zero in that case. `data.histogram` holds numeric `bin_edges`, exact decimal strings in `bin_edges_exact`, raw counts,
   heights, the rule used and the counts outside. Integral edges remain integers in the metadata, including above 2^53.
 * Category labels are shortened to about 24 characters with an ellipsis and thinned so they do not overlap.
+* `hlines` (`"value,label;..."`, at most 10, the parser and the label placer of `plot_xy`): dashed limit lines across the plot area, e.g.
+  an allowable value over a bar chart or a minimum count over a histogram.  With an automatic y range the axis grows to include them;
+  with a fixed `y_range` a line outside it is not drawn and a warning says so; `data.reference_lines.hlines` lists them.  There is no
+  `vlines` on a bar chart (the x axis of bars is categorical; a histogram's numeric x axis could take them, not done) and no floating
+  range bar (min..max per category): a fit comparison still needs a midpoint bar with an error bar.
 
 ## Verification
 
@@ -350,5 +393,5 @@ All eight findings reproduced through the gateway before the fixes. No finding w
 No 3D, maps, polar, contour or heatmap plots; no interactivity (tooltips, zoom, hover); no PDF output (the PNG exists, see above); no date/time axes
 (x is a number; convert times to seconds); no second x axis; no per-panel y ranges in `plot_panels`; no log right axis; no
 horizontal bars; no hatch patterns (they would need `<pattern>`); no curve fitting, smoothing or interpolation of the data; no
-automatic unit handling (labels are plain text and the caller writes the unit); no text measurement from real font metrics (widths
+automatic unit handling beyond the SI prefix of seconds ticks (labels are plain text and the caller writes the unit); no text measurement from real font metrics (widths
 are estimated generously, so a label may get slightly more room than it needs, never less).

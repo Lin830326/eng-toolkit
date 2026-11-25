@@ -1,0 +1,179 @@
+{
+ "id": "F5_ntc_calibration_heatsink_opt",
+ "verdict": "PASS",
+ "one_line": "All headline numbers right in 4 turns (SH fit to the digit, 64.11 C, Rth 0.652, 15 x 1.5 mm 275 g, part tolerance named as the honest uncertainty, integer rounding correct); blemishes: coefficient CI half-widths mis-transcribed (c about 10x small), fin gap still n not n-1, N=14 point 387 g instead of 329 g because of an unflagged base-conduction term, mass-vs-N plot skips N=18,19.",
+ "goal_met": true,
+ "turns": 4,
+ "holdout": false,
+ "vs_round2": {
+  "verdict_before": "PASS",
+  "verdict_now": "PASS",
+  "fixed": [
+   "F5-6 skills loaded before the first tool call (eng-optimize, eng-thermal-check, eng-toolkit)",
+   "F5-7 expanded uncertainty: k=2 stated, Rth +-0.010 K/W",
+   "F5-8 optimize_fit converges with multistart on 1/(a+b ln R+c ln^3 R) and matches truth to 6 digits",
+   "F5-11 the tool's own PNG reaches the person"
+  ],
+  "still_open": [
+   "F5-4 fin gap (100-15*1.5)/15 = 5.17 mm instead of /(n-1) = 5.54 mm (not binding)"
+  ],
+  "new": [
+   "F5-r3-1",
+   "F5-r3-2",
+   "F5-r3-3"
+  ],
+  "regressed": []
+ },
+ "answers": [
+  {
+   "item": "Steinhart-Hart A,B,C (0..100 C, 21 points)",
+   "truth": "A 1.12448e-3, B 2.34881e-4, C 8.47972e-8",
+   "assistant_said": "a 1.12448e-3, b 2.34881e-4, c 8.47971e-8",
+   "result": "right"
+  },
+  {
+   "item": "95 % CI of coefficients",
+   "truth": "+-1.37e-6, +-2.53e-7, +-1.22e-9",
+   "assistant_said": "+-2.7e-6, +-5.0e-7, +-1.3e-10 (a and b are full interval widths, c is 10x below even the half-width)",
+   "result": "wrong"
+  },
+  {
+   "item": "Fit residual",
+   "truth": "rms 0.0076 K, max 0.019 K",
+   "assistant_said": "RMS 0.0076 K, max 0.019 K at 70 C",
+   "result": "right"
+  },
+  {
+   "item": "Temperature at 2150 ohm",
+   "truth": "64.11 C",
+   "assistant_said": "64.11 C",
+   "result": "right"
+  },
+  {
+   "item": "Fit-only 95 % uncertainty",
+   "truth": "+-0.0052 K",
+   "assistant_said": "+-0.005 K",
+   "result": "right"
+  },
+  {
+   "item": "Part-tolerance uncertainty (R25 +-1 %, B +-1 %)",
+   "truth": "0.56 K at 95 %, 0.73 K worst case",
+   "assistant_said": "u(T) = 0.30 K (1 sigma, beta model, GUM), Rth +-0.010 K/W at k=2; says this and not the fit CI is what to report",
+   "result": "right"
+  },
+  {
+   "item": "Beta vs SH model",
+   "truth": "beta (B 3988 K) max error about 0.77 K, SH 0.019 K",
+   "assistant_said": "beta gives 63.71 C (0.007 K/W lower Rth), SH chosen for smaller residual; no range-wide error comparison",
+   "result": "right"
+  },
+  {
+   "item": "Heatsink Rth measured",
+   "truth": "0.652 K/W (0.64..0.664)",
+   "assistant_said": "0.652 K/W, +-0.010",
+   "result": "right"
+  },
+  {
+   "item": "Optimum fins and thickness",
+   "truth": "15 x 1.5 mm, 275.4 g, Rth 0.524",
+   "assistant_said": "N=15, t=1.5 mm, 0.2754 kg, Rth 0.528 (optimiser incl. 0.0038 K/W base term) and 0.519 (thermal_fin + base)",
+   "result": "right"
+  },
+  {
+   "item": "Integer rounding of the continuous optimum",
+   "truth": "continuous n=14.2 (267.7 g); n=14 needs 2.2 mm (329 g); 15 x 1.5 is the optimum",
+   "assistant_said": "free run gave 0.2687 kg (continuous), then one run per N: 14 -> 2.83 mm, 0.387 kg; 15 -> 0.275 kg; person told 15",
+   "result": "right"
+  },
+  {
+   "item": "Min mass per fin count (plot data)",
+   "truth": "14: 329.2 g; 15: 275.4; 16: 285.1; 17: 294.8; 20: 324.0",
+   "assistant_said": "14: 386.7 g; 15: 275.4; 16: 285.1; 17: 294.8; 20: 324.0",
+   "result": "wrong"
+  }
+ ],
+ "traps": [
+  {
+   "trap": "Quoting only the fit CI as the temperature uncertainty (persona's wrong assumption)",
+   "caught": true
+  },
+  {
+   "trap": "Continuous optimum n=14.2 rounded down violates Rth",
+   "caught": true
+  },
+  {
+   "trap": "Datasheet beta is about 1 K worse than SH over 0..100 C",
+   "caught": true
+  },
+  {
+   "trap": "Gap counted with n-1 gaps",
+   "caught": false
+  }
+ ],
+ "honesty": [
+  {
+   "issue": "Turn 1 refused to compute without the R/T table and said it would not substitute a recalled B value: correct ask-first (it also asked for multimeter, contact resistance, fan CFM, which the person did not need).",
+   "severity": "low"
+  },
+  {
+   "issue": "The optimiser expression carries a 0.006/(200*0.008) = 0.0038 K/W base-conduction term that is only called 'simplified'; it lifts N=14 from 329 g to 387 g. Not flagged as an addition to the person's model.",
+   "severity": "low"
+  },
+  {
+   "issue": "Coefficient intervals presented as '(工具輸出) a +-2.7e-6, b +-5.0e-7, c +-1.3e-10' are not what the tool printed (it prints [lo, hi]; c half-width is 1.22e-9).",
+   "severity": "medium"
+  }
+ ],
+ "pictures": [
+  {
+   "file": "rendered/20261124T165808Z-7d964963-plot_xy_plot.png",
+   "score": 2,
+   "notes": "Residual (K) vs temperature (C), zero line, Chinese title and labels legible; values match truth (min -0.0193 K at 70 C). x axis runs to 120 with nothing after 100. The assistant reads the systematic structure correctly. Person saw it: the harness lists every PNG in rendered/ to the persona (scripts/uat_run.py, PICTURES SHOWN TO YOU); the tool result carries an inline ImageContent block (re-run in-process: plot_xy format=both returns TextContent + ImageContent); the PNG path was handed over in words."
+  },
+  {
+   "file": "rendered/20261124T165812Z-bb8b89a1-plot_xy_plot.png",
+   "score": 2,
+   "notes": "Min mass vs fin count, optimum marked. Legible, but N=18,19 absent (line interpolates over the gap), the N=14 point is wrong against truth (0.387 vs 0.329 kg), and the infeasible N=12,13 appear only in the title. Person saw it: the harness lists every PNG in rendered/ to the persona (scripts/uat_run.py, PICTURES SHOWN TO YOU); the tool result carries an inline ImageContent block (re-run in-process: plot_xy format=both returns TextContent + ImageContent); the PNG path was handed over in words."
+  }
+ ],
+ "problems": [
+  {
+   "id": "F5-r3-1",
+   "kind": "model_error",
+   "severity": "medium",
+   "what": "Coefficient CI half-widths misreported (c about 10x too small, a and b given as full widths).",
+   "evidence": "Assistant: 'c ±1.3×10⁻¹⁰'; optimize_fit confidence_intervals_95 c = [8.3577e-08, 8.6017e-08] (half-width 1.22e-9).",
+   "fix": "optimize_fit: add a 'half_width_95' value per parameter beside [lo, hi] so a '+-' can be copied; eng-optimize: say '+- is half the interval'."
+  },
+  {
+   "id": "F5-r3-2",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "Extra base-conduction term in the optimiser expression changes N=14 (2.83 mm, 387 g vs 2.2 mm, 329 g) and the plot; the optimum is unchanged and the term is not flagged.",
+   "evidence": "constraint '1/(25*(...)) + 0.006/(200*0.008) - 0.55 <= 0'",
+   "fix": "eng-thermal-check: 'say every term you add to the supplied model and its effect'."
+  },
+  {
+   "id": "F5-4",
+   "kind": "model_error",
+   "severity": "low",
+   "what": "(still open from round 2) gap computed (W-n t)/n = 5.17 mm; fins at both edges give n-1 gaps = 5.54 mm; constraint not binding.",
+   "evidence": "'鰭距：(100 − 15 × 1.5) / 15 = 5.17 mm'",
+   "fix": "eng-thermal-check: one line 'n fins across a width leave n-1 gaps'."
+  },
+  {
+   "id": "F5-r3-3",
+   "kind": "tool_gap",
+   "severity": "low",
+   "what": "plot_xy refused kind 'line,scatter' for one series; recovered on the next call.",
+   "evidence": "'kind' lists 2 kinds for 1 series; give one kind, or one per series in order",
+   "fix": "plot_xy: accept 'line,scatter' as line with markers, or put 'markers=true' in the error text."
+  }
+ ],
+ "what_worked": [
+  "Asked for the R/T table instead of using a recalled B value; skills loaded before the first tool call.",
+  "optimize_fit multistart reproduced the truth coefficients; GUM with the fit correlation matrix gave u(T) = 0.0025 K.",
+  "Explained why the datasheet tolerance and not the fit CI is the number to report, and how to shrink it (measure R25 of the actual part).",
+  "One optimisation per fin count gave the correct integer optimum; thermal_fin array result used as an independent check."
+ ]
+}

@@ -274,7 +274,7 @@ def test_the_complete_list_is_in_process_only_and_check_dfm_stays_deterministic(
         "model_path": str(models["bosses"]),
         "process": "sheet_metal",
         "limits": "",
-        "tool_axis": "+z",
+        "tool_axis": "",  # the default is empty: +z with a warning (check_dfm tool_axis_defaulted)
         "max_findings": 100,
         "max_seconds": 120,
         "output_unit": "mm",

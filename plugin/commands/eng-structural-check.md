@@ -3,8 +3,10 @@ description: Structural check (strength, deflection, buckling, vibration) with t
 argument-hint: <describe the structure, supports, loads and what to check>
 ---
 
+First load the `eng-structural-check` skill (and `eng-toolkit`) with the Skill tool, before calling any `mcp__eng-toolkit__` tool.
+
 Use the `eng-structural-check` skill (and `eng-toolkit` for the unit and reporting rules) to analyse this structural problem with the eng-toolkit MCP tools:
 
 $ARGUMENTS
 
-If key inputs are missing (supports, load direction, material, allowable stress or limit), ask for them first; otherwise run the analysis, hand-check one number, and give the report in the user's language.
+If key inputs are missing (supports, load direction, material, allowable stress or limit), ask for them first; otherwise run the analysis, hand-check one number (for a truss also the summed joint loads against your hand total), and give the report in the user's language.

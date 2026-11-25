@@ -19,6 +19,7 @@ from pydantic import Field
 from eng_toolkit import __version__, brep
 from eng_toolkit import external as ext
 from eng_toolkit.contract import Artifact, QuantityOut, ToolResult
+from eng_toolkit.inline_image import INLINE_IMAGE_DESCRIPTION
 from eng_toolkit.domains.fem import mesh as meshing
 from eng_toolkit.domains.fem import selectors as sel
 from eng_toolkit.domains.fem import solver
@@ -195,7 +196,7 @@ def _mesh_model(job: JobHandle, model_path: str, size_mm: float) -> Meshed:
         warnings.append(
             f"Only {solid.roots_transferred} of {solid.roots_in_file} root entities of the file could be transferred: the model may be incomplete"
         )
-    estimate = meshing.check_before_meshing(props.volume_mm3, props.bbox_min_mm, props.bbox_max_mm, size_mm)
+    estimate = meshing.check_before_meshing(props.volume_mm3, props.bbox_min_mm, props.bbox_max_mm, size_mm, props.area_mm2)
     msh_path, record = meshing.run_gmsh(solid, size_mm, _program_dir(job, "gmsh"))
     tetra = meshing.read_msh(msh_path, size_mm)
     if len(tetra.tets) > meshing.MAX_ELEMENTS or len(tetra.nodes) > meshing.MAX_NODES:
@@ -250,7 +251,7 @@ MESH_CONVENTIONS: dict[str, str] = {
         "millimetres, same loader as geometry_measure), made with Gmsh. Give the target element size with a unit, e.g. '5 mm'. Returns "
         "node and element counts, element quality statistics (mean ratio: 1 regular, 0 flat), the meshed volume against the exact B-rep "
         "volume, and warnings for slivers and coarse meshes; the mesh is an artifact (.msh, ASCII format 2). The work is capped before "
-        "meshing: elements are estimated as 6*sqrt(2)*volume/size^3 and a size that needs more than "
+        "meshing: elements are estimated as 4*volume/size^3 + 1.7*area/size^2 (fitted to real Gmsh counts, within about 1.25x) and a size that needs more than "
         f"{meshing.MAX_ELEMENTS} elements, or is below 1/{round(1 / meshing.MIN_SIZE_FRACTION)} of the part's diagonal, is refused as "
         "input.too_large. One solid only. The caller never supplies a Gmsh script. "
         f"Needs the optional cad engine ({install_hint('cadquery-ocp-novtk')}) and Gmsh installed by you (set ENG_TOOLKIT_GMSH or put gmsh on PATH; "
@@ -360,8 +361,8 @@ def _csv(mesh_: meshing.TetMesh, u: np.ndarray, s: np.ndarray, vm: np.ndarray) -
     description=(
         "Linear static finite element analysis (small displacements, linear elastic isotropic material, 10-node tetrahedra) of one solid in a CAD file "
         "(.step .stp .iges .igs .brep, read in millimetres), meshed by Gmsh and solved by CalculiX; the toolkit writes both inputs, the caller never "
-        "supplies a script or deck. Returns the maximum displacement magnitude (the length of the displacement vector, which exceeds the bending deflection) and where it is, "
-        "the per-axis maxima max_displacement_ux/uy/uz (largest |ux|, |uy|, |uz| over the nodes; read a deflection from the axis it acts on), the maximum von Mises stress and where, and the total "
+        "supplies a script or deck. Returns max_displacement: magnitude; see values.max_displacement_ux/uy/uz (the length of the displacement vector, which exceeds the bending deflection) and where it is, "
+        "the per-axis maxima max_displacement_ux/uy/uz (largest |ux|, |uy|, |uz| over the nodes; read a deflection from the axis it acts on, and sideways motion from the other axes; data.displacement_note says so), the maximum von Mises stress and where, and the total "
         "reaction force against the applied load (equilibrium must hold to 1e-6 or the call fails). Artifacts: the CalculiX deck, .frd and .dat results, "
         "and results.csv with every node's displacement and stress. "
         "'supports' and 'loads' are ';'-separated clauses that pick faces by plane. Face selector: 'x = 0 mm' (all boundary faces lying in that plane) "
@@ -643,7 +644,14 @@ def static(
             "node_count": _count(n_nodes),
         }
         q = meshed.quality
+        unit_text = f"{length_unit:~P}"
         data = {
+            "displacement_note": (
+                f"max_displacement ({max_displacement:.4g} {unit_text}) is a MAGNITUDE sqrt(ux^2 + uy^2 + uz^2) at one node, not the deflection along an axis. "
+                f"Largest |ux|, |uy|, |uz| over the nodes: {axis_maxima[0]:.4g}, {axis_maxima[1]:.4g}, {axis_maxima[2]:.4g} {unit_text} "
+                "(values.max_displacement_ux/uy/uz). Read a deflection from the axis it acts on; an axis with a large value that you did not load is sideways motion, "
+                "so report it too. results.csv has every node."
+            ),
             "max_displacement_at_mm": [float(v) for v in tetra.nodes[imax]],
             "max_displacement_node": imax + 1,
             "max_displacement_vector_mm": [float(v) for v in u[imax]],
@@ -704,15 +712,15 @@ def static(
 # --------------------------------------------------------------------------- fem_view
 
 VIEW_DESCRIPTION = (
-    "A fem_static result as a PNG picture (default: isometric view, colour bar with field, unit, min and max, size in mm, a ring on "
-    "the largest value; for a mail, hand it over first) and a GLB for 3D viewers: the mesh surface (6-node facets as 4 triangles) "
-    "coloured by the nodal field CalculiX wrote, optionally deformed. Give result_dir (the fem_static job directory; manifest "
+    "A fem_static result as a PNG picture (isometric view, colour bar with field, unit, min and max, size in mm, a ring on "
+    "the largest value; returned in the reply too, inline_image: hand it over first) and a GLB for 3D viewers: the mesh surface (6-node facets as 4 triangles) "
+    "coloured by the nodal field of CalculiX, optionally deformed. Give result_dir (the fem_static job directory; manifest "
     "sha256s are checked) or mesh_file + results_file. field: von_mises, displacement, ux uy uz, s_xx s_yy s_zz s_xy s_yz s_zx, "
     "principal_max, principal_min. colormap auto (sequential for magnitudes, diverging blue-grey-red for signed fields, light grey "
     "= 0, ranges symmetric about zero). GLB is metres, +Y up; COLOR_0 linear RGB, _FIELD holds the values. Also writes legend.svg "
     "and view.json. Returns triangle_count, field_max, field_min, deformation_factor. "
     f"Capped at {viewer.MAX_TRIANGLES:,} triangles. Surface only; nodal stresses are extrapolated, averaged, and unbounded at point "
-    "loads and sharp corners. No Gmsh/CalculiX run."
+    "loads and sharp corners. No solver run."
 )
 
 
@@ -734,6 +742,7 @@ def view(
         str,
         Field(description="'png' (default; 'iso' is the same): also write fem_view.png, a picture with colour bar, unit and range; 'none': GLB only"),
     ] = "png",
+    inline_image: Annotated[bool, Field(description=INLINE_IMAGE_DESCRIPTION)] = True,
 ) -> ToolResult:
     deadline = viewer.Deadline(max(1, min(max_seconds, 600)) if isinstance(max_seconds, int) else 1)
     inputs = {

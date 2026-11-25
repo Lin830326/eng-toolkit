@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from eng_toolkit.domains.plot._axes import Axis, label_widths, make_axis, thin
+from eng_toolkit.domains.plot._axes import Axis, label_widths, make_axis, seconds_axis, thin
 from eng_toolkit.domains.plot._common import fail
 from eng_toolkit.domains.plot._data import Series, cell_pointer
 from eng_toolkit.domains.plot._decimate import decimate, thin_markers
@@ -39,6 +39,7 @@ TICK_SIZE, TICK_LEN, TICK_GAP = 12, 5, 4
 X_TICK_BAND = TICK_LEN + TICK_GAP + TICK_SIZE  # 21
 PANEL_TITLE_SIZE, PANEL_TITLE_BAND, PANEL_GAP = 13, 20, 14
 LEGEND_SIZE, LEGEND_ROW, LEGEND_PAD, LEGEND_SAMPLE, LEGEND_TEXT_MAX, LEGEND_INSET = 12, 18, 8, 26, 200, 8
+LEGEND_TEXT_WIDEST = 420  # the legend text budget grows with the plot width, up to this many px
 MIN_PLOT = 60
 LINE_WIDTH = 1.75
 X_TICK_PX, Y_TICK_PX = 90, 45
@@ -164,8 +165,14 @@ def draw_markers(cv: Canvas, xs: np.ndarray, ys: np.ndarray, colour: int, marker
         cv.el("path", [("d", "".join(paths)), ("stroke-width", "1.5")], fill="none", stroke=f"s{colour}")
 
 
-def legend_box(entries: list[tuple[str, int]], texts: Texts, where: str) -> tuple[list[str], float, float]:
-    names = [texts.fit(name, LEGEND_TEXT_MAX, LEGEND_SIZE, f"{where} legend entry {i + 1}") for i, (name, _) in enumerate(entries)]
+def legend_text_budget(plot_width: float) -> float:
+    """Pixels for one legend entry's text: 200, or when the plot is wide enough 45 % of its width less the swatch and padding (at most 420),
+    so a name such as 'v(nout).phase_deg (right axis)' is not cut on a 800 px chart."""
+    return float(min(LEGEND_TEXT_WIDEST, max(LEGEND_TEXT_MAX, 0.45 * plot_width - (2 * LEGEND_PAD + LEGEND_SAMPLE + 6))))
+
+
+def legend_box(entries: list[tuple[str, int]], texts: Texts, where: str, budget: float = LEGEND_TEXT_MAX) -> tuple[list[str], float, float]:
+    names = [texts.fit(name, budget, LEGEND_SIZE, f"{where} legend entry {i + 1}") for i, (name, _) in enumerate(entries)]
     tw = max(text_width(n, LEGEND_SIZE) for n in names)
     width = 2 * LEGEND_PAD + LEGEND_SAMPLE + 6 + tw
     height = 2 * LEGEND_PAD + len(entries) * LEGEND_ROW - 4
@@ -275,6 +282,7 @@ def render_xy(chart: Chart) -> Rendered:
             fail("marker", f"the marked point's y {py_:g} cannot be drawn on a log y axis (it needs a positive value)")
     xlo, xhi = _extent([s.x for s in all_series], [v for v, _ in chart.vlines] + ([chart.point[0]] if chart.point is not None else []))
     x_axis = make_axis(chart.x_scale, xlo, xhi, x_target, chart.x_range, param="x_range" if chart.x_range else all_series[0].x_param, what="x axis", margin=margin)
+    seconds_axis(x_axis, chart.x_label, "x axis")
     warnings += x_axis.notes
 
     # ---------------------------------------------------------------- vertical layout
@@ -308,6 +316,7 @@ def render_xy(chart: Chart) -> Rendered:
         lo, hi = _extent([s.y for s in left_series], extra)
         what = f"panel {pi + 1} y axis" if n > 1 else "y axis"
         ax = make_axis(p.y_scale, lo, hi, y_target, p.y_range, param=p.y_range_param if p.y_range else left_series[0].y_param, what=what, margin=margin)
+        seconds_axis(ax, p.y_label, what)
         ax.set_pixels(boxes[pi][1], boxes[pi][0])
         ax.shown = thin([ax.px(t) for t in ax.ticks], [TICK_SIZE] * len(ax.ticks), LABEL_GAP_Y)
         warnings += ax.notes
@@ -316,6 +325,7 @@ def render_xy(chart: Chart) -> Rendered:
             zero2 = chart.fill == "zero" or any(kind_of[id(s)] == "stem" for s in right_series)
             lo2, hi2 = _extent([s.y for s in right_series], [0.0] if zero2 else [])
             ax2 = make_axis("linear", lo2, hi2, y_target, None, param=right_series[0].y_param, what="right (y2) axis", margin=margin)
+            seconds_axis(ax2, p.y2_label, "right (y2) axis")
             ax2.set_pixels(boxes[pi][1], boxes[pi][0])
             ax2.shown = thin([ax2.px(t) for t in ax2.ticks], [TICK_SIZE] * len(ax2.ticks), LABEL_GAP_Y)
             warnings += ax2.notes
@@ -342,12 +352,13 @@ def render_xy(chart: Chart) -> Rendered:
         right = max(PAD, math.ceil(last_w / 2) + 2)
 
     # legends: which panels show one, their sizes, inside or outside
+    budget = legend_text_budget(W - left - right)
     legends = []
     for pi, p in enumerate(chart.panels):
         entries = [(s.name + (" (right axis)" if s.axis == "y2" else ""), order[id(s)]) for s in p.series]
         show = chart.legend != "off" and not (chart.legend == "auto" and len(entries) == 1)
         if show:
-            names, lw, lh = legend_box(entries, texts, f"panel {pi + 1}" if n > 1 else "chart")
+            names, lw, lh = legend_box(entries, texts, f"panel {pi + 1}" if n > 1 else "chart", budget)
             legends.append((entries, names, lw, lh))
         else:
             legends.append(None)
@@ -464,7 +475,7 @@ def render_xy(chart: Chart) -> Rendered:
                 "name": s.name, "column": s.label, "x_column": s.x_name, "axis": s.axis, "panel": pi + 1, "colour_index": colour, "dash": DASHES[dash] or "solid",
                 "marker": MARKERS[marker], "kind": kind, "points_in": int(len(s.y)), "points_drawn": int(len(drawn)),
                 "line_vertices": None if line_keep is None else int(len(line_keep)), "markers_drawn": None if mark_keep is None else int(len(mark_keep)),
-                "decimated": line_method is not None, "markers_thinned": mark_method is not None,
+                "phase_unwrapped": s.meta.get("unwrapped"), "decimated": line_method is not None, "markers_thinned": mark_method is not None,
                 "method": "; ".join(m for m in (line_method, mark_method) if m) or "all points drawn",
                 "drawn_y_min": float(np.min(drawn_y)), "drawn_y_max": float(np.max(drawn_y)), "points_outside_axes": int(len(s.y)) - visible, **series_stats(s),
             }
