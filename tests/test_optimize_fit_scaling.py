@@ -123,7 +123,10 @@ def test_certificate_and_covariance_are_scale_invariant():
     # The last step's rounding differs between the two forms; the metric agrees to a few %.
     assert b["projected_gradient_scaled_inf"] == pytest.approx(a["projected_gradient_scaled_inf"], rel=.05)
     assert b["residual_scale"] == pytest.approx(a["residual_scale"], rel=1e-9)
-    assert b["objective_curvature"]["minimum_eigenvalue"] == pytest.approx(a["objective_curvature"]["minimum_eigenvalue"], rel=1e-4)
+    # The Hessian is a finite difference of a finite-difference Jacobian, and its smallest eigenvalue (1.9e-4 of a unit
+    # diagonal) carries that noise: the raw form gave 1.91973e-4 on one machine and 1.92006e-4 on another (1.7e-4 apart),
+    # while the scaled form gave 1.91980e-4 on both.
+    assert b["objective_curvature"]["minimum_eigenvalue"] == pytest.approx(a["objective_curvature"]["minimum_eigenvalue"], rel=1e-3)
     assert np.array(b["gradient_scale"])/factor == pytest.approx(a["gradient_scale"], rel=1e-6)
 
 
