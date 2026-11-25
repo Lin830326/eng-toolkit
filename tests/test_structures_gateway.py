@@ -9,6 +9,7 @@ from fastmcp import Client
 from eng_toolkit.domains import all_domains
 from eng_toolkit.gateway.server import gateway
 from tests.structures_testing import COLUMN, FRAME, STRESS, TRUSS, validate
+from timing import budget
 
 CASES = [
     ("structures_section",dict(width="100 mm",height="200 mm",at_height="100 mm",shear_force="10 kN")),
@@ -90,7 +91,7 @@ async def test_hostile_6000_character_input_under_one_second(name,args,param):
         r = await mcp(client,name,{**args,param:"("*6000})
         elapsed = time.perf_counter()-start
     assert not r.ok
-    assert elapsed < 1.,(name,elapsed)
+    assert elapsed < budget(1.),(name,elapsed)
 
 
 BAD_MODELS = [

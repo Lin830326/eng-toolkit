@@ -155,6 +155,7 @@ async def test_files_outside_the_allowed_directories_are_not_read(tmp_path, monk
     assert r.provenance.input_files == []
 
 
+@needs_yosys
 @pytest.mark.asyncio
 async def test_allowed_constructs_still_work_through_the_gateway():
     text = (
@@ -283,6 +284,8 @@ async def test_more_than_200_modules_are_refused():
     r = await via_gateway("check", {"source": many})
     refused(r, "input.out_of_range")
     assert r.error.details["max_modules"] == 200 and not (job_dir(r) / "yosys").exists()
+    if not HAVE_YOSYS:  # the refusal above needs no program; the accepted design below runs Yosys
+        return
     two = many.split("module m100")[0]
     spread = await via_gateway("equivalent", {"top_a": "m0", "source_a": two, "source_b": two})
     assert spread.ok, spread.error  # 100 modules per design is within the limit

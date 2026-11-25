@@ -8,6 +8,7 @@ from fastmcp import Client
 from eng_toolkit.domains import all_domains
 from eng_toolkit.gateway.server import gateway
 from tests.electric_testing import validate
+from timing import budget
 
 CASES = [
     ("electric_transformer", dict(rating="20 kVA", primary_voltage="8000 V", secondary_voltage="240 V", open_circuit="8000 V,.214 A,400 W", short_circuit="489 V,2.5 A,240 W")),
@@ -90,7 +91,7 @@ async def test_gateway_hostile_strings_under_one_second(index, param):
         result = await mcp(client, name, {**args, param: "("*6000})
         elapsed = time.perf_counter()-start
     assert not result.ok
-    assert elapsed < 1, (name, elapsed)
+    assert elapsed < budget(1), (name, elapsed)
 
 
 @pytest.mark.parametrize("unit", ["degC", "celsius", "degree_Celsius", "degF", "degree_Fahrenheit"])

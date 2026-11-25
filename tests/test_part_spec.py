@@ -18,8 +18,9 @@ from eng_toolkit.domains.geometry import part
 from eng_toolkit.domains.geometry.part import OPS, check_expression, parse_spec
 from eng_toolkit.errors import ToolFailure
 from eng_toolkit.units import parse_quantity
+from timing import budget
 
-README = Path(__file__).resolve().parents[1] / "README.md"
+README = Path(__file__).resolve().parents[1] / "docs" / "tools" / "geometry.md"  # the tool reference of the domain
 DESCRIPTION_LIMIT = 5200  # characters; round 1 had 3900 for nine ops, round 2 adds seven features of the language (docs/geometry-drawing/make-part-round2.md)
 BODIES = {"box", "cylinder", "sphere", "cone", "extrude", "import", "revolve"}
 
@@ -501,7 +502,7 @@ def test_the_guard_runs_before_pint_so_hostile_input_is_rejected_quickly():
     assert done.returncode == 0, done.stderr
     outcomes = json.loads(done.stdout)
     assert [family for family, _ in outcomes] == ["input.invalid"] * len(HOSTILE)
-    assert max(seconds for _, seconds in outcomes) < 1.0
+    assert max(seconds for _, seconds in outcomes) < budget(1.0)
 
 
 @pytest.mark.parametrize(
@@ -592,8 +593,8 @@ def test_the_description_names_the_extra_the_tool_needs_and_the_unit_rule():
 
 def test_the_readme_describes_every_op_and_every_field():
     readme = README.read_text(encoding="utf-8")
-    start = readme.index("### `geometry_make_part`")
-    end = readme.index("\n### ", start + 5) if "\n### " in readme[start + 5 :] else len(readme)
+    start = readme.index("## `geometry_make_part`")
+    end = readme.index("\n## ", start + 5) if "\n## " in readme[start + 5 :] else len(readme)
     section = readme[start:end]
     for name, op in OPS.items():
         assert f"`{name}`" in section, name

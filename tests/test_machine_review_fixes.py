@@ -11,6 +11,7 @@ from eng_toolkit.domains.machine.pressure_vessel import pressure_vessel
 from eng_toolkit.domains.machine.shaft import shaft
 from eng_toolkit.domains.machine.weld import weld
 from tests.machine_testing import call, close, ok, v
+from timing import budget
 
 
 @pytest.mark.parametrize("speed", ["3600 deg/s", "10 turn/s", "600 rpm", "62.83185307179586 rad/s"])
@@ -63,7 +64,7 @@ def test_weld_parser_is_linear_time():
     text = "(" + " "*3000 + "," + " "*3000 + "!"
     t0 = time.perf_counter()
     r = call(weld, segments_text=text, leg_size="5 mm", force_y="1000 N")
-    assert not r.ok and time.perf_counter()-t0 < 1.0
+    assert not r.ok and time.perf_counter()-t0 < budget(1.0)
 
 
 def test_weld_thin_pattern_keeps_weak_axis_moment():

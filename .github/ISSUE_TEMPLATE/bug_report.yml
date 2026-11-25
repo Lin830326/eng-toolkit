@@ -1,0 +1,46 @@
+name: Bug report
+description: A wrong number, a crash, a confusing refusal, or a tool that does not do what its description says.
+labels: [bug]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Tool
+      description: The MCP tool name, for example `calc_cylinder_force`.
+    validations:
+      required: true
+  - type: textarea
+    id: arguments
+    attributes:
+      label: Arguments
+      description: The exact arguments of the call, as JSON. Attach input files if the tool reads one and you may share it.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What you got
+      description: The result or the error, as JSON.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and its source
+      description: The value you expected and how you know it - a hand calculation, a formula from a named reference, or another program.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `uv run eng-toolkit doctor`
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and MCP client
+      placeholder: Windows 11, Claude Code

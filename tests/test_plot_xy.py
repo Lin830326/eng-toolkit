@@ -10,6 +10,7 @@ import pytest
 
 from eng_toolkit.domains.plot.xy import xy
 from tests.plot_testing import artifact, elements, fails, ok, plot_data, polylines, svg_text, texts
+from timing import budget
 
 
 def js(*series) -> str:
@@ -143,7 +144,7 @@ def test_long_labels_are_refused_quickly_and_long_fitting_text_is_truncated():
     for param in ("title", "x_label", "y_label", "y2_label"):
         fails(xy, "input.out_of_range", param, series=LINE, **{param: "<" * 6000})
     fails(xy, "input.out_of_range", "series/0/name", series=json.dumps([{"name": "n" * 6000, "y": [1, 2]}]))
-    assert time.perf_counter() - start < 1.0
+    assert time.perf_counter() - start < budget(1.0)
     # a 120-character title fits nowhere in a 200 px wide chart: shortened with an ellipsis and disclosed
     r = ok(xy, series=LINE, title="W" * 120, width=200, height=200)
     assert elements(svg_text(r), "text")[0].text.endswith("…")
@@ -260,5 +261,5 @@ def test_hostile_6000_character_strings_in_every_text_parameter_answer_fast():
     for param in ("x_column", "y_columns", "y2_columns", "kind", "fill", "x_scale", "y_scale", "x_range", "y_range", "hlines", "vlines", "band", "legend", "theme"):
         r = getattr(xy, "fn", xy)(series=LINE, **{param: long})
         assert not r.ok and r.error.details["param"].startswith("/"), param
-    assert time.perf_counter() - start < 1.0
+    assert time.perf_counter() - start < budget(1.0)
     assert math.isfinite(start)
