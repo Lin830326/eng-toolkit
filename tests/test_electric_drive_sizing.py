@@ -7,6 +7,7 @@ import pytest
 
 from eng_toolkit.domains.electric.drive_sizing import drive_sizing
 from tests.electric_testing import call, close, ok, table, v
+from timing import budget
 
 
 BASE = dict(load_inertia="2 kg*m^2", rotor_inertia="0.5 kg*m^2",
@@ -135,7 +136,7 @@ def test_generated_conflicting_or_invalid_motion():
 def test_hostile_profile_is_bounded():
     started = time.perf_counter()
     assert not call(drive_sizing, **{**BASE, "profile": "("*6000}).ok
-    assert time.perf_counter()-started < 1
+    assert time.perf_counter()-started < budget(1)
 
 
 def test_peak_speed_above_rated_but_below_maximum_passes_with_a_warning():

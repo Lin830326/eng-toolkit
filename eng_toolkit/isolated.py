@@ -17,9 +17,11 @@ import importlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,7 +73,8 @@ def run_isolated(
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     limits = {"timeout_s": timeout_s, "memory_mb": memory_mb}
-    with tempfile.TemporaryDirectory(prefix="eng-toolkit-iso-") as scratch:
+    scratch = tempfile.mkdtemp(prefix="eng-toolkit-iso-")
+    try:
         answer = Path(scratch) / "answer.json"
         errors = Path(scratch) / "stderr.txt"
         request = json.dumps({"target": target, "args": args, "memory_mb": memory_mb, "answer": str(answer)})
@@ -105,6 +108,8 @@ def run_isolated(
             reply = jsonsafe.loads(answer.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise ToolFailure("engine.failure", f"unreadable answer from the reading process: {exc}", limits) from exc
+    finally:
+        _discard(scratch)
     if reply.get("ok"):
         return Outcome(reply["value"], bool(reply.get("memory_cap_applied")))
     family = reply["family"]
@@ -112,6 +117,28 @@ def run_isolated(
     if family == "engine.resource_limit":
         details = {**limits, **details}
     raise ToolFailure(family, reply["message"], details)
+
+
+def _discard(folder: str, patience_s: float = 3.0) -> None:
+    """Remove the scratch folder without ever raising.
+
+    On Windows a killed child (the real interpreter behind a virtual environment's launcher) can keep ``stderr.txt`` open
+    for a moment after ``taskkill`` returns, and removing the folder then fails with WinError 32.  That error must not
+    replace the result of the read (it turned an ``engine.timeout`` into an ``engine.failure``), so the removal is retried
+    for ``patience_s`` and then given up: a folder left in the temporary directory is harmless, a wrong error family is not.
+    """
+    deadline = time.monotonic() + patience_s
+    while True:
+        try:
+            shutil.rmtree(folder)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            if time.monotonic() >= deadline:
+                shutil.rmtree(folder, ignore_errors=True)
+                return
+            time.sleep(0.05)
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:

@@ -730,11 +730,17 @@ def test_engine_output_never_reaches_stdout(tmp_path, box, capfd):
     assert capfd.readouterr().out == ""
 
 
-def test_non_ascii_paths_are_readable(tmp_path, box):
-    folder = tmp_path / "掃描資料"
+@pytest.mark.parametrize("folder_name,scan_name,model_name", [
+    ("掃描資料", "零件.ply", "模型.step"),
+    # Chinese, Korean, Cyrillic and Latin-1 together fit no ANSI code page, so this row fails on every Windows locale if
+    # a reader opens the file through the code page (Open3D does; the tool reads through an ASCII alias).
+    ("scan", "零件-스캔-деталь-pièce.ply", "model.step"),
+])
+def test_non_ascii_paths_are_readable(tmp_path, box, folder_name, scan_name, model_name):
+    folder = tmp_path / folder_name
     folder.mkdir()
-    scan = scan_file(folder, two_sided_cloud(), "零件.ply")
-    model = folder / "模型.step"
+    scan = scan_file(folder, two_sided_cloud(), scan_name)
+    model = folder / model_name
     model.write_bytes(box.read_bytes())
     r = run(scan, model)
     assert r.ok, r.error

@@ -12,6 +12,7 @@ people can add domains on separate branches and the branches stay disjoint.
 | `eng_toolkit/domains/<name>/tools.py` (any module names) | the FastMCP server and its tools; wrap each tool body in `runner.run_tool`, parse every quantity with `units.parse_quantity` |
 | `eng_toolkit/domains/<name>/engines.py` | `ENGINES = (Engine("<dist>", "<license>", <tier>, "<role>", ("<name>",), optional=True, extra="<extra>"), ...)` for each engine the domain adds; imports only `eng_toolkit.licenses`; `EXTERNAL_TOOLS = (NGSPICE, ...)` for each program the user installs that the domain starts as a separate process (descriptors in `eng_toolkit.external_catalog`, or an inline `ExternalTool`; see `docs/external/design.md`) |
 | `tests/test_<name>_*.py` | tests; keep numbers in hand calculations, not in the tool under test |
+| `docs/tools/<name>.md` | the tool reference: what each tool computes, its inputs, an example call with the expected numbers, what it does not cover |
 | `docs/<name>-design.md` | decisions, alternatives, what is not verified |
 
 Nothing else needs to change for the tool to appear: the gateway mounts every package under `eng_toolkit/domains/` that exposes a
@@ -25,8 +26,10 @@ Two shared files cannot be avoided, both because they are lists of the whole pro
   position, one block per extra, so two branches do not edit the same lines. A core dependency (rare) goes in `dependencies`.
 * `uv.lock`: never resolve it by hand. After any merge that touched `pyproject.toml`, run `uv lock` and commit the result.
 
-`README.md` takes one section per tool under "工具"; add yours after the last section of your domain and do not edit
-sentences about other domains or any count of tools.
+The tool reference of a domain is its own file, `docs/tools/<name>.md`: one `## ` section per tool. The two READMEs
+(`README.md` in English, `README.zh-TW.md`) each take **one table row** per domain under "Domains" / "領域與工具", in the
+order of `toolkit_list_tools`; add your row and do not edit the rows of other domains. `tests/test_docs_tools.py` fails
+when a domain or a tool is missing from either place, so the READMEs cannot fall behind the code.
 
 ## Budgets and rules the tests enforce
 

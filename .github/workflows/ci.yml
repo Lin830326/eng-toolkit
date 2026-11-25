@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Windows is the platform the project is developed and verified on.
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # --locked fails if uv.lock does not match pyproject.toml, so a pull request cannot change dependencies silently.
+      - name: Install
+        run: uv sync --locked --all-groups --extra scan --extra drawing --extra png
+
+      # KiCad, ngspice, Gmsh, CalculiX and Yosys are not on the runner: the tests that need them skip.
+      # Shared runners are several times slower than a developer machine and stall now and then; the wall-clock
+      # budgets of the tests (tests/timing.py) are multiplied by this factor.
+      - name: Test
+        env:
+          ENG_TOOLKIT_TEST_TIME_FACTOR: "5"
+        run: uv run --no-sync python -m pytest -q
+
+      - name: Doctor (dependency and license check)
+        run: uv run --no-sync python -m eng_toolkit doctor

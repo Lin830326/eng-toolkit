@@ -95,3 +95,8 @@ answers plus whether an eng-toolkit tool was actually called. Findings so far:
   a field-weakening envelope, a nonlinear fit with confidence intervals.
 
 Run it yourself: `python scripts/eval_plugin.py --mcp-config mcp.json --plugin-dir plugin --model haiku --repeat 2`.
+
+## License
+
+The plugin (everything under `plugin/`) is licensed under MIT, see [LICENSE](LICENSE). The MCP server and the rest of
+the repository are licensed under Apache-2.0.

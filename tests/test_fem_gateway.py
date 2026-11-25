@@ -117,6 +117,8 @@ async def test_a_missing_program_is_reported_before_anything_else_happens(bar, m
     assert "gmsh.info" in r.error.message and "ENG_TOOLKIT_GMSH" in r.error.message
     assert r.provenance.input_files == []  # nothing was read
     monkeypatch.delenv("ENG_TOOLKIT_GMSH")
+    if X.locate(GMSH)[0] is None:  # without Gmsh fem_static names Gmsh first, as it should
+        return
     monkeypatch.setenv("ENG_TOOLKIT_CCX", str(tmp_path / "no-such-ccx.exe"))
     r = await call("fem_static", {"model_path": bar, **BASE})
     assert not r.ok and r.error.family == "engine.unavailable" and "calculix.de" in r.error.message

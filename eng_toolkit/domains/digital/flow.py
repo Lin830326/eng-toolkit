@@ -128,7 +128,8 @@ def run_yosys(
     """
     found, why = external.locate(YOSYS)
     if found is None:
-        raise external.unavailable(YOSYS, why)
+        # Every refusal names an argument (details.param); a missing Yosys is reached through the design that needs it.
+        raise external.unavailable(YOSYS, why, param=next((s.param for s in sources if s.param), "/source"))
     base = resolve_root() / handle.job_id
     workdir = base / "yosys"
     index = 1
