@@ -17,6 +17,7 @@ import pytest
 import eng_toolkit.domains.optimize.fit as fit_module
 from eng_toolkit.domains.optimize.fit import fit
 from optimize_testing import call, ok
+from timing import budget
 
 # TDK B57861S0103F040, R/T characteristic no. 8016, 0..100 C (uat/scenarios/F5_ntc_calibration_heatsink_opt.json).
 CELSIUS = list(range(0, 101, 5))
@@ -57,7 +58,7 @@ def test_steinhart_hart_temperature_form_reproduces_the_truth_fast():
     started = time.perf_counter()
     r = ok(fit, model=MODEL, initial="a=0.001;b=0.00025;c=0.0000001", data=DATA)
     elapsed = time.perf_counter() - started
-    assert elapsed < 2.0
+    assert elapsed < budget(2.0)
     assert r.data["parameter_scales"] == {"a": 0.001, "b": 0.00025, "c": 1e-7}
     # Six significant digits. The truth weights 1/T by T^2 instead of fitting T itself;
     # the two objectives differ at second order (1e-6 relative in c).
