@@ -260,6 +260,7 @@ uv run eng-toolkit doctor
 * 規則、環境設定與送 pull request 的步驟：[CONTRIBUTING.md](CONTRIBUTING.md)。
 * 新增領域的檔案清單與預算：[docs/adding-a-domain.md](docs/adding-a-domain.md)。
 * 安全漏洞不可開公開 issue，回報方式見 [SECURITY.md](SECURITY.md)。
+* 參與者的行為準則與回報方式：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
 ## 設計紀錄
 

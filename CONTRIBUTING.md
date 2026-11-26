@@ -60,6 +60,11 @@ list, calls return `engine.unavailable` with the install hint, and their tests s
 
 A maintainer reviews every pull request. Reviews check the six rules above first, then the numbers, then the code.
 
+## Code of conduct
+
+Everyone who takes part in this project, in issues, pull requests and reviews, is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). It says how to report a problem and what happens next.
+
 ## License of contributions
 
 The repository has two licenses, split by directory:
@@ -71,6 +76,9 @@ The repository has two licenses, split by directory:
 
 By submitting a contribution you agree that it is licensed under the license of the directory it lands in, and you
 confirm that you have the right to submit it.
+
+One file is neither: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) is the Contributor Covenant 2.0 with this project's contact
+address filled in. Its text is licensed CC BY 4.0 by its authors, as the file's last section says.
 
 ## Security
 
