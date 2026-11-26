@@ -152,7 +152,7 @@ The same inputs give the same `inputs_hash`. Each call writes `inputs.json`, `re
 
 Bug reports, verification cases, new tools and new domains are welcome, in English or 繁體中文. Read
 [CONTRIBUTING.md](CONTRIBUTING.md) first. Report vulnerabilities privately as described in
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](SECURITY.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 The project is clean-room: it contains no code, data, models, drawings or branding of any employer or client, and
 contributions must keep it that way.
