@@ -11,3 +11,9 @@ water hammer and external drag. Inputs carry units and accept caller fluid
 properties. Channel profiles and surge histories include CSV artifacts. Uses
 NumPy and Pint only; all estimates are unreviewed. See the
 [formulas, record formats, sources and validity limits](../fluids/design.md).
+
+`fluids_pump_system` and `fluids_pipe_network` take `curve_points` (0 = off; 2 to 500 for `pump_system`, 2 to 200 for
+`pipe_network`). They then write `system_curve.csv` over the pump's flow range, with the columns `flow_m3_s`,
+`system_head_m`, `pump_head_m` (plus `efficiency` for `pump_system`) and `is_operating_point`; the operating point is
+inserted as one more row with the flag 1, so a plot can mark it. `data.operating_point` and `data.curve_table` describe
+it. `pipe_network` needs exactly one pump for the table; with none or several it warns and writes no table.
